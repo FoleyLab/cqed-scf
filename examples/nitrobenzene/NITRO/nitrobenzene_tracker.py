@@ -58,7 +58,7 @@ psi4.core.set_output_file("psi4_md.out", False)
 # Build calculator
 # ----------------------------
 calculator = CQEDRHFCalculator(
-    lambda_vector=field_vector, # molecule_string=ortho_string, #<-- CQEDRHFCalculator doesn't take molecule_string currently?
+    lambda_vector=field_vector, 
     psi4_options=psi4_options,
     omega=omega,
     density_fitting=True,
