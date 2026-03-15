@@ -2,7 +2,7 @@ import numpy as np
 import psi4
 
 from cqed_rhf.utils import write_xyz
-from cqed_rhf.calculator import CQEDRHFCalculator
+from cqed_rhf import CQEDRHFCalculator
 from cqed_rhf.drivers import velocity_verlet_md
 from cqed_rhf.observables.nitrobenzene_orientation import NitrobenzeneOrientation
 from cqed_rhf.utils import write_xyz, ANGSTROM_TO_BOHR
@@ -57,15 +57,25 @@ psi4.core.set_output_file("psi4_md.out", False)
 # ----------------------------
 # Build calculator
 # ----------------------------
+#calculator = CQEDRHFCalculator(
+#    lambda_vector=field_vector, 
+#    psi4_options=psi4_options,
+#    omega=omega,
+#    density_fitting=True,
+#    charge=0,
+#    multiplicity=1
+#)
+
 calculator = CQEDRHFCalculator(
-    lambda_vector=field_vector, 
+    lambda_vector=field_vector,
     psi4_options=psi4_options,
     omega=omega,
     density_fitting=True,
+    functional="PBE",
     charge=0,
-    multiplicity=1
+    multiplicity=1,
+    debug=False,
 )
-
 
 # ----------------------------
 # Build orientation tracker
@@ -89,7 +99,7 @@ traj, observer_data = velocity_verlet_md(
     calculator=calculator,
     geometry=nitro_string,
     dt=10.0,              # atomic units
-    nsteps=500,
+    nsteps=5,
     canonical="psi4",
     observers=[orientation_tracker],
     debug=True,
