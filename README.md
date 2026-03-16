@@ -45,9 +45,27 @@ no_com
 symmetry c1
 """
 
-calc = CQEDRHFCalculator(
-    lambda_vector=[0.0, 0.0, 0.05],
-    psi4_options={"basis": "cc-pVDZ"}
+psi4_options = {
+    "basis": "6-311g",
+    "scf_type": "df",
+    "e_convergence": 1e-10,
+    "d_convergence": 1e-8,
+}
+
+# ---------------------------------------------------------
+# Run CQED-DFT (lambda = 0.05 along z)
+# ---------------------------------------------------------
+
+lambda_vector = np.array([0, 0, 0.05])
+
+calc = CQEDSCF(
+    geometry=geom,
+    lambda_vector=lambda_vector,
+    psi4_options=psi4_options,
+    omega=0.0,
+    density_fitting=True,
+    functional="PBE0",
+    debug=False,
 )
 
 E, grad, g = calc.energy_and_gradient(geom)
