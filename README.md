@@ -1,17 +1,18 @@
-# CQED-RHF
+# CQED-SCF
 
-A Python package for mean-field quantum electrodynamics calculations
+A Python package for mean-field and DFT-based quantum electrodynamics calculations
 (Pauli–Fierz Hamiltonian) with analytic nuclear gradients, molecular
-dynamics, and geometry optimization, built on top of Psi4.
+dynamics, and geometry optimization, built on top of Psi4.  
 
 ## Features
 
-- CQED-RHF energy and analytic nuclear gradients
+- CQED-RHF and CQED-RKS energy and analytic nuclear gradients
 - Exact and DF-based gradient backends
 - Velocity-Verlet molecular dynamics
 - BFGS geometry optimization
 - Finite-difference gradient validation
 - Psi4-native geometry handling
+- CQED-RKS currently supports pure and global hybrid functionals; support for range-separated hybrids coming soon!
 
 ## Requirements
 
