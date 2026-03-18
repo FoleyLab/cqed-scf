@@ -178,9 +178,18 @@ class CQEDSCF:
             Cocc = self._density_to_Cocc_guess(D, A)
 
         # build JK and, if needed, VBase
-        self._build_jk()
         if self.is_dft:
             self._build_vbase()
+
+        self._build_jk()
+
+        if self.debug and self.is_dft:
+            f = self.Vpot.functional()
+            print("Functional info:")
+            print("  x_alpha =", f.x_alpha())
+            print("  x_beta  =", f.x_beta())
+            print("  x_omega =", f.x_omega())
+
 
         diis = DIISSubspace(max_dim=6)
         Eold = 0.0
@@ -191,11 +200,13 @@ class CQEDSCF:
 
         for it in range(1, 501):
             # JK from Psi4
-            J, K = self._build_JK(Cocc)
+            J, K, wK = self._build_JK(Cocc)
 
             # DFT XC
             if self.is_dft:
                 Exc, Vxc = self._build_xc(D)
+
+
             else:
                 Exc = 0.0
                 Vxc = np.zeros_like(H)
@@ -203,11 +214,22 @@ class CQEDSCF:
             # dipole self-energy exchange-like term
             N = oe.contract("pr,qs,rs->pq", d_ao, d_ao, D, optimize="optimal")
 
-            # Fock build
             if self.method == "rhf":
                 F = H + 2.0 * J - K - N
-            else:
-                F = H + 2.0 * J - self.x_alpha * K + Vxc - N
+
+            elif self.is_dft:
+                Exc, Vxc = self._build_xc(D)
+
+                F = H + 2.0 * J + Vxc - N
+
+                if K is not None:
+                    F -= self.x_alpha * K
+
+                if wK is not None:
+                    beta = 1.0 - self.x_alpha
+                    F -= beta * wK
+
+
 
             # mild damping in early iterations
             if F_old is not None and it < 5:
@@ -225,15 +247,29 @@ class CQEDSCF:
             if self.method == "rhf":
                 E = oe.contract("pq,pq->", F + H, D, optimize="optimal") + Enuc
             else:
-                # closed-shell KS energy with alpha density D
+
                 E = (
-                    2.0 * oe.contract("pq,pq->", H, D, optimize="optimal")
-                    + 2.0 * oe.contract("pq,pq->", J, D, optimize="optimal")
-                    - self.x_alpha * oe.contract("pq,pq->", K, D, optimize="optimal")
-                    - oe.contract("pq,pq->", N, D, optimize="optimal")
+                    2.0 * oe.contract("pq,pq->", H, D)
+                    + 2.0 * oe.contract("pq,pq->", J, D)
                     + Exc
                     + Enuc
+                    - oe.contract("pq,pq->", N, D)
                 )
+                # if debug, compute components of energy separately for more insight
+                if self.debug:
+                    E_H = 2.0 * oe.contract("pq,pq->", H, D)
+                    E_J = 2.0 * oe.contract("pq,pq->", J, D)
+                    E_N = oe.contract("pq,pq->", N, D)
+                if K is not None:
+                    E -= self.x_alpha * oe.contract("pq,pq->", K, D)
+                    if self.debug:
+                        E_K = oe.contract("pq,pq->", K, D)
+
+                if wK is not None:
+                    beta = 1.0 - self.x_alpha
+                    E -= beta * oe.contract("pq,pq->", wK, D)
+                    if self.debug:
+                        E_wK = oe.contract("pq,pq->", wK, D)
 
             if self.debug:
                 print(
@@ -242,6 +278,16 @@ class CQEDSCF:
                     f"dE = {E - Eold: .8e}  "
                     f"dRMS = {dRMS: .8e}"
                 )
+                # print energy components
+                print(f"  E_H = {E_H:18.10f}")
+                if self.is_dft:
+                    print(f"  E_Exc = {Exc:18.10f}")
+                print(f"  E_J = {E_J:18.10f}")
+                if K is not None:
+                    print(f"  E_K = {-self.x_alpha * E_K:18.10f}")
+                if wK is not None:
+                    print(f"  E_wK = {-beta * E_wK:18.10f}")
+                print(f"  E_N = {-E_N:18.10f}") 
 
             if abs(E - Eold) < e_conv and dRMS < d_conv:
                 break
@@ -316,22 +362,40 @@ class CQEDSCF:
         if self.method == "rhf":
             return "scf"
         return self.functional
-
+    
     def _build_jk(self):
+        f = self.Vpot.functional() if self.is_dft else None
+
         self.jk = psi4.core.JK.build(self.wfn.basisset())
         self.jk.set_memory(int(5e8))
+
+        if hasattr(self.jk, "set_do_J"):
+            self.jk.set_do_J(True)
+
+        if self.is_dft and f is not None:
+            if hasattr(self.jk, "set_do_K"):
+                self.jk.set_do_K(f.is_x_hybrid())
+            if hasattr(self.jk, "set_do_wK"):
+                self.jk.set_do_wK(f.is_x_lrc())
+
+            omega = f.x_omega()
+            if omega != 0.0:
+                self.jk.set_omega(omega)
+        else:
+            if hasattr(self.jk, "set_do_K"):
+                self.jk.set_do_K(True)
+            if hasattr(self.jk, "set_do_wK"):
+                self.jk.set_do_wK(False)
+
         self.jk.initialize()
 
-    def _build_vbase(self):
-        sup = build_superfunctional(self.functional, True)[0]
-        sup.set_deriv(2)
-        sup.allocate()
 
+    def _build_vbase(self):
+        sup = self.wfn.functional()
         self.Vpot = psi4.core.VBase.build(self.wfn.basisset(), sup, "RV")
         self.Vpot.initialize()
-
-        # exact exchange fraction for hybrids, zero for pure GGAs/LDA
         self.x_alpha = self.Vpot.functional().x_alpha()
+
 
     def _build_JK(self, Cocc_np):
         Cocc_p4 = psi4.core.Matrix.from_array(Cocc_np)
@@ -341,30 +405,28 @@ class CQEDSCF:
         self.jk.compute()
 
         J = np.asarray(self.jk.J()[0])
-        K = np.asarray(self.jk.K()[0])
 
-        return J, K
+        # --- K ---
+        K = None
+        K_list = self.jk.K()
+        if K_list is not None and len(K_list) > 0:
+            K = np.asarray(K_list[0])
+
+        # --- wK ---
+        wK = None
+        if hasattr(self.jk, "wK"):
+            wK_list = self.jk.wK()
+            if wK_list is not None and len(wK_list) > 0:
+                wK = np.asarray(wK_list[0])
+
+        return J, K, wK
+    
 
     def _build_xc(self, D_np):
-        """
-        Build XC energy and AO XC potential using the Psi4NumPy ks_helper pattern.
-
-        Important:
-        D_np here is the alpha density for a restricted reference.
-        """
         D_p4 = psi4.core.Matrix.from_array(D_np)
-
-        self.Vpot.set_D([D_p4])
-
-        # ks_helper pattern: update property pointers to the current density
-        props = self.Vpot.properties()
-        if len(props) == 0:
-            raise RuntimeError("VBase has no properties; cannot build XC potential.")
-        props[0].set_pointers(D_p4)
-
         Vxc_p4 = psi4.core.Matrix(self.nbf, self.nbf)
 
-        # In the ks_helper pattern, compute_V writes into the supplied matrices
+        self.Vpot.set_D([D_p4])
         self.Vpot.compute_V([Vxc_p4])
 
         Exc = self.Vpot.quadrature_values()["FUNCTIONAL"]
