@@ -129,6 +129,16 @@ class CQEDSCF:
         ref_method = self._reference_method_string()
         _, self.wfn = psi4.energy(ref_method, return_wfn=True)
 
+        # compute the dispersion correction if using DFT
+        E_disp = 0.0
+        if self.is_dft:
+            try:
+                E_disp = self.wfn.variable("DISPERSION CORRECTION ENERGY")
+            except KeyError:
+                E_disp = 0.0
+    
+
+
         self.mints = psi4.core.MintsHelper(self.wfn.basisset())
         self.nbf = self.wfn.nmo()
         self.ndocc = self.wfn.nalpha()
@@ -319,8 +329,11 @@ class CQEDSCF:
         d_nuc = np.dot(self.lambda_vector, mu_nuc)
         d_exp = d_exp_el + d_nuc
 
+        E_total = E + E_disp
         results = dict(
-            energy=E,
+            energy_scf=E,
+            energy_dispersion=E_disp,
+            energy_total=E_total,
             density=D,
             coefficients=C,
             orbital_energies=eps,
@@ -339,7 +352,7 @@ class CQEDSCF:
             x_alpha=self.x_alpha,
         )
 
-        return E, results
+        return E_total, results
 
     # -------------------------
     # internal helpers
