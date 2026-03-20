@@ -1,11 +1,21 @@
 import psi4
-from .scf import CQEDSCF 
+import numpy as np
+from .scf import CQEDSCF
 from .gradients import CQEDRHFGradient
-import time
 
 
 class CQEDRHFCalculator:
-    def __init__(self, lambda_vector, psi4_options, omega=0.1, charge=0, multiplicity=1, density_fitting=False, functional=None, debug=False):
+    def __init__(
+        self,
+        lambda_vector,
+        psi4_options,
+        omega=0.1,
+        charge=0,
+        multiplicity=1,
+        density_fitting=False,
+        functional=None,
+        debug=False,
+    ):
         self.lambda_vector = lambda_vector
         self.psi4_options = psi4_options
         self.omega = omega
@@ -15,56 +25,137 @@ class CQEDRHFCalculator:
         self.charge = charge
         self.multiplicity = multiplicity
 
-        if multiplicity !=1:
+        if multiplicity != 1:
             raise NotImplementedError("Only multiplicity=1 is currently supported.")
 
+        # --- Dispersion handling ---
+        self._dispersion_map = {
+            "wb97x-d": "wb97x",
+        }
+
+        self._has_dispersion = functional in self._dispersion_map
+        # define the base functional (without dispersion) for the SCF calculation
+        self._base_functional = (
+            self._dispersion_map[functional] if self._has_dispersion else functional
+        )
+
+    # -------------------------
+    # internal helpers
+    # -------------------------
+    def _compute_dispersion_energy(self, geometry):
+        """Compute dispersion correction energy via Psi4 (single-point)."""
+        if not self._has_dispersion:
+            return 0.0
+        
+        else:
+            E_w_disp = psi4.energy(self.functional, geometry=geometry)
+            E_no_disp = psi4.energy(self._base_functional, geometry=geometry)
+            E_disp = E_w_disp - E_no_disp
+            return E_disp
+        #try:
+        #    return wfn.variable("DISPERSION CORRECTION ENERGY")
+        #except KeyError:
+        #    return 0.0
+
+    def _compute_dispersion_gradient(self, geometry):
+        """Compute dispersion gradient via Psi4."""
+        if not self._has_dispersion:
+            nat = psi4.geometry(geometry).natom()
+            return np.zeros((nat, 3))
+
+        grad_with_disp = psi4.gradient(self.functional, geometry=geometry)
+        grad_no_disp = psi4.gradient(self._base_functional, geometry=geometry)
+        disp_grad = grad_with_disp.np - grad_no_disp.np
+        return disp_grad
+
+
+
+
+    # -------------------------
+    # public API
+    # -------------------------
 
     def energy(self, geometry):
         self.geometry = geometry
+
+        # --- CQED SCF (base functional only) ---
         scf = CQEDSCF(
             geometry=geometry,
             lambda_vector=self.lambda_vector,
             psi4_options=self.psi4_options,
             omega=self.omega,
             density_fitting=self.density_fitting,
-            functional=self.functional,
+            functional=self._base_functional,
             debug=self.debug,
-
         )
-        
-        E, _ = scf.run()
+        print("\nRunning CQED-SCF energy calculation...\n")
+        print(f"Functional: {self._base_functional}")
+        E_qed, _ = scf.run()
+
+        # --- dispersion correction ---
+        E_disp = self._compute_dispersion_energy(geometry)
+        print(f"Dispersion correction energy: {E_disp:.12f} Eh")
+        print(f"Total energy (CQED + dispersion): {E_qed + E_disp:.12f} Eh")
+
+        E_total = E_qed + E_disp
+
+        if self.debug:
+            print(f"E_QED  = {E_qed: .12f}")
+            print(f"E_disp = {E_disp: .12f}")
+            print(f"E_tot  = {E_total: .12f}")
+
         psi4.core.clean()
-        return E
+        psi4.core.clean_options()
+
+        return E_total
 
     def energy_and_gradient(self, geometry, canonical="psi4"):
-
         self.geometry = geometry
 
+        # --- CQED SCF ---
         scf = CQEDSCF(
             geometry,
             self.lambda_vector,
             self.psi4_options,
             self.omega,
             self.density_fitting,
-            functional=self.functional,
+            functional=self._base_functional,
             debug=self.debug,
         )
+        print("\nRunning CQED-SCF energy calculation...\n")
+        print(f"Functional: {self._base_functional}")
+        E_qed, data = scf.run()
 
-        E, data = scf.run()
-
+        # --- CQED gradient ---
         grad_engine = CQEDRHFGradient(
             self.lambda_vector,
             canonical=canonical,
-            debug=self.debug
+            debug=self.debug,
         )
 
-        grad = grad_engine.compute(data)
+        grad_qed = grad_engine.compute(data)
 
+        # --- dispersion correction ---
+        E_disp = self._compute_dispersion_energy(geometry)
+        grad_disp = self._compute_dispersion_gradient(geometry)
+        print(f"Dispersion correction energy: {E_disp:.12f} Eh")
+        print(f"Total energy (CQED + dispersion): {E_qed + E_disp:.12f} Eh")
+        print("Dispersion correction gradient norm: {:.6e} Eh/Bohr".format(np.linalg.norm(grad_disp)))
+
+        # --- total ---
+        E_total = E_qed + E_disp
+        grad_total = grad_qed + grad_disp
+
+        # photon observable (unchanged)
         g = (self.omega / 2) ** 0.5 * data["d_exp"]
+
+        if self.debug:
+            print(f"E_QED      = {E_qed: .12f}")
+            print(f"E_disp     = {E_disp: .12f}")
+            print(f"E_total    = {E_total: .12f}")
+            print(f"|grad_disp|= {np.linalg.norm(grad_disp): .6e}")
 
         psi4.core.clean()
         psi4.core.clean_options()
 
-        return E, grad, g
-
-
+        return E_total, grad_total, g
