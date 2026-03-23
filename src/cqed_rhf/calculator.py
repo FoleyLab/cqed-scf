@@ -43,31 +43,35 @@ class CQEDRHFCalculator:
     # internal helpers
     # -------------------------
     def _compute_dispersion_energy(self, geometry):
-        """Compute dispersion correction energy via Psi4 (single-point)."""
         if not self._has_dispersion:
             return 0.0
-        
-        else:
-            E_w_disp = psi4.energy(self.functional, geometry=geometry)
-            E_no_disp = psi4.energy(self._base_functional, geometry=geometry)
-            E_disp = E_w_disp - E_no_disp
-            return E_disp
-        #try:
-        #    return wfn.variable("DISPERSION CORRECTION ENERGY")
-        #except KeyError:
-        #    return 0.0
+
+        psi4.core.clean()
+        psi4.core.clean_options()
+        psi4.set_options(self.psi4_options)
+
+        mol = psi4.geometry(geometry)
+
+        E_w_disp = psi4.energy(self.functional, molecule=mol)
+        E_no_disp = psi4.energy(self._base_functional, molecule=mol)
+
+        return E_w_disp - E_no_disp
 
     def _compute_dispersion_gradient(self, geometry):
-        """Compute dispersion gradient via Psi4."""
         if not self._has_dispersion:
-            nat = psi4.geometry(geometry).natom()
-            return np.zeros((nat, 3))
+            mol = psi4.geometry(geometry)
+            return np.zeros((mol.natom(), 3))
 
-        grad_with_disp = psi4.gradient(self.functional, geometry=geometry)
-        grad_no_disp = psi4.gradient(self._base_functional, geometry=geometry)
-        disp_grad = grad_with_disp.np - grad_no_disp.np
-        return disp_grad
+        psi4.core.clean()
+        psi4.core.clean_options()
+        psi4.set_options(self.psi4_options)
 
+        mol = psi4.geometry(geometry)
+
+        grad_w = psi4.gradient(self.functional, molecule=mol)
+        grad_0 = psi4.gradient(self._base_functional, molecule=mol)
+
+        return grad_w.np - grad_0.np
 
 
 
@@ -104,8 +108,8 @@ class CQEDRHFCalculator:
             print(f"E_disp = {E_disp: .12f}")
             print(f"E_tot  = {E_total: .12f}")
 
-        psi4.core.clean()
-        psi4.core.clean_options()
+        #psi4.core.clean()
+        #psi4.core.clean_options()
 
         return E_total
 
@@ -155,7 +159,7 @@ class CQEDRHFCalculator:
             print(f"E_total    = {E_total: .12f}")
             print(f"|grad_disp|= {np.linalg.norm(grad_disp): .6e}")
 
-        psi4.core.clean()
+        #psi4.core.clean()
         psi4.core.clean_options()
 
         return E_total, grad_total, g

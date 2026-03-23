@@ -213,7 +213,7 @@ def bfgs_optimize(
     geometry,
     canonical="psi4",
     gtol=1e-5,
-    maxiter=50,
+    maxiter=5,
     observers=None,
     debug=False,
 ):
@@ -291,6 +291,8 @@ def bfgs_optimize(
                 obs.observe(coords_bohr)
             )
 
+    print("Starting BFGS optimization...")
+    print(f"Going to update for {maxiter} iterations or until gradient norm < {gtol:.2e} Ha/bohr")
     result = minimize(
         fun=lambda x: objective(x)[0],
         x0=x0_bohr.reshape(-1),
