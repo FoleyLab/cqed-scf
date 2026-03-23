@@ -48,6 +48,7 @@ def velocity_verlet_md(
     canonical="psi4",
     observers=None,
     debug=False,
+    freeze_atoms=None,   # NEW
 ):
     """
     Velocity-Verlet molecular dynamics.
@@ -130,6 +131,15 @@ def velocity_verlet_md(
         velocities = np.asarray(velocities)
 
     # -------------------------
+    # Freeze constraints    
+    # -------------------------
+
+    if freeze_atoms is None:
+        freeze_atoms = []
+
+    freeze_atoms = np.array(freeze_atoms, dtype=int)
+
+    # -------------------------
     # Initial forces
     # -------------------------
     coords_angstrom = coords_bohr / ANGSTROM_TO_BOHR
@@ -144,6 +154,11 @@ def velocity_verlet_md(
 
     forces = -grad  # Hartree / bohr
 
+    # Apply freeze constraints
+    coords_bohr, velocities, forces = apply_freeze_constraints(
+        coords_bohr, velocities, forces, freeze_atoms
+        )
+
     traj = []
 
     # -------------------------
@@ -155,6 +170,9 @@ def velocity_verlet_md(
 
         # Half-step velocity update
         velocities += 0.5 * dt * forces / masses[:, None]
+
+        # enforce frozen atoms
+        velocities[freeze_atoms, :] = 0.0
 
         # Position update (bohr)
         coords_bohr += dt * velocities
@@ -172,8 +190,15 @@ def velocity_verlet_md(
         print(f"Energy and Gradient Calculation for step {step} took {t7 - t6:.2f} seconds")
         forces = -grad
 
+        coords_bohr, velocities, forces = apply_freeze_constraints(
+            coords_bohr, velocities, forces, freeze_atoms
+            )
+
         # Final half-step velocity update
         velocities += 0.5 * dt * forces / masses[:, None]
+
+        # enforce frozen atoms again
+        velocities[freeze_atoms, :] = 0.0
 
         # ---- Observers ----
         for obs in observers:
@@ -206,6 +231,20 @@ def velocity_verlet_md(
             )
 
     return traj, observer_data
+
+def apply_freeze_constraints(coords, velocities, gradients, freeze_atoms):
+    """ Apply freeze constraints by zeroing out forces and velocities on specified atoms."""
+    coords = coords.copy()
+    velocities = velocities.copy()
+    gradients = gradients.copy()
+
+    # zero force/gradient on frozen atoms
+    gradients[freeze_atoms, :] = 0.0
+
+    # zero velocity on frozen atoms
+    velocities[freeze_atoms, :] = 0.0
+
+    return coords, velocities, gradients
 
 
 def bfgs_optimize(
