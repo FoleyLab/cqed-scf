@@ -42,8 +42,8 @@ psi4.set_options(psi4_options)
 # Cavity parameters
 # =========================
 
-lambda_vector = [0.1, 0.1, 0.1]   # polarization along z
-omega = 0.1                       # cavity frequency (a.u.)
+lambda_vector = [0., 0., 0.]   # polarization along z
+omega = 0.0                       # cavity frequency (a.u.)
 
 # =========================
 # CQED-RHF calculator
@@ -53,14 +53,14 @@ calc = CQEDRHFCalculator(
     lambda_vector=lambda_vector,
     psi4_options=psi4_options,
     omega=omega,
-    density_fitting=False,
+    density_fitting=True,
 )
 
 # =========================
 # Prepare XYZ output
 # =========================
 
-xyz_file = "h2o_cavity_opt_pk.xyz"
+xyz_file = "h2o_cavity_opt_df.xyz"
 
 # Clear old trajectory if it exists
 open(xyz_file, "w").close()
@@ -78,7 +78,7 @@ print("Starting BFGS optimization of H2O in cavity...\n")
 opt_result = bfgs_optimize(
     calculator=calc,
     geometry=h2o_string,
-    canonical="exact",   # use exact gradients for optimization
+    canonical="psi4",   # use exact gradients for optimization
     gtol=1e-6,
     maxiter=50,
     debug=True,          # <-- enables XYZ writing + detailed output
