@@ -47,6 +47,8 @@ psi4_options = {
     "scf_type": "df",
     "e_convergence": 1e-12,
     "d_convergence": 1e-12,
+    "dft_radial_points": 99,
+    "dft_spherical_points": 590,
 }
 
 psi4.set_options(psi4_options)
