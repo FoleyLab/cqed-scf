@@ -54,3 +54,6 @@ def test_qed_dft_reference_energy():
     E, _ = calc.run()
     assert abs(E0 - (-75.23445987752154)) < 1e-8
     assert abs(E - (-75.229826432848)) < 1e-8
+
+
+
