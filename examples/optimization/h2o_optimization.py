@@ -34,6 +34,9 @@ psi4_options = {
     "scf_type": "pk",
     "e_convergence": 1e-12,
     "d_convergence": 1e-12,
+    "dft_radial_points": 99,
+    "dft_spherical_points": 302,
+    "dft_pruning_scheme": "none"
 }
 
 psi4.set_options(psi4_options)
@@ -46,7 +49,7 @@ lambda_vector = [0., 0., 0.]   # polarization along z
 omega = 0.0                       # cavity frequency (a.u.)
 
 # =========================
-# CQED-RHF calculator
+# CQED-DFT calculator
 # =========================
 
 calc = CQEDRHFCalculator(
@@ -54,7 +57,16 @@ calc = CQEDRHFCalculator(
     psi4_options=psi4_options,
     omega=omega,
     density_fitting=True,
+    charge=0,
+    multiplicity=1,
+    functional="b3lyp",  # try None for RHF
 )
+#calc = CQEDRHFCalculator(
+#    lambda_vector=lambda_vector,
+#    psi4_options=psi4_options,
+#    omega=omega,
+#    density_fitting=True,
+#)
 
 # =========================
 # Prepare XYZ output
@@ -75,7 +87,7 @@ symbols = [mol.symbol(i) for i in range(mol.natom())]
 
 print("Starting BFGS optimization of H2O in cavity...\n")
 
-opt_result = bfgs_optimize(
+opt_result, _ = bfgs_optimize(
     calculator=calc,
     geometry=h2o_string,
     canonical="psi4",   # use exact gradients for optimization

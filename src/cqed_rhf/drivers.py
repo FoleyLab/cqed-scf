@@ -313,6 +313,10 @@ def bfgs_optimize(
         )
 
         if debug:
+            print("Current Grad is")
+            print(grad)
+            print("Norm of grad is")
+            print(np.linalg.norm(grad))
             write_xyz(
                 "opt_traj.xyz",
                 symbols,

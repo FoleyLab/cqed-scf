@@ -69,9 +69,14 @@ class CQEDRHFCalculator:
         mol = psi4.geometry(geometry)
 
         grad_w = psi4.gradient(self.functional, molecule=mol)
+        energy_w = psi4.core.variable('CURRENT ENERGY')
         grad_0 = psi4.gradient(self._base_functional, molecule=mol)
+        energy_0 = psi4.core.variable('CURRENT ENERGY')
 
-        return grad_w.np - grad_0.np
+        disp_gradient = grad_w.np - grad_0.np
+        dispersion_energy = energy_w - energy_0
+
+        return dispersion_energy, disp_gradient
 
 
 
@@ -97,9 +102,12 @@ class CQEDRHFCalculator:
         E_qed, _ = scf.run()
 
         # --- dispersion correction ---
-        E_disp = self._compute_dispersion_energy(geometry)
-        print(f"Dispersion correction energy: {E_disp:.12f} Eh")
-        print(f"Total energy (CQED + dispersion): {E_qed + E_disp:.12f} Eh")
+        if self._has_dispersion:
+            E_disp = self._compute_dispersion_energy(geometry)
+            print(f"Dispersion correction energy: {E_disp:.12f} Eh")
+            print(f"Total energy (CQED + dispersion): {E_qed + E_disp:.12f} Eh")
+        else:
+            E_disp = 0.0
 
         E_total = E_qed + E_disp
 
@@ -140,11 +148,15 @@ class CQEDRHFCalculator:
         grad_qed = grad_engine.compute(data)
 
         # --- dispersion correction ---
-        E_disp = self._compute_dispersion_energy(geometry)
-        grad_disp = self._compute_dispersion_gradient(geometry)
-        print(f"Dispersion correction energy: {E_disp:.12f} Eh")
-        print(f"Total energy (CQED + dispersion): {E_qed + E_disp:.12f} Eh")
-        print("Dispersion correction gradient norm: {:.6e} Eh/Bohr".format(np.linalg.norm(grad_disp)))
+        if self._has_dispersion:
+            #E_disp = self._compute_dispersion_energy(geometry)
+            E_disp, grad_disp = self._compute_dispersion_gradient(geometry)
+            print(f"Dispersion correction energy: {E_disp:.12f} Eh")
+            print(f"Total energy (CQED + dispersion): {E_qed + E_disp:.12f} Eh")
+            print("Dispersion correction gradient norm: {:.6e} Eh/Bohr".format(np.linalg.norm(grad_disp)))
+        else:
+            E_disp = 0.0
+            grad_disp = np.zeros_like(grad_qed)
 
         # --- total ---
         E_total = E_qed + E_disp
