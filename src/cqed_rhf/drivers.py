@@ -257,7 +257,7 @@ def bfgs_optimize(
     debug=False,
 ):
     """
-    Geometry optimization using BFGS.
+    Geometry optimization using BFGS with cached energy/gradient evaluations.
 
     Parameters
     ----------
@@ -288,7 +288,9 @@ def bfgs_optimize(
 
     observer_data = {obs: [] for obs in observers}
 
+    # -------------------------
     # Parse initial geometry
+    # -------------------------
     mol = psi4.geometry(geometry)
     symbols = [mol.symbol(i) for i in range(mol.natom())]
     x0_bohr = mol.geometry().to_array()
@@ -299,13 +301,26 @@ def bfgs_optimize(
     if mol.multiplicity() != calculator.multiplicity:
         raise ValueError("Multiplicity mismatch between geometry and calculator")
 
+    # -------------------------
+    # Cache for last evaluation
+    # -------------------------
+    last_x = None
+    last_E = None
+    last_grad = None
 
-    def objective(x_flat):
+    # -------------------------
+    # Core evaluator (single SCF per geometry)
+    # -------------------------
+    def evaluate(x_flat):
         coords_bohr = x_flat.reshape(-1, 3)
         coords_angstrom = coords_bohr / ANGSTROM_TO_BOHR
 
         geom = build_psi4_geometry(
-            coords_angstrom, symbols, units="angstrom", charge=calculator.charge, multiplicity=calculator.multiplicity
+            coords_angstrom,
+            symbols,
+            units="angstrom",
+            charge=calculator.charge,
+            multiplicity=calculator.multiplicity,
         )
 
         E, grad, g = calculator.energy_and_gradient(
@@ -317,6 +332,7 @@ def bfgs_optimize(
             print(grad)
             print("Norm of grad is")
             print(np.linalg.norm(grad))
+
             write_xyz(
                 "opt_traj.xyz",
                 symbols,
@@ -327,6 +343,33 @@ def bfgs_optimize(
 
         return E, grad.reshape(-1)
 
+    # -------------------------
+    # Energy function (cached)
+    # -------------------------
+    def fun(x):
+        nonlocal last_x, last_E, last_grad
+
+        if last_x is None or not np.allclose(x, last_x):
+            last_E, last_grad = evaluate(x)
+            last_x = x.copy()
+
+        return last_E
+
+    # -------------------------
+    # Gradient function (cached)
+    # -------------------------
+    def jac(x):
+        nonlocal last_x, last_E, last_grad
+
+        if last_x is None or not np.allclose(x, last_x):
+            last_E, last_grad = evaluate(x)
+            last_x = x.copy()
+
+        return last_grad
+
+    # -------------------------
+    # Observer callback
+    # -------------------------
     def callback(x_flat):
         coords_bohr = x_flat.reshape(-1, 3)
         for obs in observers:
@@ -334,12 +377,16 @@ def bfgs_optimize(
                 obs.observe(coords_bohr)
             )
 
+    # -------------------------
+    # Run optimization
+    # -------------------------
     print("Starting BFGS optimization...")
     print(f"Going to update for {maxiter} iterations or until gradient norm < {gtol:.2e} Ha/bohr")
+
     result = minimize(
-        fun=lambda x: objective(x)[0],
+        fun=fun,
         x0=x0_bohr.reshape(-1),
-        jac=lambda x: objective(x)[1],
+        jac=jac,
         method="BFGS",
         callback=callback,
         options=dict(
@@ -350,4 +397,3 @@ def bfgs_optimize(
     )
 
     return result, observer_data
-

@@ -45,7 +45,7 @@ psi4.set_options(psi4_options)
 # Cavity parameters
 # =========================
 
-lambda_vector = [0., 0., 0.]   # polarization along z
+lambda_vector = [0., 0.3, 0.3]   # polarization along z
 omega = 0.0                       # cavity frequency (a.u.)
 
 # =========================
@@ -91,7 +91,7 @@ opt_result, _ = bfgs_optimize(
     calculator=calc,
     geometry=h2o_string,
     canonical="psi4",   # use exact gradients for optimization
-    gtol=5e-6,
+    gtol=1e-5,
     maxiter=50,
     debug=True,          # <-- enables XYZ writing + detailed output
 )
