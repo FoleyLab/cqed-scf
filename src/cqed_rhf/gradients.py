@@ -47,23 +47,31 @@ class CQEDRHFGradient:
     def compute(self, scf):
         if self.canonical == "psi4":
             t0 = time.time()
-            grad = self._canonical_gradient_psi4(scf)
+            canonical_grad = self._canonical_gradient_psi4(scf)
             print("Psi4 canonical gradient time: {:.4f} s".format(time.time() - t0))
         elif self.canonical == "exact":
             t0 = time.time()
-            grad = self._canonical_gradient_exact(scf)
+            canonical_grad = self._canonical_gradient_exact(scf)
             print("Exact canonical gradient time: {:.4f} s".format(time.time() - t0))
         else:
             raise ValueError("canonical must be 'psi4' or 'exact'")
         
         t0 = time.time()
-        grad += self._quadrupole_gradient(scf)
+        quad_grad = self._quadrupole_gradient(scf)
         print("Quadrupole gradient time: {:.4f} s".format(time.time() - t0))
         t0 = time.time()
-        grad += self._dipole_dipole_gradient(scf)
+        dipole_grad = self._dipole_dipole_gradient(scf)
         print("Dipole–dipole gradient time: {:.4f} s".format(time.time() - t0))
 
-        return grad
+        grad = canonical_grad + quad_grad + dipole_grad
+
+        results = dict(
+            canonical_grad=canonical_grad,
+            quadrupole_grad=quad_grad,
+            dipole_dipole_grad=dipole_grad,
+            total_grad=grad,
+        )
+        return results
 
     # =========================
     # Canonical RHF gradients

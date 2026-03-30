@@ -45,7 +45,8 @@ def test_pbe_lambda0_energy_and_gradient():
     E_qed, data = calc.run()
 
     grad_engine = CQEDRHFGradient(lambda_vec)
-    grad_qed = np.array(grad_engine.compute(data))
+    results = grad_engine.compute(data)
+    grad_qed = results["total_grad"]
 
     psi4.core.clean()
     psi4.core.clean_options()

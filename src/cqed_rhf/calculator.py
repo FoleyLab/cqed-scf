@@ -42,7 +42,7 @@ class CQEDRHFCalculator:
     # -------------------------
     # internal helpers
     # -------------------------
-    def _compute_dispersion_energy(self, geometry):
+    def _compute_dispersion_energy(self, geometry, Energy_no_disp):
         if not self._has_dispersion:
             return 0.0
 
@@ -53,11 +53,10 @@ class CQEDRHFCalculator:
         mol = psi4.geometry(geometry)
 
         E_w_disp = psi4.energy(self.functional, molecule=mol)
-        E_no_disp = psi4.energy(self._base_functional, molecule=mol)
 
-        return E_w_disp - E_no_disp
+        return E_w_disp - Energy_no_disp
 
-    def _compute_dispersion_gradient(self, geometry):
+    def _compute_dispersion_gradient(self, geometry, energy_no_disp, grad_no_disp):
         if not self._has_dispersion:
             mol = psi4.geometry(geometry)
             return np.zeros((mol.natom(), 3))
@@ -70,11 +69,10 @@ class CQEDRHFCalculator:
 
         grad_w = psi4.gradient(self.functional, molecule=mol)
         energy_w = psi4.core.variable('CURRENT ENERGY')
-        grad_0 = psi4.gradient(self._base_functional, molecule=mol)
-        energy_0 = psi4.core.variable('CURRENT ENERGY')
 
-        disp_gradient = grad_w.np - grad_0.np
-        dispersion_energy = energy_w - energy_0
+
+        disp_gradient = grad_w.np - grad_no_disp
+        dispersion_energy = energy_w - energy_no_disp
 
         return dispersion_energy, disp_gradient
 
@@ -99,14 +97,16 @@ class CQEDRHFCalculator:
         )
         print("\nRunning CQED-SCF energy calculation...\n")
         print(f"Functional: {self._base_functional}")
-        E_qed, _ = scf.run()
+        E_qed, results = scf.run()
+        energy_psi4_base = results["energy_psi4"] # this stores psi4 energy without dispersion for later comparison
 
         # --- dispersion correction ---
         if self._has_dispersion:
-            E_disp = self._compute_dispersion_energy(geometry)
+            E_disp = self._compute_dispersion_energy(geometry, energy_psi4_base)
             print(f"Dispersion correction energy: {E_disp:.12f} Eh")
             print(f"Total energy (CQED + dispersion): {E_qed + E_disp:.12f} Eh")
         else:
+            "No dispersion correction applied."
             E_disp = 0.0
 
         E_total = E_qed + E_disp
@@ -138,6 +138,8 @@ class CQEDRHFCalculator:
         print(f"Functional: {self._base_functional}")
         E_qed, data = scf.run()
 
+        energy_psi4_base = data["energy_psi4"] # this stores psi4 energy without dispersion for later comparison
+
         # --- CQED gradient ---
         grad_engine = CQEDRHFGradient(
             self.lambda_vector,
@@ -145,16 +147,19 @@ class CQEDRHFCalculator:
             debug=self.debug,
         )
 
-        grad_qed = grad_engine.compute(data)
+        grad_results = grad_engine.compute(data)
+        canonical_grad = grad_results["canonical_grad"]
+        grad_qed = grad_results["total_grad"]
 
         # --- dispersion correction ---
         if self._has_dispersion:
             #E_disp = self._compute_dispersion_energy(geometry)
-            E_disp, grad_disp = self._compute_dispersion_gradient(geometry)
+            E_disp, grad_disp = self._compute_dispersion_gradient(geometry, energy_psi4_base, canonical_grad)
             print(f"Dispersion correction energy: {E_disp:.12f} Eh")
             print(f"Total energy (CQED + dispersion): {E_qed + E_disp:.12f} Eh")
             print("Dispersion correction gradient norm: {:.6e} Eh/Bohr".format(np.linalg.norm(grad_disp)))
         else:
+            print("No dispersion correction applied.")
             E_disp = 0.0
             grad_disp = np.zeros_like(grad_qed)
 
@@ -171,7 +176,7 @@ class CQEDRHFCalculator:
             print(f"E_total    = {E_total: .12f}")
             print(f"|grad_disp|= {np.linalg.norm(grad_disp): .6e}")
 
-        #psi4.core.clean()
+        psi4.core.clean()
         psi4.core.clean_options()
 
         return E_total, grad_total, g

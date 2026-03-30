@@ -50,7 +50,8 @@ def test_pbe_lambda0_energy_and_gradient_regression():
         canonical="psi4",
         debug=False,
     )
-    grad_qed = np.array(grad_driver.compute(scf_data))
+    results = grad_driver.compute(scf_data)
+    grad_qed = results["total_grad"]
 
     # Reference Psi4 PBE
     psi4.core.clean()

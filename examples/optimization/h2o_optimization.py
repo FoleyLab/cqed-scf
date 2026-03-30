@@ -5,7 +5,7 @@ using CQED-RHF + BFGS, with XYZ trajectory output.
 
 import numpy as np
 import psi4
-psi4.core.be_quiet()
+#psi4.core.be_quiet()
 
 from cqed_rhf import CQEDRHFCalculator
 from cqed_rhf.drivers import bfgs_optimize
@@ -35,7 +35,7 @@ psi4_options = {
     "e_convergence": 1e-12,
     "d_convergence": 1e-12,
     "dft_radial_points": 99,
-    "dft_spherical_points": 302,
+    "dft_spherical_points": 590,
     "dft_pruning_scheme": "none"
 }
 
@@ -59,7 +59,7 @@ calc = CQEDRHFCalculator(
     density_fitting=True,
     charge=0,
     multiplicity=1,
-    functional="b3lyp",  # try None for RHF
+    functional="wb97x",  # try None for RHF
 )
 #calc = CQEDRHFCalculator(
 #    lambda_vector=lambda_vector,
@@ -91,7 +91,7 @@ opt_result, _ = bfgs_optimize(
     calculator=calc,
     geometry=h2o_string,
     canonical="psi4",   # use exact gradients for optimization
-    gtol=1e-6,
+    gtol=5e-6,
     maxiter=50,
     debug=True,          # <-- enables XYZ writing + detailed output
 )
