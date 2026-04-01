@@ -203,13 +203,13 @@ class CQEDSCF:
             J, K, wK = self._build_JK(Cocc)
 
             # DFT XC
-            if self.is_dft:
-                Exc, Vxc = self._build_xc(D)
+            #if self.is_dft:
+            #    Exc, Vxc = self._build_xc(D)
 
 
-            else:
-                Exc = 0.0
-                Vxc = np.zeros_like(H)
+            #else:
+            #    Exc = 0.0
+            #    Vxc = np.zeros_like(H)
 
             # dipole self-energy exchange-like term
             N = oe.contract("pr,qs,rs->pq", d_ao, d_ao, D, optimize="optimal")
