@@ -51,11 +51,11 @@ AMU_TO_KG = 1.66053906660e-27
 ANG_TO_M = 1e-10
 BOHR_TO_ANG = 0.52917721090  # Psi4 uses this for a.u. conversions
 ANG_TO_BOHR = 1.0 / BOHR_TO_ANG
-TOTAL_CHARGE = 0.0      # This species is a cation
+TOTAL_CHARGE = 1.0      # This species is a cation
 
 # --- Load Data ---
-file_unshifted = "nitro_coordinates.txt"
-file_shifted = "nitro_coordinates_com_at_origin.txt"
+file_unshifted = "nitro_complex_coordinates.txt"
+file_shifted = "nitro_complex_coordinates_com.txt"
 
 syms, coords_un, masses, dip_un_au, _ = parse_psi4_snippet(file_unshifted)
 _, coords_sh_psi4, _, dip_sh_psi4_au, rot_psi4 = parse_psi4_snippet(file_shifted, is_shifted=True)
@@ -108,3 +108,4 @@ coord_match = np.allclose(manual_shifted_coords, coords_sh_psi4, atol=1e-5)
 print(f"Geometry Shift Match      | {'Verified':<20} | {'Verified':<20} | {coord_match}")
 
 print("\nComputed Center of Mass (Angstroms):", com)
+print("\nComputed Charge-Scaled COM:", TOTAL_CHARGE * com)

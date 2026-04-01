@@ -89,3 +89,45 @@ def test_h2o_wb97x_lambda0():
 
     assert abs(E - E_ref) < 1e-10
     assert np.max(np.abs(grad - grad_ref)) < 1e-6
+
+def test_mghplus_wb97x_lambda0():
+
+    geometry = """
+    1 1
+    Mg
+    H 1 1.4
+    symmetry c1
+    """
+
+    psi4.core.clean()
+    psi4.core.clean_options()
+
+    psi4.set_memory("4 GB")
+    psi4.set_options(psi4_options)
+    lambda_vector = np.zeros(3)
+
+    calc = CQEDRHFCalculator(
+        lambda_vector=lambda_vector,
+        psi4_options=psi4_options,
+        omega=0.1,
+        charge=0,
+        multiplicity=1,
+        density_fitting=True,
+        functional="wb97x",
+        debug=True,
+    )
+
+    E, grad, _ = calc.energy_and_gradient(geometry)
+
+    # --- reset AGAIN before reference ---
+    psi4.core.clean()
+    psi4.core.clean_options()
+    psi4.set_options(psi4_options)
+
+    mol = psi4.geometry(geometry)
+
+    E_ref = psi4.energy("wb97x")
+    grad_ref = psi4.gradient("wb97x")
+
+    assert abs(E - E_ref) < 1e-10
+    assert np.max(np.abs(grad - grad_ref)) < 1e-6
