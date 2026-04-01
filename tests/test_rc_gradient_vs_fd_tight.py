@@ -6,8 +6,8 @@ from cqed_rhf.calculator import CQEDRHFCalculator
 
 
 GEOM = """
-0 1
-O 0.0 0.0 -0.124721924329
+1 1
+H 0.0 0.0 -0.124721924329
 H 0.0 -1.429937284075 0.989898061465
 H 0.0 1.429937284075 0.989898061465
 units bohr
@@ -31,7 +31,7 @@ options = {
 lam_vec = np.array([0.0, 0.0, 0.0])
 
 
-def coords_to_bohr_geom(symbols, coords_bohr, charge=0, multiplicity=1):
+def coords_to_bohr_geom(symbols, coords_bohr, charge=1, multiplicity=1):
     lines = [f"{charge} {multiplicity}"]
     for s, xyz in zip(symbols, coords_bohr):
         lines.append(f"{s} {xyz[0]:.16f} {xyz[1]:.16f} {xyz[2]:.16f}")
@@ -69,7 +69,7 @@ def test_fd_gradient_wb97x():
         lambda_vector=lam_vec,
         psi4_options=options,
         omega=0.1,
-        charge=0,
+        charge=1,
         multiplicity=1,
         density_fitting=True,
         functional=test_func,
