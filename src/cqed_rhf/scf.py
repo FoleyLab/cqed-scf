@@ -202,16 +202,7 @@ class CQEDSCF:
             # JK from Psi4
             J, K, wK = self._build_JK(Cocc)
 
-            # DFT XC
-            #if self.is_dft:
-            #    Exc, Vxc = self._build_xc(D)
-
-
-            #else:
-            #    Exc = 0.0
-            #    Vxc = np.zeros_like(H)
-
-            # dipole self-energy exchange-like term
+            # N from opt_einsum contraction of d_ao, D, d_ao
             N = oe.contract("pr,qs,rs->pq", d_ao, d_ao, D, optimize="optimal")
 
             if self.method == "rhf":
