@@ -182,6 +182,7 @@ def velocity_verlet_md(
         geom = build_psi4_geometry(coords_angstrom, symbols, units="angstrom", charge=calculator.charge, multiplicity=calculator.multiplicity)
         t6 = time.time()
         print(f"Geometry Build for step {step} took {t6 - t5:.2f} seconds")
+        print(f"Updated Psi4 geometry for step {step}:\n{geom}")
         # New forces
         E, grad, g = calculator.energy_and_gradient(
             geom, canonical=canonical

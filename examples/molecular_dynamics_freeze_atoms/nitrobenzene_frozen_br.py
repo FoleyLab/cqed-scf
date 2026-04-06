@@ -59,7 +59,7 @@ nitro_string = """
          H           -2.407539509708    -2.157651160074    -0.804674201072
          C           -0.483684069708    -1.215092210074    -0.836258311072
          H            0.087632740292    -2.130465300074    -0.759830641072
-         Br           0.000000000292    -0.000000000074     1.425572788928
+         BR           0.000000000292    -0.000000000074     1.425572788928
 no_com
 no_reorient
 symmetry c1
@@ -122,10 +122,11 @@ orientation_tracker = NitrobenzeneOrientation(
 # Freeze bromine atom
 # =========================
 
-freeze_atoms = [i for i, s in enumerate(symbols) if s == "Br"]
+freeze_atoms = [i for i, s in enumerate(symbols) if s == "BR"]
 
 print("Frozen atoms:", freeze_atoms)
-
+for i in freeze_atoms:
+    print(f"Atom index {i} ({symbols[i]}) is FROZEN")
 # =========================
 # Initial velocities
 # =========================
