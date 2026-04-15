@@ -9,8 +9,8 @@ from cqed_rhf.utils import write_xyz, ANGSTROM_TO_BOHR
 
 #<-- Change this to a number of theta and phi values
 #<-- you want to compute the scan over!
-num_phi_vals = 24
-num_theta_vals = 24
+num_phi_vals = 21
+num_theta_vals = 21
 
 def generate_field_vector_from_theta_and_phi(theta, phi):
     """
@@ -108,6 +108,20 @@ calculator = CQEDRHFCalculator(
     functional="wb97x-d",
     debug=False,
 )
+
+
+# loop over theta from 0 to 180 and phi from 0 to 360 and compute energy for each orientation in increments of 2 degree
+# print theta, phi, x, y, z, energy to a file or stdout in a formatted way
+theta_list = np.linspace(0, 180, num_theta_vals) #np.arange(0, 181, num_theta_vals)
+phi_list = np.linspace(0, 360, num_phi_vals) #np.arange(0, 361, num_phi_vals)
+
+print(F"Printing theta list which has {num_theta_vals} vals")
+print(theta_list)
+
+print(F"Printing phi list which has {num_phi_vals} vals")
+print(phi_list)
+
+print(F"Total size of grid is {num_theta_vals * num_phi_vals}")
 
 # ----------------------------
 mol = psi4.geometry(para_string)
