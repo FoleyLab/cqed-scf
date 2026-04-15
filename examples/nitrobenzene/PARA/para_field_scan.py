@@ -9,8 +9,8 @@ from cqed_rhf.utils import write_xyz, ANGSTROM_TO_BOHR
 
 #<-- Change this to a number of theta and phi values
 #<-- you want to compute the scan over!
-num_phi_vals = 2
-num_theta_vals = 2
+num_phi_vals = 24
+num_theta_vals = 24
 
 def generate_field_vector_from_theta_and_phi(theta, phi):
     """
@@ -86,10 +86,13 @@ psi4_options = {
     "scf_type": "df",          # density fitting
     "e_convergence": 1e-12,
     "d_convergence": 1e-12,
+    "dft_radial_points": 99,
+    "dft_spherical_points": 590,
+    "dft_pruning_scheme": "none"
 }
 
 psi4.set_memory("24 GB")
-psi4.core.set_output_file("para_md.out", False)
+psi4.core.set_output_file("bad_para_qeddft_wb97x-d_scan.out", False)
 omega = 0.06615  # cavity frequency in atomic units (corresponding to ~1.8 eV)
 
 # ----------------------------
@@ -98,16 +101,15 @@ omega = 0.06615  # cavity frequency in atomic units (corresponding to ~1.8 eV)
 calculator = CQEDRHFCalculator(
     lambda_vector=field_vector, # molecule_string=ortho_string, #<-- CQEDRHFCalculator doesn't take molecule_string currently?
     psi4_options=psi4_options,
-    omega=omega,
+    omega=0.06615,
+    charge=1,
+    multiplicity=1,
     density_fitting=True,
-    charge=0,
-    multiplicity=1
+    functional="wb97x-d",
+    debug=False,
 )
 
 # ----------------------------
-# Build orientation tracker
-# ----------------------------
-# We need initial coords + symbols for setup
 mol = psi4.geometry(para_string)
 psi4.set_options(psi4_options)
 # compute psi4 rhf energy for initial geometry
@@ -120,9 +122,16 @@ print(f"Initial CQED-RHF energy: {e_cqed_1:.6f} Hartree")
 
 # loop over theta from 0 to 180 and phi from 0 to 360 and compute energy for each orientation in increments of 2 degree
 # print theta, phi, x, y, z, energy to a file or stdout in a formatted way
-theta_list = np.arange(0, 181, num_theta_vals)
-phi_list = np.arange(0, 361, num_phi_vals)
+theta_list = np.linspace(0, 180, num_theta_vals) #np.arange(0, 181, num_theta_vals)
+phi_list = np.linspace(0, 360, num_phi_vals) #np.arange(0, 361, num_phi_vals)
 
+print(F"Printing theta list which has {num_theta_vals} vals")
+print(theta_list)
+
+print(F"Printing phi list which has {num_phi_vals} vals")
+print(phi_list)
+
+print(F"Total size of grid is {num_theta_vals * num_phi_vals}")
 
 # Note that when theta = 0, all phi values give the same field vector (0, 0, 0.1) since the field is pointing along the z-axis. Similarly, when theta = 180, all phi values give the same field vector (0, 0, -0.1). The variation in energy will be more pronounced at intermediate theta values where the field vector changes direction in the xy-plane as phi varies.
 # so we don't need to repeat these calculation for all phi values at theta = 0 and theta = 180, we can just compute it once for each of these theta values and print the result. This will save computational time while still capturing the key orientations of the field.
@@ -139,7 +148,7 @@ c_cqed_theta_180 = calculator.energy(para_string)
 
 
 # open file for writing
-with open("para_field_scan_results.txt", "w") as f:
+with open("bad_para_field_scan_qeddft_wb97x-d.txt", "w") as f:
     for theta in theta_list:
         for phi in phi_list:
             field_vector = generate_field_vector_from_theta_and_phi(theta, phi) * 0.1  # scale by field strength
@@ -152,7 +161,8 @@ with open("para_field_scan_results.txt", "w") as f:
                 e_cqed = c_cqed_theta_180
             else:   
                 calculator.lambda_vector = field_vector
-                e_cqed = calculator.energy(para_string)
+                e_cqed = 0.0
+		#e_cqed = calculator.energy(para_string)
             print(f"{theta:3f} {phi:3f} {field_vector[0]: .4f} {field_vector[1]: .4f} {field_vector[2]: .4f} {e_cqed:.12f}")
             f.write(f"{theta:3f} {phi:3f} {field_vector[0]: .4f} {field_vector[1]: .4f} {field_vector[2]: .4f} {e_cqed:.12f}\n")
 
