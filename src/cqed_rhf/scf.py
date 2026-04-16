@@ -1,9 +1,9 @@
 import psi4
 import numpy as np
 import opt_einsum as oe
-from pkg_resources import parse_version
+#from pkg_resources import parse_version
 
-if parse_version(psi4.__version__) >= parse_version("1.3a1"):
+if True: #parse_version(psi4.__version__) >= parse_version("1.3a1"):
     build_superfunctional = psi4.driver.dft.build_superfunctional
 else:
     build_superfunctional = psi4.driver.dft_funcs.build_superfunctional

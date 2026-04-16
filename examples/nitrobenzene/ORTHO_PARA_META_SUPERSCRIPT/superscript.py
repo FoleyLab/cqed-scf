@@ -10,7 +10,7 @@ from cqed_rhf.calculator import CQEDRHFCalculator
 NUM_CORES = 24
 NUM_THETA = 21
 NUM_PHI = 21
-MEM_PER_CORE = "2 GB"
+MEM_PER_CORE = "4 GB"
 OUTPUT_FILE = "nitrobromo_field_scan_combined.txt"
 
 # ----------------------------
@@ -131,7 +131,7 @@ def run_point(task):
                 omega=0.06615,
                 charge=1,
                 multiplicity=1,
-                functional="wb97x-d",
+                functional="wb97x",
             )
             results["energies"][name] = calc.energy(geom_string)
             psi4.core.clean() 
