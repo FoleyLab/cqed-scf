@@ -11,7 +11,9 @@ NUM_CORES = 24
 NUM_THETA = 42
 NUM_PHI = 42
 MEM_PER_CORE = "4 GB"
+
 OUTPUT_FILE = "nitrobromo_wb97x_d_dense_field_scan_combined.txt"
+
 
 # ----------------------------
 # Molecular Geometries
