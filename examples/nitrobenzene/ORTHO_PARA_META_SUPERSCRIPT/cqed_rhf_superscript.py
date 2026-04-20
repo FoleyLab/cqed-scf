@@ -8,10 +8,10 @@ from cqed_rhf.calculator import CQEDRHFCalculator
 
 # --- Configuration ---
 NUM_CORES = 24
-NUM_THETA = 42
-NUM_PHI = 42
+NUM_THETA = 21
+NUM_PHI = 21
 MEM_PER_CORE = "4 GB"
-OUTPUT_FILE = "nitrobromo_wb97x_d_dense_field_scan_combined.txt"
+OUTPUT_FILE = "nitrobromo_field_scan_combined.txt"
 
 # ----------------------------
 # Molecular Geometries
@@ -90,8 +90,6 @@ psi4_options = {
     "scf_type": "df",
     "e_convergence": 1e-10,
     "d_convergence": 1e-10,
-    "dft_radial_points": 99,
-    "dft_spherical_points": 590,
 }
 
 # ----------------------------
@@ -131,7 +129,7 @@ def run_point(task):
                 omega=0.06615,
                 charge=1,
                 multiplicity=1,
-                functional="wb97x-d",
+                functional=None,
             )
             results["energies"][name] = calc.energy(geom_string)
             psi4.core.clean() 

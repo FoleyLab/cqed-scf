@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 
 # --- Configuration ---
-FILE_NAME = "nitrobromo_wb97x_d_field_scan_combined.txt"
+FILE_NAME = "nitrobromo_wb97x_field_scan_combined.txt"
 DPI = 300  # High resolution for publication
 AU_TO_KCAL = 627.509
 
@@ -61,7 +61,7 @@ def plot_energy_diffs():
     plt.suptitle('Comparison of Orientational Energy Landscapes', fontsize=16, fontweight='bold')
     
     # 4. Save and Show
-    plt.savefig("energy_difference_maps.png", dpi=DPI)
+    plt.savefig("energy_difference_maps_wb97x.png", dpi=DPI)
     print("Plot saved as energy_difference_maps.png")
     plt.show()
 
