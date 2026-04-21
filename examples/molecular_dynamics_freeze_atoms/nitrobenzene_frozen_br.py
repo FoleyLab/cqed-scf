@@ -66,32 +66,53 @@ from cqed_rhf.observables.nitrobenzene_orientation import NitrobenzeneOrientatio
 #"""
 
 # nitro - Br+ complex v2: Br+ is above center of aromatic ring
+#nitro_string = """
+#1 1
+# C           -1.468931365599     1.178697647085    -1.610476189598
+# C           -0.081420645599     1.196870987085    -1.586337729598
+# C            0.594038404401    -0.009641582915    -1.487579279598
+# C           -2.153305305599    -0.029816812915    -1.536826409598
+# H           -2.016475245599     2.111128687085    -1.687252519598
+# H            0.478758204401     2.120622867085    -1.641899559598
+# H           -3.237744725599    -0.037851282915    -1.556289569598
+# N            2.070250494401     0.001301307085    -1.461192949598
+# O            2.638548954401    -1.067946332915    -1.375316239598
+# O            2.625214324401     1.078933737085    -1.526960829598
+# C           -1.454272445599    -1.228165032915    -1.438287069598
+# H           -1.990524005599    -2.168537162915    -1.380997049598
+# C           -0.066668565599    -1.225978212915    -1.412581159598
+# H            0.504648244401    -2.141351302915    -1.336153489598
+# BR          -0.650118399399     0.016971049385     2.324047987802
+#no_com
+#no_reorient
+#symmetry c1
+#"""
 nitro_string = """
-1 1
- C           -1.468931365599     1.178697647085    -1.610476189598
- C           -0.081420645599     1.196870987085    -1.586337729598
- C            0.594038404401    -0.009641582915    -1.487579279598
- C           -2.153305305599    -0.029816812915    -1.536826409598
- H           -2.016475245599     2.111128687085    -1.687252519598
- H            0.478758204401     2.120622867085    -1.641899559598
- H           -3.237744725599    -0.037851282915    -1.556289569598
- N            2.070250494401     0.001301307085    -1.461192949598
- O            2.638548954401    -1.067946332915    -1.375316239598
- O            2.625214324401     1.078933737085    -1.526960829598
- C           -1.454272445599    -1.228165032915    -1.438287069598
- H           -1.990524005599    -2.168537162915    -1.380997049598
- C           -0.066668565599    -1.225978212915    -1.412581159598
- H            0.504648244401    -2.141351302915    -1.336153489598
- BR          -0.650118399399     0.016971049385     2.324047987802
+C           -1.901922841579     1.172760393927    -0.047772892327
+C           -0.476703461579     1.208889463927    -0.052552462327
+C            0.199130338421     0.032560163927    -0.040813672327
+C           -2.617281111579    -0.030143496073    -0.014796322327
+H           -2.441941791579     2.113963523927    -0.059190102327
+H            0.061569388421     2.148636453927    -0.051942432327
+H           -3.698948961579    -0.020371166073    -0.004154112327
+N            1.670887158421     0.035666643927     0.020806147673
+O            2.218059368421    -1.081966866073     0.128768557673
+O            2.243651238421     1.138122873927    -0.039099092327
+C           -1.926962411579    -1.227400606073     0.005173817673
+H           -2.453758301579    -2.175200806073     0.038655707673
+C           -0.458335831579    -1.276806306073    -0.036936782327
+H            0.022343538421    -2.023338446073     0.599315217673
 no_com
 no_reorient
 symmetry c1
 """
+
 # =========================
 # Cavity parameters
 # =========================
 
-field_vector = np.array([0.038, 0.082, 0.042])
+field_vector = np.array([0.07878123598, 0.0551632153, 0.02739592187])
+#field_vector = np.array([0.038, 0.082, 0.042])
 omega = 0.06615
 
 # =========================
@@ -102,11 +123,12 @@ psi4_options = {
     "basis": "6-311G*",
     "scf_type": "df",
     "e_convergence": 1e-10,
-    "d_convergence": 1e-9,
-    "dft_radial_points": 99,
-    "dft_spherical_points": 590,
-    "dft_pruning_scheme": "none"
+    "d_convergence": 1e-9
 }
+#    "dft_radial_points": 99,
+#    "dft_spherical_points": 590,
+#    "dft_pruning_scheme": "none"
+#}
 
 psi4.set_memory("8 GB")
 psi4.core.set_output_file("psi4_md.out", False)
@@ -120,10 +142,10 @@ calculator = CQEDRHFCalculator(
     psi4_options=psi4_options,
     omega=omega,
     density_fitting=True,
-    functional="wb97x-d",   # now using dispersion-corrected DFT
-    charge=1,
+    functional=None,   # now using dispersion-corrected DFT
+    charge=0,
     multiplicity=1,
-    debug=False,
+    debug=True,
 )
 
 # =========================
@@ -144,11 +166,11 @@ orientation_tracker = NitrobenzeneOrientation(
 # Freeze bromine atom
 # =========================
 
-freeze_atoms = [i for i, s in enumerate(symbols) if s == "BR"]
+#freeze_atoms = [i for i, s in enumerate(symbols) if s == "BR"]
 
-print("Frozen atoms:", freeze_atoms)
-for i in freeze_atoms:
-    print(f"Atom index {i} ({symbols[i]}) is FROZEN")
+#print("Frozen atoms:", freeze_atoms)
+#for i in freeze_atoms:
+#    print(f"Atom index {i} ({symbols[i]}) is FROZEN")
 # =========================
 # Initial velocities
 # =========================
@@ -174,7 +196,7 @@ traj, observer_data = velocity_verlet_md(
     nsteps=1000,
     canonical="psi4",
     observers=[orientation_tracker],
-    freeze_atoms=freeze_atoms,
+    freeze_atoms=None,
     debug=True,
 )
 
@@ -199,7 +221,7 @@ print(f"  theta = {theta[-1]:.2f} deg")
 # Write trajectory
 # =========================
 
-xyz_file = "nitrobenzene_direction_D_frozen_br.xyz"
+xyz_file = "nitrobenzene_direction_A_cqedrhf.xyz"
 
 for i, frame in enumerate(traj):
 

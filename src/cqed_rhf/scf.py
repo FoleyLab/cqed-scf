@@ -237,6 +237,11 @@ class CQEDSCF:
             # energy
             if self.method == "rhf":
                 E = oe.contract("pq,pq->", F + H, D, optimize="optimal") + Enuc
+                if self.debug:
+                    E_H = oe.contract("pq,pq->", H, D, optimize="optimal")
+                    E_J = 2.0 * oe.contract("pq,pq->", J, D, optimize="optimal")
+                    E_K = -oe.contract("pq,pq->", K, D, optimize="optimal")
+                    E_N = -oe.contract("pq,pq->", N, D, optimize="optimal")
             else:
 
                 E = (
