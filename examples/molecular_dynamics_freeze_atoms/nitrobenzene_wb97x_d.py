@@ -42,8 +42,14 @@ symmetry c1
 # =========================
 # Cavity parameters
 # =========================
+# Lambda - Direction A	0.07878123598	0.0551632153	0.02739592187
+# Lambda - Direction B	-0.08328924059	0.04808706548	0.02739592187
+# Lambda - Direction C	-0.075	0.04330127019	-0.05
+# Lambda - Direction D	0.03830222216	0.08213938048	0.04226182617
+# 
 
-field_vector = np.array([0.07878123598, 0.0551632153, 0.02739592187])
+# set field_vector to direction D
+field_vector = np.array([0.03830222216, 0.08213938048, 0.04226182617])
 omega = 0.06615
 
 # =========================
@@ -61,7 +67,7 @@ psi4_options = {
 }
 
 psi4.set_memory("8 GB")
-psi4.core.set_output_file("psi4_md_wb97x_d.out", False)
+psi4.core.set_output_file("psi4_md_wb97x_d_direction_D.out", False)
 
 # =========================
 # Calculator (CQED-DFT)
@@ -151,7 +157,7 @@ print(f"  theta = {theta[-1]:.2f} deg")
 # Write trajectory
 # =========================
 
-xyz_file = "nitrobenzene_direction_A_wb97x_d_4000_ts.xyz"
+xyz_file = "nitrobenzene_direction_D_wb97x_d_4000_ts.xyz"
 
 for i, frame in enumerate(traj):
 
