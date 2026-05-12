@@ -2,8 +2,8 @@ import numpy as np
 import psi4
 import pytest
 
-from cqed_rhf import CQEDRHFCalculator
-from cqed_rhf.utils import ANGSTROM_TO_BOHR
+from cqed_scf import CQEDCalculator
+from cqed_scf.utils import ANGSTROM_TO_BOHR
 
 
 # =============================================================================
@@ -49,7 +49,7 @@ def test_df_energy_lambda_zero_matches_psi4():
     e_psi4 = psi4.energy("scf")
 
     # CQED-RHF with lambda = 0
-    calc = CQEDRHFCalculator(
+    calc = CQEDCalculator(
         lambda_vector=[0.0, 0.0, 0.0],
         omega=0.0,
         psi4_options=PSI4_OPTIONS_DF,
@@ -88,7 +88,7 @@ def test_df_gradient_lambda_zero_matches_psi4():
     grad_psi4 = np.asarray(psi4.gradient("scf"))
 
     # CQED-RHF with lambda = 0
-    calc = CQEDRHFCalculator(
+    calc = CQEDCalculator(
         lambda_vector=[0.0, 0.0, 0.0],
         omega=0.0,
         psi4_options=PSI4_OPTIONS_DF,
@@ -130,7 +130,7 @@ def test_df_vs_canonical_cqed_gradient_consistency():
     omega = 0.1
 
     # --- Canonical CQED-RHF ---
-    calc_canonical = CQEDRHFCalculator(
+    calc_canonical = CQEDCalculator(
         lambda_vector=lambda_vec,
         omega=omega,
         psi4_options=PSI4_OPTIONS_DF,
@@ -143,7 +143,7 @@ def test_df_vs_canonical_cqed_gradient_consistency():
     )
 
     # --- DF CQED-RHF ---
-    calc_df = CQEDRHFCalculator(
+    calc_df = CQEDCalculator(
         lambda_vector=lambda_vec,
         omega=omega,
         psi4_options=PSI4_OPTIONS_DF,

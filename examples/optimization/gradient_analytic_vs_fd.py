@@ -1,7 +1,7 @@
 import numpy as np
 
-from cqed_rhf import CQEDRHFCalculator
-from cqed_rhf.utils import (
+from cqed_scf import CQEDCalculator
+from cqed_scf.utils import (
     build_psi4_geometry,
     finite_difference_gradient,
 )
@@ -36,7 +36,7 @@ psi4_options = {
 # Calculator
 # =========================
 
-calc = CQEDRHFCalculator(
+calc = CQEDCalculator(
     lambda_vector=lambda_vector,
     psi4_options=psi4_options,
     omega=0.1,
