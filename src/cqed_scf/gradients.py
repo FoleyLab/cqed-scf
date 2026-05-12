@@ -4,7 +4,7 @@ import psi4
 import time 
 
 
-class CQEDRHFGradient:
+class CQEDGradient:
     """
     Analytic nuclear gradient for CQED-RHF.
 
@@ -240,3 +240,7 @@ class CQEDRHFGradient:
         print("Coulomb (J):\n", J)
         print("Exchange (K):\n", K)
         print("Nuclear repulsion:\n", N)
+
+
+# backward-compatible alias
+CQEDRHFGradient = CQEDGradient

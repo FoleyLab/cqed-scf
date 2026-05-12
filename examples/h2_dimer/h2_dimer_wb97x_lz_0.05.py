@@ -1,6 +1,6 @@
 import numpy as np
 import psi4
-from cqed_rhf.calculator import CQEDRHFCalculator
+from cqed_scf.calculator import CQEDCalculator
 
 # -------------------------
 # Psi4 setup
@@ -29,7 +29,7 @@ d_vals = np.linspace(2.0, 10.0, 41)
 # -------------------------
 # Calculator
 # -------------------------
-calc = CQEDRHFCalculator(
+calc = CQEDCalculator(
     lambda_vector=lambda_vector,
     psi4_options=psi4_options,
     omega=omega,

@@ -1,8 +1,7 @@
 import numpy as np
 import psi4
 
-from cqed_rhf.scf import CQEDSCF
-from cqed_rhf.gradients import CQEDRHFGradient
+from cqed_scf.calculator import CQEDCalculator
 
 
 WATER = """
@@ -33,8 +32,7 @@ def test_pbe_lambda0_energy_and_gradient_regression():
     omega = 0.1
 
     # CQED-DFT at lambda = 0
-    calc = CQEDSCF(
-        geometry=WATER,
+    calc = CQEDCalculator(
         lambda_vector=lambda_vector,
         psi4_options=psi4_options,
         omega=omega,
@@ -43,15 +41,7 @@ def test_pbe_lambda0_energy_and_gradient_regression():
         debug=False,
     )
 
-    E_qed, scf_data = calc.run()
-
-    grad_driver = CQEDRHFGradient(
-        lambda_vector=lambda_vector,
-        canonical="psi4",
-        debug=False,
-    )
-    results = grad_driver.compute(scf_data)
-    grad_qed = results["total_grad"]
+    E_qed, grad_qed, _ = calc.energy_and_gradient(WATER)
 
     # Reference Psi4 PBE
     psi4.core.clean()

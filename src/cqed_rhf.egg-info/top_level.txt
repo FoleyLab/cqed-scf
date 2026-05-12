@@ -1,1 +1,1 @@
-cqed_rhf
+cqed_scf

@@ -2,7 +2,7 @@ import numpy as np
 import psi4
 import pytest
 
-from cqed_rhf.calculator import CQEDRHFCalculator
+from cqed_scf.calculator import CQEDCalculator
 
 
 
@@ -29,7 +29,7 @@ def test_h2o_wb97x_d_lambda0():
     psi4.set_options(psi4_options)
     lambda_vector = np.zeros(3)
 
-    calc = CQEDRHFCalculator(
+    calc = CQEDCalculator(
         lambda_vector=lambda_vector,
         psi4_options=psi4_options,
         omega=0.1,
@@ -64,7 +64,7 @@ def test_h2o_wb97x_lambda0():
     psi4.set_options(psi4_options)
     lambda_vector = np.zeros(3)
 
-    calc = CQEDRHFCalculator(
+    calc = CQEDCalculator(
         lambda_vector=lambda_vector,
         psi4_options=psi4_options,
         omega=0.1,
@@ -106,7 +106,7 @@ def test_mghplus_wb97x_lambda0():
     psi4.set_options(psi4_options)
     lambda_vector = np.zeros(3)
 
-    calc = CQEDRHFCalculator(
+    calc = CQEDCalculator(
         lambda_vector=lambda_vector,
         psi4_options=psi4_options,
         omega=0.1,

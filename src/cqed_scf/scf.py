@@ -448,4 +448,3 @@ class CQEDSCF:
 
 # backward compatibility for older imports
 CQEDRHFSCF = CQEDSCF
-CQEDRHFCalculator = CQEDSCF

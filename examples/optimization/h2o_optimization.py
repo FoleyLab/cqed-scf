@@ -7,9 +7,9 @@ import numpy as np
 import psi4
 #psi4.core.be_quiet()
 
-from cqed_rhf import CQEDRHFCalculator
-from cqed_rhf.drivers import bfgs_optimize
-from cqed_rhf.utils import write_xyz, ANGSTROM_TO_BOHR
+from cqed_scf import CQEDCalculator
+from cqed_scf.drivers import bfgs_optimize
+from cqed_scf.utils import write_xyz, ANGSTROM_TO_BOHR
 
 # =========================
 # Psi4 geometry (angstrom)
@@ -52,7 +52,7 @@ omega = 0.0                       # cavity frequency (a.u.)
 # CQED-DFT calculator
 # =========================
 
-calc = CQEDRHFCalculator(
+calc = CQEDCalculator(
     lambda_vector=lambda_vector,
     psi4_options=psi4_options,
     omega=omega,
@@ -61,7 +61,7 @@ calc = CQEDRHFCalculator(
     multiplicity=1,
     functional="wb97x",  # try None for RHF
 )
-#calc = CQEDRHFCalculator(
+#calc = CQEDCalculator(
 #    lambda_vector=lambda_vector,
 #    psi4_options=psi4_options,
 #    omega=omega,

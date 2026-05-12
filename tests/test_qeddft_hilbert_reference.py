@@ -1,7 +1,7 @@
 import numpy as np
 import psi4
 
-from cqed_rhf.scf import CQEDSCF
+from cqed_scf.scf import CQEDSCF
 
 
 GEOM = """

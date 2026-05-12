@@ -1,6 +1,6 @@
 import numpy as np
 import psi4
-from cqed_rhf import CQEDRHFCalculator
+from cqed_scf import CQEDCalculator
 
 # -----------------------------
 # Geometry
@@ -45,7 +45,7 @@ omega = 0.1
 # -----------------------------
 print("\nRunning CQED-DFT (λ = 0)")
 
-calc = CQEDRHFCalculator(
+calc = CQEDCalculator(
     lambda_vector=lambda_vector,
     psi4_options=psi4_options,
     omega=omega,
