@@ -1,7 +1,7 @@
 Metadata-Version: 2.4
 Name: cqed-scf
 Version: 0.1.0
-Summary: CQED-RHF mean-field energy and gradients for the Pauli–Fierz Hamiltonian
+Summary: CQED mean-field energy and gradients for the Pauli–Fierz Hamiltonian at the CQED-Hartree-Fock and CQED-KS level
 Author-email: Your Name <your.email@institution.edu>
 License: MIT
 Project-URL: Homepage, https://github.com/yourusername/cqed-scf
