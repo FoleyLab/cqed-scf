@@ -2,9 +2,9 @@ import numpy as np
 import psi4
 import pytest
 
-from cqed_rhf import CQEDRHFCalculator
-from cqed_rhf.drivers import bfgs_optimize
-from cqed_rhf.utils import ANGSTROM_TO_BOHR
+from cqed_scf import CQEDCalculator
+from cqed_scf.drivers import bfgs_optimize
+from cqed_scf.utils import ANGSTROM_TO_BOHR
 
 
 @pytest.mark.slow
@@ -67,7 +67,7 @@ def test_lambda_zero_reproduces_psi4_rhf():
     lambda_vector = [0.0, 0.0, 0.0]
     omega = 0.1  # irrelevant when lambda = 0
 
-    calc = CQEDRHFCalculator(
+    calc = CQEDCalculator(
         lambda_vector=lambda_vector,
         psi4_options=psi4_options,
         omega=omega,

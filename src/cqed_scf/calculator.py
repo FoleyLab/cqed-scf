@@ -1,10 +1,10 @@
 import psi4
 import numpy as np
 from .scf import CQEDSCF
-from .gradients import CQEDRHFGradient
+from .gradients import CQEDGradient
 
 
-class CQEDRHFCalculator:
+class CQEDCalculator:
     def __init__(
         self,
         lambda_vector,
@@ -141,7 +141,7 @@ class CQEDRHFCalculator:
         energy_psi4_base = data["energy_psi4"] # this stores psi4 energy without dispersion for later comparison
 
         # --- CQED gradient ---
-        grad_engine = CQEDRHFGradient(
+        grad_engine = CQEDGradient(
             self.lambda_vector,
             canonical=canonical,
             debug=self.debug,
@@ -180,3 +180,6 @@ class CQEDRHFCalculator:
         psi4.core.clean_options()
 
         return E_total, grad_total, g
+
+# backward-compatible alias
+CQEDRHFCalculator = CQEDCalculator

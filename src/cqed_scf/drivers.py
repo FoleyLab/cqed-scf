@@ -55,7 +55,7 @@ def velocity_verlet_md(
 
     Parameters
     ----------
-    calculator : CQEDRHFCalculator
+    calculator : CQEDCalculator
     geometry : str, optional
         Psi4 geometry string (angstroms).
     coords : ndarray, shape (N,3), optional
@@ -262,7 +262,7 @@ def bfgs_optimize(
 
     Parameters
     ----------
-    calculator : CQEDRHFCalculator
+    calculator : CQEDCalculator
     geometry : str
         Psi4 geometry string (angstrom).
     canonical : {'psi4', 'exact'}

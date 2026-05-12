@@ -3,9 +3,9 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cqed-rhf"
+name = "cqed-scf"
 version = "0.1.0"
-description = "CQED-RHF mean-field energy and gradients for the Pauli–Fierz Hamiltonian"
+description = "CQED-SCF mean-field energies and gradients (RHF/RKS) for the Pauli–Fierz Hamiltonian"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
@@ -27,5 +27,5 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/cqed-rhf"
+Homepage = "https://github.com/yourusername/cqed-scf"
 

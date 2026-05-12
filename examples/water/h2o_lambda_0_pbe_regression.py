@@ -1,8 +1,8 @@
 import numpy as np
 import psi4
 
-from cqed_rhf import CQEDSCF
-from cqed_rhf import CQEDRHFGradient
+from cqed_scf import CQEDSCF
+from cqed_scf import CQEDGradient
 
 
 # ---------------------------------------------------------
@@ -50,7 +50,7 @@ print("\nRunning wB97x-D (λ = 0)\n")
 
 E_qed, scf_data = calc.run()
 
-gradient_engine = CQEDRHFGradient(lambda_vector, canonical="psi4", debug=False)
+gradient_engine = CQEDGradient(lambda_vector, canonical="psi4", debug=False)
 
 grad_qed = gradient_engine.compute(scf_data)
 

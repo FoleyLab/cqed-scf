@@ -46,15 +46,15 @@ import psi4
 # Import your updated QED-DFT calculator
 # -----------------------------------------------------------------------------
 # Edit this path/module name if needed.
-# Example if running from /Users/jfoley19/Code/cqed-rhf/examples/...:
-sys.path.insert(0, "/Users/jfoley19/Code/cqed-rhf")
+# Example if running from /Users/jfoley19/Code/cqed-scf/examples/...:
+sys.path.insert(0, "/Users/jfoley19/Code/cqed-scf")
 
 try:
-    from cqed_rhf.calculator import CQEDRHFCalculator
+    from cqed_scf.calculator import CQEDCalculator
 except ImportError:
     # Customize this fallback for your local repo layout if necessary.
-    sys.path.insert(0, os.path.expanduser("~/Code/cqed-rhf"))
-    from cqed_rhf.calculator import CQEDRHFCalculator
+    sys.path.insert(0, os.path.expanduser("~/Code/cqed-scf"))
+    from cqed_scf.calculator import CQEDCalculator
 
 
 # -----------------------------------------------------------------------------
@@ -226,7 +226,7 @@ def configure_psi4(memory, threads, quiet=True):
 
 
 def qed_energy(geom_str):
-    calc = CQEDRHFCalculator(
+    calc = CQEDCalculator(
         lambda_vector=LAMBDA_VECTOR,
         psi4_options=PSI4_OPTIONS,
         omega=OMEGA,

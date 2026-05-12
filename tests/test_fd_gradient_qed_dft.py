@@ -1,9 +1,7 @@
 import numpy as np
 import psi4
 
-from cqed_rhf.scf import CQEDSCF
-from cqed_rhf.gradients import CQEDRHFGradient
-from cqed_rhf.calculator import CQEDRHFCalculator
+from cqed_scf.calculator import CQEDCalculator
 
 
 GEOM = """
@@ -29,18 +27,14 @@ options = {
 lam_vec = np.array([0, 0, 0.0])
 
 def energy(geom, lam, functional_choice):
-
-    calc = CQEDSCF(
-        geometry=geom,
+    calc = CQEDCalculator(
         lambda_vector=lam,
         psi4_options=options,
         omega=0.07349864501573,
         density_fitting=True,
         functional=functional_choice,
     )
-
-    E, _ = calc.run()
-    return E
+    return calc.energy(geom)
 
 
 def test_fd_gradient_pbe():
@@ -48,7 +42,7 @@ def test_fd_gradient_pbe():
     psi4.core.clean()
     psi4.core.clean_options()
 
-    calc = CQEDRHFCalculator(
+    calc = CQEDCalculator(
         lambda_vector=lam_vec,
         psi4_options=options,
         omega=0.1,
@@ -105,7 +99,7 @@ def test_fd_gradient_wb97x():
     psi4.set_memory("4 GB")
     psi4.set_options(options)
 
-    calc = CQEDRHFCalculator(
+    calc = CQEDCalculator(
         lambda_vector=lam_vec,
         psi4_options=options,
         omega=0.1,

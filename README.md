@@ -26,14 +26,14 @@ dynamics, and geometry optimization, built on top of Psi4.
 ## Installation
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/cqed-rhf.git
-cd cqed-rhf
+git clone https://github.com/YOUR_USERNAME/cqed-scf.git
+cd cqed-scf
 pip install -e .
 
 
 ## Quick example
 ```python
-from cqed_rhf import CQEDRHFCalculator
+from cqed_scf import CQEDCalculator
 
 geom = """
 O  0.000000  0.000000 -0.068516

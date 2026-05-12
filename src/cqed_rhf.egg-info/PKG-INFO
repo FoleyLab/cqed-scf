@@ -1,10 +1,10 @@
 Metadata-Version: 2.4
-Name: cqed-rhf
+Name: cqed-scf
 Version: 0.1.0
 Summary: CQED-RHF mean-field energy and gradients for the Pauli–Fierz Hamiltonian
 Author-email: Your Name <your.email@institution.edu>
 License: MIT
-Project-URL: Homepage, https://github.com/yourusername/cqed-rhf
+Project-URL: Homepage, https://github.com/yourusername/cqed-scf
 Classifier: Programming Language :: Python :: 3
 Classifier: Topic :: Scientific/Engineering :: Chemistry
 Classifier: License :: OSI Approved :: MIT License
@@ -43,14 +43,14 @@ dynamics, and geometry optimization, built on top of Psi4.
 ## Installation
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/cqed-rhf.git
-cd cqed-rhf
+git clone https://github.com/YOUR_USERNAME/cqed-scf.git
+cd cqed-scf
 pip install -e .
 
 
 ## Quick example
 ```python
-from cqed_rhf import CQEDRHFCalculator
+from cqed_scf import CQEDCalculator
 
 geom = """
 O  0.000000  0.000000 -0.068516

@@ -1,10 +1,10 @@
 import numpy as np
 import psi4
 
-from cqed_rhf import CQEDRHFCalculator
-from cqed_rhf.utils import write_xyz
-from cqed_rhf.drivers import velocity_verlet_md
-from cqed_rhf.utils import write_xyz, ANGSTROM_TO_BOHR
+from cqed_scf import CQEDCalculator
+from cqed_scf.utils import write_xyz
+from cqed_scf.drivers import velocity_verlet_md
+from cqed_scf.utils import write_xyz, ANGSTROM_TO_BOHR
 
 # -----------------------------
 # Geometry
@@ -51,7 +51,7 @@ omega = 0.06615
 # -----------------------------
 print("\nRunning CQED-DFT (λ = 0)")
 
-calc = CQEDRHFCalculator(
+calc = CQEDCalculator(
     lambda_vector=field_vector,
     psi4_options=psi4_options,
     omega=omega,

@@ -1,8 +1,8 @@
 import numpy as np
 import psi4
 
-from cqed_rhf.scf import CQEDSCF
-from cqed_rhf.calculator import CQEDRHFCalculator
+from cqed_scf.scf import CQEDSCF
+from cqed_scf.calculator import CQEDCalculator
 
 
 GEOM = """
@@ -65,7 +65,7 @@ def test_fd_gradient_wb97x():
     psi4.core.clean_options()
     psi4.set_options(options)
 
-    calc = CQEDRHFCalculator(
+    calc = CQEDCalculator(
         lambda_vector=lam_vec,
         psi4_options=options,
         omega=0.1,

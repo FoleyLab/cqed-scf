@@ -1,8 +1,8 @@
 import numpy as np
 import psi4
 
-from cqed_rhf import CQEDSCF
-from cqed_rhf import CQEDRHFGradient
+from cqed_scf import CQEDSCF
+from cqed_scf import CQEDGradient
 
 
 # ---------------------------------------------------------
@@ -57,7 +57,7 @@ calc = CQEDSCF(
 
 E, scf_data = calc.run()
 
-gradient_engine = CQEDRHFGradient(lambda_vector, canonical="psi4", debug=False)
+gradient_engine = CQEDGradient(lambda_vector, canonical="psi4", debug=False)
 
 results = gradient_engine.compute(scf_data)
 grad_qed = results["total_grad"]

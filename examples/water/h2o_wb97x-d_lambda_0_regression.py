@@ -1,6 +1,6 @@
 import numpy as np
 import psi4
-from cqed_rhf.calculator import CQEDRHFCalculator
+from cqed_scf.calculator import CQEDCalculator
 
 # ---------------------------------------------------------
 # Geometry
@@ -33,7 +33,7 @@ psi4_options = {
 
 lambda_vector = np.zeros(3)
 
-calc = CQEDRHFCalculator(
+calc = CQEDCalculator(
     lambda_vector=lambda_vector,
     psi4_options=psi4_options,
     omega=0.1,

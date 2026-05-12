@@ -28,10 +28,10 @@ import numpy as np
 import psi4
 
 # -----------------------------------------------------------------------------
-# Import your updated CQEDRHFCalculator.
+# Import your updated CQEDCalculator.
 # Edit this block if your local module path/name is different.
 # -----------------------------------------------------------------------------
-from cqed_rhf.calculator import CQEDRHFCalculator
+from cqed_scf.calculator import CQEDCalculator
 
 
 # -----------------------------------------------------------------------------
@@ -245,7 +245,7 @@ GEOMETRIES = [
 # -----------------------------------------------------------------------------
 
 def make_calc(charge=0, multiplicity=1):
-    return CQEDRHFCalculator(
+    return CQEDCalculator(
         lambda_vector=lambda_vector,
         psi4_options=psi4_options,
         omega=omega,
