@@ -12,7 +12,7 @@ dynamics, and geometry optimization, built on top of Psi4.
 - BFGS geometry optimization
 - Finite-difference gradient validation
 - Psi4-native geometry handling
-- CQED-RKS currently supports pure and global hybrid functionals; support for range-separated hybrids coming soon!
+- CQED-RKS currently supports pure, global hybrids, and range-separated hybrids
 
 ## Requirements
 
