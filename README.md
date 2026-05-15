@@ -1,6 +1,6 @@
 # CQED-SCF
 
-An open-source package for mean-field and DFT-based quantum electrodynamics calculations
+An open-source package for mean-field and DFT-based molecular cavity quantum electrodynamics calculations
 (Pauli–Fierz Hamiltonian) with analytic nuclear gradients, molecular
 dynamics, and geometry optimization, built on top of Psi4.  
 
