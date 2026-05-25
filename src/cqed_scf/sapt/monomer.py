@@ -56,6 +56,10 @@ class SAPTMonomer:
     @property
     def ndocc(self):
         return self.scf_results.get("ndocc")
+    
+    @property
+    def energy_scf(self):
+        return self.scf_results.get("energy_scf")
 
     @classmethod
     def from_scf_results(
