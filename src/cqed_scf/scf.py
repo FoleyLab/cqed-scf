@@ -332,7 +332,9 @@ class CQEDSCF:
             ndocc=self.ndocc,
             natom=self.mol.natom(),
             method=self.method,
+            reference=self.method,
             functional=self.functional,
+            density_fitting=self.density_fitting,
             x_alpha=self.x_alpha,
         )
 
