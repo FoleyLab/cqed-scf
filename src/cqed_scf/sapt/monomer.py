@@ -113,7 +113,8 @@ class SAPTMonomer:
             _, scf_results = CQEDUSCF(geometry=geometry, config=monomer_config).run()
         else:
             from ..scf import CQEDSCF
-
+            print("Running monomer CQED-SCF reference for", label)
+            print("Geometry:", geometry)
             scf = CQEDSCF(
                 geometry=geometry,
                 lambda_vector=monomer_config.lambda_vector,
@@ -125,6 +126,7 @@ class SAPTMonomer:
                 debug=monomer_config.debug,
             )
             _, scf_results = scf.run()
+            print("Monomer SCF energy:", scf_results.get("energy_scf"))
 
         return cls.from_scf_results(
             label=label,

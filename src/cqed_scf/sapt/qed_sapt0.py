@@ -51,6 +51,17 @@ class QEDSAPT0Driver:
     def build_integrals(self, monomers: Tuple[SAPTMonomer, SAPTMonomer]):
         """Build future full-ERI SAPT integral intermediates."""
 
+        # get stored integrals from both monomers scf results, which may be None
+        # if the monomer SCF references were not run with integral storage enabled
+        monomer_a_d_ao = monomers[0].d_ao
+        monomer_a_d_exp = monomers[0].d_exp
+        monomer_b_d_ao = monomers[1].d_ao
+        monomer_b_d_exp = monomers[1].d_exp
+        print("Monomer A d_ao:", monomer_a_d_ao)
+        print("Monomer A d_exp:", monomer_a_d_exp)
+        print("Monomer B d_ao:", monomer_b_d_ao)
+        print("Monomer B d_exp:", monomer_b_d_exp)
+
         raise NotImplementedError(
             "QED-SAPT0 integral construction is not implemented yet. "
             "The first backend should build full two-electron integrals."

@@ -176,12 +176,12 @@ config = CQEDConfig(
     lambda_vector=lambda_vector,
     omega=omega,
     psi4_options=psi4_options,
-    reference="rks",
-    functional="wb97x-d",
-    density_fitting=True,
+    reference="rhf",
+    functional=None,
+    density_fitting=False,
     charge=0,
     multiplicity=1,
-    dispersion_policy="post_scf",
+    dispersion_policy="none",
     debug=True,
 )
 
