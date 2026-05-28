@@ -36,25 +36,12 @@ from cqed_scf.sapt import QEDSAPT0Driver, SAPTMonomer
 # Geometry data
 # ---------------------------------------------------------
 
-benzene_atoms = [
-    "C      0.780147171000    -0.609914733000    -1.207556891000",
-    "H      0.896191595000    -1.137639594000    -2.144144625000",
-    "C      0.477942753000     0.750993631000    -1.207895407000",
-    "H      0.356964231000     1.278167803000    -2.144054074000",
-    "C      0.327289279000     1.431867868    -0.000000000000",
-    "H      0.091465028000     2.487139215000     0.000000000000",
-    "C      0.477942754000     0.750993631000     1.207895407000",
-    "H      0.356964231000     1.278167803000     2.144054074000",
-    "C      0.780147171000    -0.609914733000     1.207556891000",
-    "H      0.896191595000    -1.137639594000     2.144144625000",
-    "C      0.931648311000    -1.289981342000     0.000000000000",
-    "H      1.168485730000    -2.345213690000    -0.000000000000",
-]
+helium_atoms_A = [
+    "He     0.000000000000     0.000000000000     0.000000000000",
+] 
 
-water_atoms = [
-    "O     -2.499730195000    -0.241863092000     0.000000000000",
-    "H     -2.334926200000    -1.186584620000     0.000000000000",
-    "H     -1.612429252000     0.129727233000     0.000000000000",
+helium_atoms_B = [
+    "He     0.000000000000     0.000000000000     2.000000000000",
 ]
 
 
@@ -107,7 +94,7 @@ def make_dimer_geometry(monomer_a_atoms, monomer_b_atoms, charge=0, multiplicity
     """
     Build the full dimer geometry.
 
-    This is the physical benzene--water dimer geometry.
+    This is the physical He-He dimer geometry.
     """
     lines = [f"{charge} {multiplicity}"]
     lines.extend(monomer_a_atoms)
@@ -126,8 +113,8 @@ def make_dimer_geometry(monomer_a_atoms, monomer_b_atoms, charge=0, multiplicity
 # ---------------------------------------------------------
 
 dimer_geometry = make_dimer_geometry(
-    benzene_atoms,
-    water_atoms,
+    helium_atoms_A,
+    helium_atoms_B,
     charge=0,
     multiplicity=1,
 )
@@ -135,8 +122,8 @@ dimer_geometry = make_dimer_geometry(
 # Monomer A = benzene in full dimer basis.
 # Water atoms are ghosts.
 monomer_a_geometry = make_geometry(
-    active_atoms=benzene_atoms,
-    ghost_atoms=water_atoms,
+    active_atoms=helium_atoms_A,
+    ghost_atoms=helium_atoms_B,
     charge=0,
     multiplicity=1,
 )
@@ -144,8 +131,8 @@ monomer_a_geometry = make_geometry(
 # Monomer B = water in full dimer basis.
 # Benzene atoms are ghosts.
 monomer_b_geometry = make_geometry(
-    active_atoms=water_atoms,
-    ghost_atoms=benzene_atoms,
+    active_atoms=helium_atoms_B,
+    ghost_atoms=helium_atoms_A,
     charge=0,
     multiplicity=1,
 )
@@ -158,8 +145,8 @@ monomer_b_geometry = make_geometry(
 psi4.set_memory("4 GB")
 
 psi4_options = {
-    "basis": "jun-cc-pVDZ",
-    "scf_type": "df",
+    "basis": "6-31g",
+    "scf_type": "pk",
     "e_convergence": 1e-10,
     "d_convergence": 1e-8,
 }
@@ -217,21 +204,34 @@ print()
 # lower-level component routines.
 
 try:
+    print(" Doing monomer A calculation")
     monomer_a = SAPTMonomer.from_cqed_scf(
-        label="benzene",
+        label="helium_a",
         geometry=monomer_a_geometry,
         charge=0,
         multiplicity=1,
         config=config,
     )
+    print(F"Result is monomer_a.energy_scf: {monomer_a.energy_scf}")
 
+    print(" Doing monomer B calculation")
     monomer_b = SAPTMonomer.from_cqed_scf(
-        label="water",
+        label="helium_b",
         geometry=monomer_b_geometry,
         charge=0,
         multiplicity=1,
         config=config,
     )
+    print(F"Result is monomer_b.energy_scf: {monomer_b.energy_scf}")
+    print("Doing dimer calculation")
+    dimer = SAPTMonomer.from_cqed_scf(
+        label="dimer",
+        geometry=dimer_geometry,
+        charge=0,
+        multiplicity=1,
+        config=config,
+    )
+    print(F"Result is dimer.energy_scf: {dimer.energy_scf}")
 
 except NotImplementedError:
     print("SAPTMonomer.from_cqed_scf is scaffolded but not implemented yet.")

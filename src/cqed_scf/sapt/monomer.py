@@ -28,6 +28,14 @@ class SAPTMonomer:
     @property
     def C(self):
         return self.scf_results.get("coefficients")
+    
+    @property
+    def Co(self):
+        return self.scf_results.get("Co")
+    
+    @property
+    def Cv(self):
+        return self.scf_results.get("Cv")
 
     @property
     def eps(self):

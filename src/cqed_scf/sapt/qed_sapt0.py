@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Sequence, Tuple
+import opt_einsum as oe
 
 from ..references import CQEDConfig
 
@@ -47,20 +48,87 @@ class QEDSAPT0Driver:
             "Pass monomer_a and monomer_b SAPTMonomer objects, or implement geometry "
             "partitioning from monomer_definitions/monomer_indices."
         )
+    
+    def build_orbitals(self, monomers: Tuple[SAPTMonomer, SAPTMonomer]) -> Any:
+        """Build orbital intermediates needed for QED-SAPT0 components.
+           Takes a tuple of monomer instances as input:
+           (monomer_a, monomer_b)
 
-    def build_integrals(self, monomers: Tuple[SAPTMonomer, SAPTMonomer]):
-        """Build future full-ERI SAPT integral intermediates."""
+           As an example, if you want to access the MO coefficients of monomer_a:
+           C_monomer_a = monomers[0].C
+
+           Occupied orbitals for monomer a
+           Co_monomer_a = monomers[0].Co
+
+           Virtual orbitals for monomer b
+           Cv_monomer_b = monomers[1].Cv
+
+        """
+        self.orbitals = {'a' : monomers[0].Co,
+                         'r': monomers[0].Cv,
+                         'b': monomers[1].Co,
+                         's': monomers[1].Cv
+                         }
+        
+    def build_slices(self, monomers: Tuple[SAPTMonomer, SAPTMonomer]) -> Any:
+        """Build slice objects for occupied and virtual orbital subspaces of each monomer.
+           Takes a tuple of monomer instances as input:
+           (monomer_a, monomer_b)
+
+           As an example, if you want to access the occupied slice for monomer_a:
+           occ_slice_a = slice(0, monomers[0].ndocc)
+        """
+        self.slices = {'a' : slice(0, monomers[0].ndocc),
+                       'r': slice(monomers[0].ndocc, None),
+                       'b': slice(0, monomers[1].ndocc),
+                       's': slice(monomers[1].ndocc, None)
+                       }
+        
+    def build_sizes(self, monomers: Tuple[SAPTMonomer, SAPTMonomer]) -> Any:
+        """Build integers for number of occupied and virtual orbitals of each monomer.
+           Takes a tuple of monomer instances as input:
+           (monomer_a, monomer_b)
+
+           As an example, if you want to access the number of occupied orbitals for monomer_a:
+           nocc_a = monomers[0].ndocc
+        """
+        self.sizes = {'a' : monomers[0].ndocc,
+                      'r': monomers[0].nvirt,
+                      'b': monomers[1].ndocc,
+                      's': monomers[1].nvirt
+                      }
+        
+
+    def build_integrals(self, monomers: Tuple[SAPTMonomer, SAPTMonomer, SAPTMonomer]) -> Any:
+        """Build all integral intermediates needed for QED-SAPT0 components.
+           Takes a tuple of monomer instances as input:
+           (dimer, monomer_a, monomer_b)
+
+           As an example, if you want to access the mints of the dimer:
+           dimer_mints = monomers[0].mints
+
+           mints of monomer_a: monomers[1].mints
+
+        
+        
+        """
+        # build orbitals using monomer A and monomer B SCF results, which may be None if the monomer SCF references were not run with orbital storage enabled
+        self.build_orbitals((monomers[1], monomers[2]))
+
+        # build slices for occupied and virtual orbital subspaces of each monomer
+        self.build_slices((monomers[1], monomers[2]))
+
+        # build sizes for number of occupied and virtual orbitals of each monomer
+        self.build_sizes((monomers[1], monomers[2]))
+
+        dimer_mints = monomers[0].mints
+        # build the full two-electron integral tensor in physicist's notation (pr|qs) for the dimer
+        self.I_dimer = np.asarray(dimer_mints.ao_eri()).swapaxes(1, 2)
+        # self.v(dimer_mints, "pqrs")  # example of how to access dimer ERIs in physicist's notation
 
         # get stored integrals from both monomers scf results, which may be None
         # if the monomer SCF references were not run with integral storage enabled
-        monomer_a_d_ao = monomers[0].d_ao
-        monomer_a_d_exp = monomers[0].d_exp
-        monomer_b_d_ao = monomers[1].d_ao
-        monomer_b_d_exp = monomers[1].d_exp
-        print("Monomer A d_ao:", monomer_a_d_ao)
-        print("Monomer A d_exp:", monomer_a_d_exp)
-        print("Monomer B d_ao:", monomer_b_d_ao)
-        print("Monomer B d_exp:", monomer_b_d_exp)
+
 
         raise NotImplementedError(
             "QED-SAPT0 integral construction is not implemented yet. "
@@ -75,6 +143,19 @@ class QEDSAPT0Driver:
             "Future code will call compute_elst10, compute_exch10, "
             "compute_ind20, compute_disp20, and compute_qed_dse_cross."
         )
+    
+    def v(self, string):
+        if len(string) != 4:
+            psi4.core.clean()
+            raise Exception("v: string %s does not have length 4" % string)
+        
+        # ERI's from mints are in chemist's notation (pq|rs), but we want to access them in physicist's notation (pr|qs)
+        # so we need to swap the middle two indices
+        V = oe.contract("pA,pqrs->Aqrs", self.orbitals[string[0]], self.I_dimer)
+        V = oe.contract("qB,Aqrs->ABrs", self.orbitals[string[1]], V)
+        V = oe.contract("rC,ABrs->ABCs", self.orbitals[string[2]], V)
+        V = oe.contract("sD,ABCs->ABCD", self.orbitals[string[3]], V)
+        return V
 
     def run(self) -> QEDSAPT0Results:
         """Run the future QED-SAPT0 workflow."""
