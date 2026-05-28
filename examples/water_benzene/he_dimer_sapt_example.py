@@ -272,6 +272,7 @@ except NotImplementedError:
 
 driver = QEDSAPT0Driver(
     dimer_geometry=dimer_geometry,
+    dimer=dimer,
     monomer_a=monomer_a,
     monomer_b=monomer_b,
     config=config,
@@ -280,13 +281,24 @@ driver = QEDSAPT0Driver(
     integral_backend="full_eri",
 )
 
-try:
-    results = driver.run()
+monomers = driver.prepare_monomers()
+driver.build_integrals(monomers)
+V = driver.v("arbs")
+print("Successfully built integral intermediates. Example V(arbs) shape:", V.shape)
+print(V)
 
-    print("\nQED-SAPT0 results")
-    print("=================")
-    print(results.summary())
+#try:
+#    monomers = driver.prepare_monomers()
+#    driver.build_integrals(monomers)
+#    V = driver.v("arbs")
+#    print("Successfully built integral intermediates. Example V(arbs) shape:", V.shape)
+#    print(V)
+#    #results = driver.run()
 
-except NotImplementedError:
-    print("\nQEDSAPT0Driver is scaffolded but SAPT physics is not implemented yet.")
-    print("This script successfully demonstrates the intended architecture/data flow.")
+    #print("\nQED-SAPT0 results")
+    #print("=================")
+    #print(results.summary())
+
+#except NotImplementedError:
+#    print("\nQEDSAPT0Driver is scaffolded but SAPT physics is not implemented yet.")
+#    print("This script successfully demonstrates the intended architecture/data flow.")

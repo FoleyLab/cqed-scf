@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Sequence, Tuple
 import opt_einsum as oe
+import numpy as np
 
 from ..references import CQEDConfig
 
@@ -27,6 +28,7 @@ class QEDSAPT0Driver:
 
     dimer_geometry: Any
     config: CQEDConfig
+    dimer : Optional[SAPTMonomer] = None
     monomer_a: Optional[SAPTMonomer] = None
     monomer_b: Optional[SAPTMonomer] = None
     monomer_definitions: Optional[Sequence[Any]] = None
@@ -40,8 +42,8 @@ class QEDSAPT0Driver:
     def prepare_monomers(self) -> Tuple[SAPTMonomer, SAPTMonomer]:
         """Prepare or retrieve monomer references."""
 
-        if self.monomer_a is not None and self.monomer_b is not None:
-            return self.monomer_a, self.monomer_b
+        if self.dimer is not None and self.monomer_a is not None and self.monomer_b is not None:
+            return self.dimer, self.monomer_a, self.monomer_b
 
         raise NotImplementedError(
             "Automatic monomer extraction from dimer geometries is not implemented yet. "
@@ -130,10 +132,10 @@ class QEDSAPT0Driver:
         # if the monomer SCF references were not run with integral storage enabled
 
 
-        raise NotImplementedError(
-            "QED-SAPT0 integral construction is not implemented yet. "
-            "The first backend should build full two-electron integrals."
-        )
+        #raise NotImplementedError(
+        #    "QED-SAPT0 integral construction is not implemented yet. "
+        #    "The first backend should build full two-electron integrals."
+        #)
 
     def compute_components(self, monomers, integrals) -> QEDSAPT0Results:
         """Call future component functions and collect a result object."""
@@ -162,4 +164,5 @@ class QEDSAPT0Driver:
 
         monomers = self.prepare_monomers()
         integrals = self.build_integrals(monomers)
-        return self.compute_components(monomers, integrals)
+        return self.v("arbs")
+        #return self.compute_components(monomers, integrals)
