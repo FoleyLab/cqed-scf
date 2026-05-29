@@ -25,6 +25,8 @@ Expected future flow:
             -> QEDSAPT0Results
 """
 
+import array
+
 import numpy as np
 import psi4
 
@@ -36,108 +38,30 @@ from cqed_scf.sapt import QEDSAPT0Driver, SAPTMonomer
 # Geometry data
 # ---------------------------------------------------------
 
-helium_atoms_A = [
-    "He     0.000000000000     0.000000000000     0.000000000000",
-] 
-
-helium_atoms_B = [
-    "He     0.000000000000     0.000000000000     2.000000000000",
-]
-
-
-# ---------------------------------------------------------
-# Helpers for geometry construction
-# ---------------------------------------------------------
-
-def make_geometry(active_atoms, ghost_atoms=None, charge=0, multiplicity=1):
-    """
-    Build a Psi4 geometry string.
-
-    active_atoms:
-        Atoms belonging to the monomer being computed.
-
-    ghost_atoms:
-        Atoms from the other monomer. These define the dimer basis but
-        do not contribute nuclear charge or electrons.
-
-    Psi4 ghost atom syntax:
-        Gh(Element) x y z
-
-    Example:
-        Gh(O) 0.0 0.0 0.0
-    """
-    ghost_atoms = ghost_atoms or []
-
-    lines = [f"{charge} {multiplicity}"]
-
-    # Active atoms are included normally.
-    lines.extend(active_atoms)
-
-    # Ghost atoms contribute basis functions but no nuclear charge.
-    for atom_line in ghost_atoms:
-        parts = atom_line.split()
-        symbol = parts[0]
-        xyz = parts[1:]
-        lines.append(f"Gh({symbol}) {' '.join(xyz)}")
-
-    lines.extend([
-        "units angstrom",
-        "no_reorient",
-        "no_com",
-        "symmetry c1",
-    ])
-
-    return "\n".join(lines)
+dimer = """
+He 0.0000000000 0.0000000000 0.0000000000
+--
+He 0.0000000000 0.0000000000 2.0000000000
+symmetry c1
+units angstrom
+no_reorient
+no_com
+"""
 
 
-def make_dimer_geometry(monomer_a_atoms, monomer_b_atoms, charge=0, multiplicity=1):
-    """
-    Build the full dimer geometry.
+dimer_geometry = psi4.geometry(dimer)
+monomer_a_geometry = dimer_geometry.extract_subsets(1,2)  # helium atoms
+monomer_b_geometry = dimer_geometry.extract_subsets(2,1)  # helium atoms
+dimer_string = dimer_geometry.create_psi4_string_from_molecule()
+monomer_a_string = monomer_a_geometry.create_psi4_string_from_molecule()
+monomer_b_string = monomer_b_geometry.create_psi4_string_from_molecule()
 
-    This is the physical He-He dimer geometry.
-    """
-    lines = [f"{charge} {multiplicity}"]
-    lines.extend(monomer_a_atoms)
-    lines.extend(monomer_b_atoms)
-    lines.extend([
-        "units angstrom",
-        "no_reorient",
-        "no_com",
-        "symmetry c1",
-    ])
-    return "\n".join(lines)
-
-
-# ---------------------------------------------------------
-# Build dimer-basis monomer geometries
-# ---------------------------------------------------------
-
-dimer_geometry = make_dimer_geometry(
-    helium_atoms_A,
-    helium_atoms_B,
-    charge=0,
-    multiplicity=1,
-)
-
-# Monomer A = benzene in full dimer basis.
-# Water atoms are ghosts.
-monomer_a_geometry = make_geometry(
-    active_atoms=helium_atoms_A,
-    ghost_atoms=helium_atoms_B,
-    charge=0,
-    multiplicity=1,
-)
-
-# Monomer B = water in full dimer basis.
-# Benzene atoms are ghosts.
-monomer_b_geometry = make_geometry(
-    active_atoms=helium_atoms_B,
-    ghost_atoms=helium_atoms_A,
-    charge=0,
-    multiplicity=1,
-)
-
-
+print("Dimer geometry:")
+print(dimer_string)
+print("\nMonomer A geometry:")
+print(monomer_a_string)
+print("\nMonomer B geometry:")
+print(monomer_b_string)
 # ---------------------------------------------------------
 # Psi4 / CQED options
 # ---------------------------------------------------------
@@ -151,7 +75,7 @@ psi4_options = {
     "d_convergence": 1e-8,
 }
 
-lambda_vector = np.array([0.0, 0.0, 0.05])
+lambda_vector = np.array([0.0, 0.0, 0.00])
 omega = 0.07349864501573
 
 
@@ -207,7 +131,7 @@ try:
     print(" Doing monomer A calculation")
     monomer_a = SAPTMonomer.from_cqed_scf(
         label="helium_a",
-        geometry=monomer_a_geometry,
+        geometry=monomer_a_string,
         charge=0,
         multiplicity=1,
         config=config,
@@ -217,7 +141,7 @@ try:
     print(" Doing monomer B calculation")
     monomer_b = SAPTMonomer.from_cqed_scf(
         label="helium_b",
-        geometry=monomer_b_geometry,
+        geometry=monomer_b_string,
         charge=0,
         multiplicity=1,
         config=config,
@@ -226,7 +150,7 @@ try:
     print("Doing dimer calculation")
     dimer = SAPTMonomer.from_cqed_scf(
         label="dimer",
-        geometry=dimer_geometry,
+        geometry=dimer_string,
         charge=0,
         multiplicity=1,
         config=config,
@@ -283,6 +207,9 @@ driver = QEDSAPT0Driver(
 
 monomers = driver.prepare_monomers()
 driver.build_integrals(monomers)
+print("Printing the orbitals object")
+print(driver.orbitals)
+
 V = driver.v("arbs")
 print("Successfully built integral intermediates. Example V(arbs) shape:", V.shape)
 print(V)

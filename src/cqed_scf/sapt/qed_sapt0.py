@@ -39,7 +39,7 @@ class QEDSAPT0Driver:
     def __post_init__(self) -> None:
         self.metadata.setdefault("integral_backend", self.integral_backend)
 
-    def prepare_monomers(self) -> Tuple[SAPTMonomer, SAPTMonomer]:
+    def prepare_monomers(self) -> Tuple[SAPTMonomer, SAPTMonomer, SAPTMonomer]:
         """Prepare or retrieve monomer references."""
 
         if self.dimer is not None and self.monomer_a is not None and self.monomer_b is not None:
@@ -51,28 +51,28 @@ class QEDSAPT0Driver:
             "partitioning from monomer_definitions/monomer_indices."
         )
     
-    def build_orbitals(self, monomers: Tuple[SAPTMonomer, SAPTMonomer]) -> Any:
+    def build_orbitals(self, monomers: Tuple[SAPTMonomer, SAPTMonomer, SAPTMonomer]) -> Any:
         """Build orbital intermediates needed for QED-SAPT0 components.
            Takes a tuple of monomer instances as input:
-           (monomer_a, monomer_b)
+           (dimer, monomer_a, monomer_b)
 
            As an example, if you want to access the MO coefficients of monomer_a:
-           C_monomer_a = monomers[0].C
+           C_monomer_a = monomers[1].C
 
            Occupied orbitals for monomer a
-           Co_monomer_a = monomers[0].Co
+           Co_monomer_a = monomers[1].Co
 
            Virtual orbitals for monomer b
-           Cv_monomer_b = monomers[1].Cv
+           Cv_monomer_b = monomers[2].Cv
 
         """
-        self.orbitals = {'a' : monomers[0].Co,
-                         'r': monomers[0].Cv,
-                         'b': monomers[1].Co,
-                         's': monomers[1].Cv
+        self.orbitals = {'a' : monomers[1].Co,
+                         'r': monomers[1].Cv,
+                         'b': monomers[2].Co,
+                         's': monomers[2].Cv
                          }
         
-    def build_slices(self, monomers: Tuple[SAPTMonomer, SAPTMonomer]) -> Any:
+    def build_slices(self, monomers: Tuple[SAPTMonomer, SAPTMonomer, SAPTMonomer]) -> Any:
         """Build slice objects for occupied and virtual orbital subspaces of each monomer.
            Takes a tuple of monomer instances as input:
            (monomer_a, monomer_b)
@@ -80,10 +80,10 @@ class QEDSAPT0Driver:
            As an example, if you want to access the occupied slice for monomer_a:
            occ_slice_a = slice(0, monomers[0].ndocc)
         """
-        self.slices = {'a' : slice(0, monomers[0].ndocc),
-                       'r': slice(monomers[0].ndocc, None),
-                       'b': slice(0, monomers[1].ndocc),
-                       's': slice(monomers[1].ndocc, None)
+        self.slices = {'a' : slice(0, monomers[1].ndocc),
+                       'r': slice(monomers[1].ndocc, None),
+                       'b': slice(0, monomers[2].ndocc),
+                       's': slice(monomers[2].ndocc, None)
                        }
         
     def build_sizes(self, monomers: Tuple[SAPTMonomer, SAPTMonomer]) -> Any:
@@ -94,10 +94,10 @@ class QEDSAPT0Driver:
            As an example, if you want to access the number of occupied orbitals for monomer_a:
            nocc_a = monomers[0].ndocc
         """
-        self.sizes = {'a' : monomers[0].ndocc,
-                      'r': monomers[0].nvirt,
-                      'b': monomers[1].ndocc,
-                      's': monomers[1].nvirt
+        self.sizes = {'a' : monomers[1].ndocc,
+                      'r': monomers[1].nvirt,
+                      'b': monomers[2].ndocc,
+                      's': monomers[2].nvirt
                       }
         
 
@@ -115,13 +115,13 @@ class QEDSAPT0Driver:
         
         """
         # build orbitals using monomer A and monomer B SCF results, which may be None if the monomer SCF references were not run with orbital storage enabled
-        self.build_orbitals((monomers[1], monomers[2]))
+        self.build_orbitals(monomers)
 
         # build slices for occupied and virtual orbital subspaces of each monomer
-        self.build_slices((monomers[1], monomers[2]))
+        self.build_slices(monomers)
 
         # build sizes for number of occupied and virtual orbitals of each monomer
-        self.build_sizes((monomers[1], monomers[2]))
+        self.build_sizes(monomers)
 
         dimer_mints = monomers[0].mints
         # build the full two-electron integral tensor in physicist's notation (pr|qs) for the dimer
