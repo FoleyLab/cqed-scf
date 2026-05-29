@@ -65,6 +65,7 @@ class SAPTMonomer:
     def ndocc(self):
         return self.scf_results.get("ndocc")
     
+    @property
     def nvirt(self):
         return self.scf_results.get("nvirt")
     

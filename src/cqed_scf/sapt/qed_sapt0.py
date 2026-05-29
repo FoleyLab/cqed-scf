@@ -39,17 +39,43 @@ class QEDSAPT0Driver:
     def __post_init__(self) -> None:
         self.metadata.setdefault("integral_backend", self.integral_backend)
 
+    def prepare_geometries(self) -> Tuple[str, str, str]:
+        """Build dimer and ghosted monomer geometry strings from a Psi4 dimer."""
+
+        monomer_a_geometry = self.dimer_geometry.extract_subsets(1, 2)
+        monomer_b_geometry = self.dimer_geometry.extract_subsets(2, 1)
+
+        dimer_string = self.dimer_geometry.create_psi4_string_from_molecule()
+        monomer_a_string = monomer_a_geometry.create_psi4_string_from_molecule()
+        monomer_b_string = monomer_b_geometry.create_psi4_string_from_molecule()
+
+        return dimer_string, monomer_a_string, monomer_b_string
+
     def prepare_monomers(self) -> Tuple[SAPTMonomer, SAPTMonomer, SAPTMonomer]:
         """Prepare or retrieve monomer references."""
 
         if self.dimer is not None and self.monomer_a is not None and self.monomer_b is not None:
             return self.dimer, self.monomer_a, self.monomer_b
 
-        raise NotImplementedError(
-            "Automatic monomer extraction from dimer geometries is not implemented yet. "
-            "Pass monomer_a and monomer_b SAPTMonomer objects, or implement geometry "
-            "partitioning from monomer_definitions/monomer_indices."
+        dimer_string, monomer_a_string, monomer_b_string = self.prepare_geometries()
+
+        self.dimer = SAPTMonomer.from_cqed_scf(
+            label="dimer",
+            geometry=dimer_string,
+            config=self.config,
         )
+        self.monomer_a = SAPTMonomer.from_cqed_scf(
+            label="monomer_a",
+            geometry=monomer_a_string,
+            config=self.config,
+        )
+        self.monomer_b = SAPTMonomer.from_cqed_scf(
+            label="monomer_b",
+            geometry=monomer_b_string,
+            config=self.config,
+        )
+
+        return self.dimer, self.monomer_a, self.monomer_b
     
     def build_orbitals(self, monomers: Tuple[SAPTMonomer, SAPTMonomer, SAPTMonomer]) -> Any:
         """Build orbital intermediates needed for QED-SAPT0 components.
