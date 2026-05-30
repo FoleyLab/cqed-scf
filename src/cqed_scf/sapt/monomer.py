@@ -70,6 +70,10 @@ class SAPTMonomer:
         return self.scf_results.get("nvirt")
     
     @property
+    def nuc_rep(self):
+        return self.scf_results.get("nuc_rep")
+    
+    @property
     def energy_scf(self):
         return self.scf_results.get("energy_scf")
 

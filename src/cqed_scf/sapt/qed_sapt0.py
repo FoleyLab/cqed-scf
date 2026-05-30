@@ -42,42 +42,85 @@ class QEDSAPT0Driver:
     def prepare_geometries(self) -> Tuple[str, str, str]:
         """Build dimer and ghosted monomer geometry strings from a Psi4 dimer."""
 
-        monomer_a_geometry = self.dimer_geometry.extract_subsets(1, 2)
-        monomer_b_geometry = self.dimer_geometry.extract_subsets(2, 1)
+        monomer_A_geometry = self.dimer_geometry.extract_subsets(1, 2)
+        monomer_B_geometry = self.dimer_geometry.extract_subsets(2, 1)
 
         dimer_string = self.dimer_geometry.create_psi4_string_from_molecule()
-        monomer_a_string = monomer_a_geometry.create_psi4_string_from_molecule()
-        monomer_b_string = monomer_b_geometry.create_psi4_string_from_molecule()
+        monomer_A_string = monomer_A_geometry.create_psi4_string_from_molecule()
+        monomer_B_string = monomer_B_geometry.create_psi4_string_from_molecule()
 
-        return dimer_string, monomer_a_string, monomer_b_string
+        return dimer_string, monomer_A_string, monomer_B_string
 
     def prepare_monomers(self) -> Tuple[SAPTMonomer, SAPTMonomer, SAPTMonomer]:
         """Prepare or retrieve monomer references."""
 
-        if self.dimer is not None and self.monomer_a is not None and self.monomer_b is not None:
-            return self.dimer, self.monomer_a, self.monomer_b
+        if self.dimer is not None and self.monomer_A is not None and self.monomer_B is not None:
+            return self.dimer, self.monomer_A, self.monomer_B
 
-        dimer_string, monomer_a_string, monomer_b_string = self.prepare_geometries()
+        dimer_string, monomer_A_string, monomer_B_string = self.prepare_geometries()
 
         self.dimer = SAPTMonomer.from_cqed_scf(
             label="dimer",
             geometry=dimer_string,
             config=self.config,
         )
-        self.monomer_a = SAPTMonomer.from_cqed_scf(
-            label="monomer_a",
-            geometry=monomer_a_string,
+        self.monomer_A = SAPTMonomer.from_cqed_scf(
+            label="monomer_A",
+            geometry=monomer_A_string,
             config=self.config,
         )
-        self.monomer_b = SAPTMonomer.from_cqed_scf(
-            label="monomer_b",
-            geometry=monomer_b_string,
+        self.monomer_B = SAPTMonomer.from_cqed_scf(
+            label="monomer_B",
+            geometry=monomer_B_string,
             config=self.config,
         )
+        # store basic quantities as self attributes
+        # scf energies for use in the induction component and for reporting
+        self.E_scf_dimer = self.dimer.energy_scf
+        self.E_scf_A = self.monomer_A.energy_scf
+        self.E_scf_B = self.monomer_B.energy_scf
+               
 
-        return self.dimer, self.monomer_a, self.monomer_b
-    
-    def build_orbitals(self, monomers: Tuple[SAPTMonomer, SAPTMonomer, SAPTMonomer]) -> Any:
+        # size of orbital subspaces for use in component functions and for reporting
+        self.ndocc_dimer = self.dimer.ndocc
+        self.nvirt_dimer = self.dimer.nvirt
+        self.ndocc_A = self.monomer_A.ndocc
+        self.nvirt_A = self.monomer_A.nvirt
+        self.ndocc_B = self.monomer_B.ndocc
+        self.nvirt_B = self.monomer_B.nvirt
+        
+        # currently assumes closed shell, nsocc = 0
+        self.nsocc_dimer = 0
+        self.nsocc_A = 0
+        self.nsocc_B = 0
+
+        # orbital coefficients
+        self.C_dimer = self.dimer.C
+        self.C_A = self.monomer_A.C
+        self.C_B = self.monomer_B.C
+        self.Co_A = self.monomer_A.Co
+        self.Cv_A = self.monomer_A.Cv
+        self.Co_B = self.monomer_B.Co
+        self.Cv_B = self.monomer_B.Cv
+
+        # orbtial energies
+        self.eps_dimer = self.dimer.eps
+        self.eps_A = self.monomer_A.eps
+        self.eps_B = self.monomer_B.eps
+
+        # nuclear repulsion energy for reporting and use in the electrostatics component
+        self.E_nuc_dimer = self.dimer.nuc_rep
+        self.E_nuc_A = self.monomer_A.nuc_rep
+        self.E_nuc_B = self.monomer_B.nuc_rep
+        self.nuc_rep = self.E_nuc_dimer - self.E_nuc_A - self.E_nuc_B
+        self.vt_nuc_rep = self.nuc_rep / ((2 * self.ndocc_A + self.nsocc_A) * (2 * self.ndocc_B + self.nsocc_B))
+
+
+
+
+        return self.dimer, self.monomer_A, self.monomer_B
+
+    def build_orbitals(self) -> Any:
         """Build orbital intermediates needed for QED-SAPT0 components.
            Takes a tuple of monomer instances as input:
            (dimer, monomer_a, monomer_b)
@@ -92,27 +135,30 @@ class QEDSAPT0Driver:
            Cv_monomer_b = monomers[2].Cv
 
         """
-        self.orbitals = {'a' : monomers[1].Co,
-                         'r': monomers[1].Cv,
-                         'b': monomers[2].Co,
-                         's': monomers[2].Cv
+        # organize orbitals into a dictionary for convenient access in component functions, using the same string labels as the original SAPT0 implementation where possible (a, b, r, s)
+        self.orbitals = {'a' : self.Co_A,
+                         'r': self.Cv_A,
+                         'b': self.Co_B,
+                         's': self.Cv_B
                          }
         
-    def build_slices(self, monomers: Tuple[SAPTMonomer, SAPTMonomer, SAPTMonomer]) -> Any:
+
+        
+    def build_slices(self) -> Any:
         """Build slice objects for occupied and virtual orbital subspaces of each monomer.
            Takes a tuple of monomer instances as input:
-           (monomer_a, monomer_b)
+           (monomer_A, monomer_B)
 
            As an example, if you want to access the occupied slice for monomer_a:
            occ_slice_a = slice(0, monomers[0].ndocc)
         """
-        self.slices = {'a' : slice(0, monomers[1].ndocc),
-                       'r': slice(monomers[1].ndocc, None),
-                       'b': slice(0, monomers[2].ndocc),
-                       's': slice(monomers[2].ndocc, None)
+        self.slices = {'a' : slice(0, self.ndocc_A),
+                       'r': slice(self.ndocc_A, None),
+                       'b': slice(0, self.ndocc_B),
+                       's': slice(self.ndocc_B, None)
                        }
         
-    def build_sizes(self, monomers: Tuple[SAPTMonomer, SAPTMonomer]) -> Any:
+    def build_sizes(self) -> Any:
         """Build integers for number of occupied and virtual orbitals of each monomer.
            Takes a tuple of monomer instances as input:
            (monomer_a, monomer_b)
@@ -120,11 +166,12 @@ class QEDSAPT0Driver:
            As an example, if you want to access the number of occupied orbitals for monomer_a:
            nocc_a = monomers[0].ndocc
         """
-        self.sizes = {'a' : monomers[1].ndocc,
-                      'r': monomers[1].nvirt,
-                      'b': monomers[2].ndocc,
-                      's': monomers[2].nvirt
+        self.sizes = {'a' : self.ndocc_A,
+                      'r': self.nvirt_A,
+                      'b': self.ndocc_A,
+                      's': self.nvirt_A
                       }
+
         
 
     def build_integrals(self, monomers: Tuple[SAPTMonomer, SAPTMonomer, SAPTMonomer]) -> Any:
@@ -141,27 +188,39 @@ class QEDSAPT0Driver:
         
         """
         # build orbitals using monomer A and monomer B SCF results, which may be None if the monomer SCF references were not run with orbital storage enabled
-        self.build_orbitals(monomers)
+        self.build_orbitals()
 
         # build slices for occupied and virtual orbital subspaces of each monomer
-        self.build_slices(monomers)
+        self.build_slices()
 
         # build sizes for number of occupied and virtual orbitals of each monomer
-        self.build_sizes(monomers)
+        self.build_sizes()
 
         dimer_mints = monomers[0].mints
+        monomer_A_mints = monomers[1].mints
+        monomer_B_mints = monomers[2].mints
+
+        # overlap of dimer in AO basis
+        self.S_dimer = np.asarray(dimer_mints.ao_overlap())
+
+        # overlap transformed on bra with monomer A and ket with monomer B
+        self.S_AB = oe.contract("uI,vJ,uv->IJ", self.C_A, self.C_B, self.S_dimer)
+
         # build the full two-electron integral tensor in physicist's notation (pr|qs) for the dimer
         self.I_dimer = np.asarray(dimer_mints.ao_eri()).swapaxes(1, 2)
-        # self.v(dimer_mints, "pqrs")  # example of how to access dimer ERIs in physicist's notation
 
-        # get stored integrals from both monomers scf results, which may be None
-        # if the monomer SCF references were not run with integral storage enabled
+        # build the one-electron potential integrals for monomer A and monomer B
+        self.V_A = np.asarray(monomer_A_mints.ao_potential())
+        self.V_B = np.asarray(monomer_B_mints.ao_potential())
+
+        # potential integrals
+        self.V_A_BB = oe.contract("uI,vJ,uv->IJ", self.C_B, self.C_B, self.V_A, optimize="optimal")
+        self.V_A_AB = oe.contract("uI,vJ,uv->IJ", self.C_A, self.C_B, self.V_A, optimize="optimal")
+        self.V_B_AA = oe.contract("uI,vJ,uv->IJ", self.C_A, self.C_A, self.V_B, optimize="optimal")
+        self.V_B_AB = oe.contract("uI,vJ,uv->IJ", self.C_A, self.C_B, self.V_B, optimize="optimal")
 
 
-        #raise NotImplementedError(
-        #    "QED-SAPT0 integral construction is not implemented yet. "
-        #    "The first backend should build full two-electron integrals."
-        #)
+
 
     def compute_components(self, monomers, integrals) -> QEDSAPT0Results:
         """Call future component functions and collect a result object."""
@@ -179,10 +238,10 @@ class QEDSAPT0Driver:
         
         # ERI's from mints are in chemist's notation (pq|rs), but we want to access them in physicist's notation (pr|qs)
         # so we need to swap the middle two indices
-        V = oe.contract("pA,pqrs->Aqrs", self.orbitals[string[0]], self.I_dimer)
-        V = oe.contract("qB,Aqrs->ABrs", self.orbitals[string[1]], V)
-        V = oe.contract("rC,ABrs->ABCs", self.orbitals[string[2]], V)
-        V = oe.contract("sD,ABCs->ABCD", self.orbitals[string[3]], V)
+        V = oe.contract("pA,pqrs->Aqrs", self.orbitals[string[0]], self.I_dimer, optimize="optimal")
+        V = oe.contract("qB,Aqrs->ABrs", self.orbitals[string[1]], V, optimize="optimal")
+        V = oe.contract("rC,ABrs->ABCs", self.orbitals[string[2]], V, optimize="optimal")
+        V = oe.contract("sD,ABCs->ABCD", self.orbitals[string[3]], V, optimize="optimal")
         return V
 
     def run(self) -> QEDSAPT0Results:
