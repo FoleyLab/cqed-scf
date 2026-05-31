@@ -15,3 +15,5 @@
 7. Methods .v() is implemented and tested for He dimer, methods .s(), .eps(), .potential(), and .vt() still require implementation and testing.  They should be called by .build_integrals or by .run()
 
 8. After implementation from scratch, we will want to try to hook into as much psi4 capability as possible for a more performant code, i.e. avoiding full 2-ERI builds in favor of JK builds that use density fitting, etc.  This file https://github.com/psi4/psi4/blob/master/psi4/driver/procrouting/sapt/sapt_jk_terms.py looks to be quite useful, as the first function is build_sapt_jk_cach and takes wfn objects for monomer a and b. I have pinned a gemini chat about how to use the helper functions in this file! 
+
+9. Added example calling sapt_jk_terms to compute first-order terms (E_{elest} and E_{exch}) in examples/he_dimer/he_dimer_sapt_jk_test.py, this approach seems promising!

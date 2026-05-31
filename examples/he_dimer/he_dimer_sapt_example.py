@@ -49,6 +49,19 @@ no_com
 """
 
 
+dimer_geometry = psi4.geometry(dimer)
+monomer_a_geometry = dimer_geometry.extract_subsets(1,2)  # helium atoms
+monomer_b_geometry = dimer_geometry.extract_subsets(2,1)  # helium atoms
+dimer_string = dimer_geometry.create_psi4_string_from_molecule()
+monomer_a_string = monomer_a_geometry.create_psi4_string_from_molecule()
+monomer_b_string = monomer_b_geometry.create_psi4_string_from_molecule()
+
+print("Dimer geometry:")
+print(dimer_string)
+print("\nMonomer A geometry:")
+print(monomer_a_string)
+print("\nMonomer B geometry:")
+print(monomer_b_string)
 # ---------------------------------------------------------
 # Psi4 / CQED options
 # ---------------------------------------------------------
