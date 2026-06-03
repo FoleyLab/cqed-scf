@@ -58,8 +58,8 @@ class SAPTMonomer:
         return self.scf_results.get("d_ao")
 
     @property
-    def d_exp(self):
-        return self.scf_results.get("d_exp")
+    def d_exp_el(self): # electronic only, <d_el>
+        return self.scf_results.get("d_exp_el")
 
     @property
     def ndocc(self):

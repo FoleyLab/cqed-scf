@@ -115,8 +115,18 @@ class QEDSAPT0Driver:
         self.nuc_rep = self.E_nuc_dimer - self.E_nuc_A - self.E_nuc_B
         self.vt_nuc_rep = self.nuc_rep / ((2 * self.ndocc_A + self.nsocc_A) * (2 * self.ndocc_B + self.nsocc_B))
 
+        # lambda-scaled expectation values of the electronic dipole operator, <d_el>_dimer, <d_el>_A, and <d_el>_B
+        self.d_exp_dimer = self.dimer.d_exp_el 
+        self.d_exp_A = self.monomer_A.d_exp_el
+        self.d_exp_B = self.monomer_B.d_exp_el
 
-
+        # lambda-scaled dipole integrals in ao basis, d_dimer, d_A, d_B
+        self.d_dimer = self.dimer.d_ao
+        self.d_A = self.monomer_A.d_ao
+        self.d_B = self.monomer_B.d_ao 
+        assert np.allclose(self.d_A, self.d_B)
+        assert np.allclose(self.d_A, self.d_dimer)
+        
 
         return self.dimer, self.monomer_A, self.monomer_B
 
@@ -206,12 +216,27 @@ class QEDSAPT0Driver:
         # overlap transformed on bra with monomer A and ket with monomer B
         self.S_AB = oe.contract("uI,vJ,uv->IJ", self.C_A, self.C_B, self.S_dimer)
 
-        # build the full two-electron integral tensor in physicist's notation (pr|qs) for the dimer
-        self.I_dimer = np.asarray(dimer_mints.ao_eri()).swapaxes(1, 2)
+        # 1. Get the ERI array directly (try to avoid copying if ao_eri() allows)
+        self.I_dimer = np.asarray(dimer_mints.ao_eri())
+
+        # 2. Reshape self.d_A and self.d_B to broadcast into a 4D shape (pqrs)
+        #    d_A (p, q) -> (p, q, 1, 1)
+        #    d_B (r, s) -> (1, 1, r, s)
+        # This adds the outer product directly to self.I_dimer in-place, swapping axes on the fly.
+        self.I_dimer += self.d_A[:, :, np.newaxis, np.newaxis] * self.d_B[np.newaxis, np.newaxis, :, :]
+
+        # 3. Swap axes in-place (creates a view, zero memory overhead)
+        #    Note: If a contiguous array is strictly required by downstream code, 
+        #    append .copy() here, but it will double the memory momentarily.
+        self.I_dimer = self.I_dimer.swapaxes(1, 2)
+
 
         # build the one-electron potential integrals for monomer A and monomer B
         self.V_A = np.asarray(monomer_A_mints.ao_potential())
+        self.V_A -= 0.5 * self.d_exp_B * self.d_A
+
         self.V_B = np.asarray(monomer_B_mints.ao_potential())
+        self.V_B -= 0.5 * self.d_exp_A * self.d_B
 
         # potential integrals
         self.V_A_BB = oe.contract("uI,vJ,uv->IJ", self.C_B, self.C_B, self.V_A, optimize="optimal")
@@ -295,11 +320,44 @@ class QEDSAPT0Driver:
             psi4.core.clean()
             raise Exception("potential: side %s is not A or B" % side)
         
+
+    def vt(self, string):
+        if len(string)!=4:
+            psi4.core.clean()
+            raise Exception('Compute tilde{v}: string %s does not have 4 elements' % string)
+        
+        for alpha in 'ijab':
+            if (alpha in string) and (self.sizes[alpha] == 0):
+                return np.array([0]).reshape(1,1,1,1)
+            
+        # grab left and right strings
+        s_left = string[0] + string[2]
+        s_right = string[1] + string[3]
+
+        # ERI term
+        V = self.v(string)
+
+        # potential A
+        S_A = self.s(s_left)
+        V_A = self.potential(s_right, 'A') / (2 * self.ndocc_A + self.nsocc_A)
+        V += oe.contract("ik,jl->ijkl", S_A, V_A)
+
+        # potential B
+        S_B = self.s(s_right)
+        V_B = self.potential(s_left, 'B') / (2 * self.ndocc_B + self.nsocc_B)
+        V += np.einsum('ik,jl->ijkl', V_B, S_B)
+
+        # nuclear
+        V += np.einsum("ik,jl->ijkl", S_A, S_B) * self.vt_nuc_rep
+
+        return V
+        
         
     def run(self) -> QEDSAPT0Results:
         """Run the future QED-SAPT0 workflow."""
 
         monomers = self.prepare_monomers()
         integrals = self.build_integrals(monomers)
+
         return self.v("arbs")
         #return self.compute_components(monomers, integrals)

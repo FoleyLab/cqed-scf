@@ -27,6 +27,8 @@ def _he_sapt_config():
     )
 
 
+
+
 def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
     dimer = """
     He 0.0000000000 0.0000000000 0.0000000000
@@ -64,6 +66,7 @@ def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
         actual_varbs = driver.v("arbs")
         actual_sas = driver.s("as")
         actual_sbr = driver.s("br")
+        actual_Elst10 = 4 * np.einsum('abab', driver.vt('abab'), optimize=True)
 
         expected_varbs = np.array(
             [
@@ -85,6 +88,7 @@ def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
                 [-0.855236157,  0.078947881, -0.509439526],
             ]
         )
+        expected_Elst10 = -0.0005213924649
 
         assert actual_varbs.shape == expected_varbs.shape
         assert actual_sas.shape == expected_sas.shape
@@ -93,5 +97,68 @@ def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
         np.testing.assert_allclose(actual_varbs, expected_varbs, atol=1e-7, rtol=1e-7)
         np.testing.assert_allclose(np.abs(actual_sas), np.abs(expected_sas), atol=1e-7, rtol=1e-7)
         np.testing.assert_allclose(np.abs(actual_sbr), np.abs(expected_sbr), atol=1e-7, rtol=1e-7)
+        assert np.isclose(actual_Elst10, expected_Elst10, atol=1e-9, rtol=1e-9)
+    finally:
+        psi4.core.clean()
+
+
+def _he_h2_sapt_config():
+    psi4_options = {
+        "basis": "6-31g",
+        "scf_type": "pk",
+        "e_convergence": 1e-10,
+        "d_convergence": 1e-8,
+    }
+
+    return CQEDConfig(
+        lambda_vector=np.array([0.0, 0.0, 1.0]),
+        omega=0.07349864501573,
+        psi4_options=psi4_options,
+        reference="rhf",
+        functional=None,
+        density_fitting=False,
+        charge=0,
+        multiplicity=1,
+        dispersion_policy="none",
+        debug=False,
+    )
+
+
+def test_qedsapt0_driver_he_h2():
+    dimer = """
+    He 0.0000000000 0.0000000000 0.0000000000
+    --
+    Li  0.0000000000 0.0000000000 2.0000000000
+    H  0.0000000000 0.0000000000 3.0000000000
+    symmetry c1
+    units angstrom
+    no_reorient
+    no_com
+    """
+
+    config = _he_h2_sapt_config()
+
+    psi4.core.clean()
+    try:
+        dimer_geometry = psi4.geometry(dimer)
+        driver = QEDSAPT0Driver(
+            dimer_geometry=dimer_geometry,
+            config=config,
+            integral_backend="full_eri",
+        )
+
+        monomers = driver.prepare_monomers()
+
+        assert monomers[0] is driver.dimer
+        assert monomers[1] is driver.monomer_A
+        assert monomers[2] is driver.monomer_B
+        assert tuple(monomer.label for monomer in monomers) == (
+            "dimer",
+            "monomer_A",
+            "monomer_B",
+        )
+
+        driver.build_integrals(monomers)
+
     finally:
         psi4.core.clean()

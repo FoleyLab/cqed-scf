@@ -333,6 +333,7 @@ class CQEDSCF:
             nuc_rep=Enuc,
             d_ao=d_ao,
             d_exp=d_exp,
+            d_exp_el=d_exp_el,
             H0=H0,
             F=F,
             ndocc=self.ndocc,

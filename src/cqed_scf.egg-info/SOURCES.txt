@@ -31,5 +31,6 @@ tests/test_lambda0_pbe_regression.py
 tests/test_lambda_zero_regression.py
 tests/test_pbe_lambda0_regression.py
 tests/test_qeddft_hilbert_reference.py
+tests/test_qedsapt0_driver.py
 tests/test_range_separated.py
 tests/test_rc_gradient_vs_fd_tight.py
