@@ -243,7 +243,59 @@ class QEDSAPT0Driver:
         V = oe.contract("rC,ABrs->ABCs", self.orbitals[string[2]], V, optimize="optimal")
         V = oe.contract("sD,ABCs->ABCD", self.orbitals[string[3]], V, optimize="optimal")
         return V
+    
+    def s(self, string):
+        if len(string) != 2:
+            psi4.core.clean()
+            raise Exception("s: string %s does not have length 2" % string)
+        
+        for alpha in 'ijab':
+            if (alpha in string) and (self.sizes[alpha] == 0):
+                return np.array([0]).reshape(1,1)
+            
+        s1 = string[0]
+        s2 = string[1]
 
+        # compute on the fly
+        return (self.orbitals[s1].T).dot(self.S_dimer).dot(self.orbitals[s2])
+    
+    def eps(self, string, dim=1):
+        if len(string) != 1:
+            psi4.core.clean()
+            raise Exception("eps: string %s does not have length 1" % string)
+        
+        shape = (-1,) + tuple([1] * (dim - 1))
+
+        if (string=='i') or (string=='a') or (string=='r'):
+            return self.eps_A[self.slices[string]].reshape(shape)
+        
+        elif (string=='j') or (string=='b') or (string=='s'):
+            return self.eps_B[self.slices[string]].reshape(shape)
+        
+        else:
+            psi4.core.clean()
+            raise Exception("eps: string %s does not have valid monomer label" % string)
+    
+
+    def potential(self, string, side):
+        if len(string) != 2:
+            psi4.core.clean()
+            raise Exception("potential: string %s does not have length 2" % string)
+        
+        s1 = string[0]
+        s2 = string[1]
+
+        if side == 'A':
+            return (self.orbitals[s1].T).dot(self.V_A).dot(self.orbitals[s2])
+        
+        elif side == 'B':
+            return (self.orbitals[s1].T).dot(self.V_B).dot(self.orbitals[s2])
+        
+        else:
+            psi4.core.clean()
+            raise Exception("potential: side %s is not A or B" % side)
+        
+        
     def run(self) -> QEDSAPT0Results:
         """Run the future QED-SAPT0 workflow."""
 

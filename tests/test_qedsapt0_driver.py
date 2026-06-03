@@ -61,9 +61,11 @@ def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
         )
 
         driver.build_integrals(monomers)
-        actual = driver.v("arbs")
+        actual_varbs = driver.v("arbs")
+        actual_sas = driver.s("as")
+        actual_sbr = driver.s("br")
 
-        expected = np.array(
+        expected_varbs = np.array(
             [
                 [
                     [[-0.00132318, -0.01021403, -0.00274152]],
@@ -73,7 +75,23 @@ def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
             ]
         )
 
-        assert actual.shape == expected.shape
-        np.testing.assert_allclose(actual, expected, atol=1e-7, rtol=1e-7)
+        expected_sas = np.array(
+            [
+                [-0.855236157,  0.078947881,  0.509439526],
+            ]
+        )
+        expected_sbr = np.array(
+            [
+                [-0.855236157,  0.078947881, -0.509439526],
+            ]
+        )
+
+        assert actual_varbs.shape == expected_varbs.shape
+        assert actual_sas.shape == expected_sas.shape
+        assert actual_sbr.shape == expected_sbr.shape
+
+        np.testing.assert_allclose(actual_varbs, expected_varbs, atol=1e-7, rtol=1e-7)
+        np.testing.assert_allclose(np.abs(actual_sas), np.abs(expected_sas), atol=1e-7, rtol=1e-7)
+        np.testing.assert_allclose(np.abs(actual_sbr), np.abs(expected_sbr), atol=1e-7, rtol=1e-7)
     finally:
         psi4.core.clean()
