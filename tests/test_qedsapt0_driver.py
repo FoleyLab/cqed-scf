@@ -66,7 +66,9 @@ def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
         actual_varbs = driver.v("arbs")
         actual_sas = driver.s("as")
         actual_sbr = driver.s("br")
-        actual_Elst10 = 4 * np.einsum('abab', driver.vt('abab'), optimize=True)
+        actual_Elst100 = driver.Elst100()
+        actual_Exch100 = driver.Exch100()
+        actual_Edisp200 = driver.Edisp200()
 
         expected_varbs = np.array(
             [
@@ -88,7 +90,9 @@ def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
                 [-0.855236157,  0.078947881, -0.509439526],
             ]
         )
-        expected_Elst10 = -0.0005213924649
+        expected_Elst100 = -5.213924649057e-04
+        expected_Exch100 = 2.863988537340e-03
+        expected_Edisp200 = -1.642253534355e-05
 
         assert actual_varbs.shape == expected_varbs.shape
         assert actual_sas.shape == expected_sas.shape
@@ -97,7 +101,8 @@ def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
         np.testing.assert_allclose(actual_varbs, expected_varbs, atol=1e-7, rtol=1e-7)
         np.testing.assert_allclose(np.abs(actual_sas), np.abs(expected_sas), atol=1e-7, rtol=1e-7)
         np.testing.assert_allclose(np.abs(actual_sbr), np.abs(expected_sbr), atol=1e-7, rtol=1e-7)
-        assert np.isclose(actual_Elst10, expected_Elst10, atol=1e-9, rtol=1e-9)
+        assert np.isclose(actual_Elst100, expected_Elst100, atol=1e-9, rtol=1e-9)
+        assert np.isclose(actual_Exch100, expected_Exch100, atol=1e-9, rtol=1e-9)
     finally:
         psi4.core.clean()
 

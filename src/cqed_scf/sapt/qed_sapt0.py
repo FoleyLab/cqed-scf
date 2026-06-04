@@ -352,7 +352,42 @@ class QEDSAPT0Driver:
 
         return V
         
-        
+    def Elst100(self):
+        return 4 * oe.contract('abab', self.vt('abab'), optimize="optimal")
+    
+    def Exch100(self):
+        vt_abba = self.vt('abba')
+        vt_abaa = self.vt('abaa')
+        vt_abbb = self.vt('abbb')
+        vt_abab = self.vt('abab')
+        s_ab = self.s('ab')
+
+        Exch100 = oe.contract("abba", vt_abba, optimize="optimal")
+
+        _tmp = 2 * vt_abaa - vt_abaa.swapaxes(2,3)
+        Exch100 += oe.contract('Ab,abaA', s_ab, _tmp, optimize="optimal")
+
+        _tmp = 2 * vt_abbb - vt_abbb.swapaxes(2,3)
+        Exch100 += oe.contract('Ba,abBb', s_ab.T, _tmp, optimize="optimal")
+
+        Exch100 -= 2 * oe.contract('Ab,BA,abaB', s_ab, s_ab.T, vt_abab, optimize="optimal")
+        Exch100 -= 2 * oe.contract('AB,Ba,abAb', s_ab, s_ab.T, vt_abab, optimize="optimal")
+        Exch100 += oe.contract('Ab,Ba, abAB', s_ab, s_ab.T, vt_abab, optimize="optimal")
+
+        Exch100 *= -2
+
+        return Exch100
+    
+    def Edisp200(self):
+
+        v_abrs = self.v('abrs')
+        v_rsab = self.v('rsab')
+        eps_rsab = 1 / (self.eps('r', dim=4) - self.eps('s', dim=3) + self.eps('a', dim=2) + self.eps('b'))
+
+        Disp200 = 4 * oe.contract('rsab,rsab,abrs->', eps_rsab, v_rsab, v_abrs, optimize="optimal")
+        return Disp200
+    
+
     def run(self) -> QEDSAPT0Results:
         """Run the future QED-SAPT0 workflow."""
 
