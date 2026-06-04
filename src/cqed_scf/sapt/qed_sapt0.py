@@ -352,10 +352,10 @@ class QEDSAPT0Driver:
 
         return V
         
-    def Elst100(self):
+    def compute_Elst100(self):
         return 4 * oe.contract('abab', self.vt('abab'), optimize="optimal")
     
-    def Exch100(self):
+    def compute_Exch100(self):
         vt_abba = self.vt('abba')
         vt_abaa = self.vt('abaa')
         vt_abbb = self.vt('abbb')
@@ -378,15 +378,75 @@ class QEDSAPT0Driver:
 
         return Exch100
     
-    def Edisp200(self):
+    def compute_Edisp200(self):
 
         v_abrs = self.v('abrs')
-        v_rsab = self.v('rsab')
-        eps_rsab = 1 / (self.eps('r', dim=4) - self.eps('s', dim=3) + self.eps('a', dim=2) + self.eps('b'))
-
-        Disp200 = 4 * oe.contract('rsab,rsab,abrs->', eps_rsab, v_rsab, v_abrs, optimize="optimal")
+        self.v_rsab = self.v('rsab')
+        self.eps_rsab = 1 / (-self.eps('r', dim=4) - self.eps('s', dim=3) + self.eps('a', dim=2) + self.eps('b'))
+        self.t_rsab = oe.contract("rsab,rsab->rsab", self.v_rsab, self.eps_rsab, optimize="optimal")
+        Disp200 = 4 * oe.contract('rsab,abrs->', self.t_rsab, v_abrs, optimize="optimal")
         return Disp200
     
+    def compute_Eexchdisp200(self):
+
+        vt_abar = self.vt('abar')
+        vt_abra = self.vt('abra')
+        vt_absb = self.vt('absb')
+        vt_abbs = self.vt('abbs')
+
+        _tmp = 2 * vt_abar - vt_abra.swapaxes(2,3)
+        h_abrs = oe.contract('as,AbAr->abrs', self.s('as'), _tmp, optimize="optimal")
+
+        _tmp = 2 * vt_abra - vt_abar.swapaxes(2,3)
+        h_abrs += oe.contract('As,abrA->abrs', self.s('as'), _tmp, optimize="optimal")
+
+        _tmp = 2 * vt_absb - vt_abbs.swapaxes(2,3)
+        h_abrs += oe.contract('br,aBsB->abrs', self.s('br'), _tmp, optimize="optimal")
+
+        _tmp = 2 * vt_abbs - vt_absb.swapaxes(2,3)
+        h_abrs += oe.contract('Br,abBs->abrs', self.s('br'), _tmp, optimize="optimal")
+
+        # build q_abrs
+        vt_abas = self.vt('abas')
+        # q_abrs =      np.einsum('br,AB,aBAs->abrs', sapt.s('br'), sapt.s('ab'), vt_abas, optimize=True)
+        q_abrs = oe.contract('br,AB,aBAs->abrs', self.s('br'), self.s('ab'), vt_abas, optimize="optimal")
+        # q_abrs -= 2 * np.einsum('Br,AB,abAs->abrs', sapt.s('br'), sapt.s('ab'), vt_abas, optimize=True)
+        q_abrs -= 2 * oe.contract('Br,AB,abAs->abrs', self.s('br'), self.s('ab'), vt_abas, optimize="optimal")
+        # q_abrs -= 2 * np.einsum('br,aB,ABAs->abrs', sapt.s('br'), sapt.s('ab'), vt_abas, optimize=True)
+        q_abrs -= 2 * oe.contract('br,aB,ABAs->abrs', self.s('br'), self.s('ab'), vt_abas, optimize="optimal")
+        # q_abrs += 4 * np.einsum('Br,aB,AbAs->abrs', sapt.s('br'), sapt.s('ab'), vt_abas, optimize=True)
+        q_abrs += 4 * oe.contract('Br,aB,AbAs->abrs', self.s('br'), self.s('ab'), vt_abas, optimize="optimal")
+
+        vt_abrb = self.vt('abrb')
+        #q_abrs -= 2 * np.einsum('as,bA,ABrB->abrs', sapt.s('as'), sapt.s('ba'), vt_abrb, optimize=True)
+        q_abrs -= 2 * oe.contract('as,bA,ABrB->abrs', self.s('as'), self.s('ba'), vt_abrb, optimize="optimal")
+        #q_abrs += 4 * np.einsum('As,bA,aBrB->abrs', sapt.s('as'), sapt.s('ba'), vt_abrb, optimize=True)
+        q_abrs += 4 * oe.contract('As,bA,aBrB->abrs', self.s('as'), self.s('ba'), vt_abrb, optimize="optimal")
+        #q_abrs +=     np.einsum('as,BA,AbrB->abrs', sapt.s('as'), sapt.s('ba'), vt_abrb, optimize=True)
+        q_abrs +=    oe.contract('as,BA,AbrB->abrs', self.s('as'), self.s('ba'), vt_abrb, optimize="optimal")
+        #q_abrs -= 2 * np.einsum('As,BA,abrB->abrs', sapt.s('as'), sapt.s('ba'), vt_abrb, optimize=True)
+        q_abrs -= 2 * oe.contract('As,BA,abrB->abrs', self.s('as'), self.s('ba'), vt_abrb, optimize="optimal")
+
+        vt_abab = self.vt('abab')
+        #q_abrs +=     np.einsum('Br,As,abAB->abrs', sapt.s('br'), sapt.s('as'), vt_abab, optimize=True)
+        q_abrs +=     oe.contract('Br,As,abAB->abrs', self.s('br'), self.s('as'), vt_abab, optimize="optimal")
+        #q_abrs -= 2 * np.einsum('br,As,aBAB->abrs', sapt.s('br'), sapt.s('as'), vt_abab, optimize=True)
+        q_abrs -= 2 * oe.contract('br,As,aBAB->abrs', self.s('br'), self.s('as'), vt_abab, optimize="optimal")
+        #q_abrs -= 2 * np.einsum('Br,as,AbAB->abrs', sapt.s('br'), sapt.s('as'), vt_abab, optimize=True)
+        q_abrs -= 2 * oe.contract('Br,as,AbAB->abrs', self.s('br'), self.s('as'), vt_abab, optimize="optimal")
+
+        vt_abrs = self.vt('abrs')
+        #q_abrs +=     np.einsum('bA,aB,ABrs->abrs', sapt.s('ba'), sapt.s('ab'), vt_abrs, optimize=True)
+        q_abrs +=     oe.contract('bA,aB,ABrs->abrs', self.s('ba'), self.s('ab'), vt_abrs, optimize="optimal")
+        #q_abrs -= 2 * np.einsum('bA,AB,aBrs->abrs', sapt.s('ba'), sapt.s('ab'), vt_abrs, optimize=True)
+        q_abrs -= 2 * oe.contract('bA,AB,aBrs->abrs', self.s('ba'), self.s('ab'), vt_abrs, optimize="optimal")
+        #q_abrs -= 2 * np.einsum('BA,aB,Abrs->abrs', sapt.s('ba'), sapt.s('ab'), vt_abrs, optimize=True)
+        q_abrs -= 2 * oe.contract('BA,aB,Abrs->abrs', self.s('ba'), self.s('ab'), vt_abrs, optimize="optimal")
+
+        # sum all terms and contract with t_rsab
+        xd_absr = self.vt('absr') + h_abrs.swapaxes(2,3) + q_abrs.swapaxes(2,3)
+        Eexchdisp200 = -2 * oe.contract('absr,rsab->', xd_absr, self.t_rsab, optimize="optimal")
+        return Eexchdisp200
 
     def run(self) -> QEDSAPT0Results:
         """Run the future QED-SAPT0 workflow."""
