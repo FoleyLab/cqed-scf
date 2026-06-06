@@ -353,7 +353,7 @@ class QEDSAPT0Driver:
         return V
         
     def compute_Elst100(self):
-        return 4 * oe.contract('abab', self.vt('abab'), optimize="optimal")
+        return 4 * oe.contract('abab->', self.vt('abab'), optimize="optimal")
     
     def compute_Exch100(self):
         vt_abba = self.vt('abba')
