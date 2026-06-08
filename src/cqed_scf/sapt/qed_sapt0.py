@@ -602,8 +602,8 @@ class QEDSAPT0Driver:
         self.Edisp200 = self.compute_Edisp200()
         self.Eexchdisp200 = self.compute_Eexchdisp200()
         self.Eind200 = self.compute_Eind200()
-        self.EexchInd200 = self.compute_Eexchind200()
+        self.Eexchind200 = self.compute_Eexchind200()
         
-        self.E_SAPT0 = self.Eelst100 + self.Eexch100 + self.Edisp200 + self.Eexchdisp200 + self.Eind200 + self.EexchInd200
+        self.E_SAPT0 = self.Eelst100 + self.Eexch100 + self.Edisp200 + self.Eexchdisp200 + self.Eind200 + self.Eexchind200
         return self.E_SAPT0
 

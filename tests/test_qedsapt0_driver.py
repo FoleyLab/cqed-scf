@@ -30,6 +30,14 @@ def _he_sapt_config():
 
 
 def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
+    """ This unit test will test some of the core components of QED-SAPT driver, including:
+        - testing slices of v, s,
+        - testing the monomer classes behave as expected
+        - running individual driver methods to compute energy components and comparing against expected output
+        All expected output comes from 
+    
+    
+    """
     dimer = """
     He 0.0000000000 0.0000000000 0.0000000000
     --
@@ -183,9 +191,55 @@ def test_qedsapt0_driver_water_water():
         assert np.isclose(driver.Edisp200, expected_Disp20, atol=1e-9, rtol=1e-9)
         assert np.isclose(driver.Eexchdisp200, expected_ExchDisp20, atol=1e-9, rtol=1e-9)
         assert np.isclose(driver.Eind200, expected_Ind20, atol=1e-9, rtol=1e-9)
-        assert np.isclose(driver.EexchInd200, expected_ExchInd20, atol=1e-9, rtol=1e-9)
+        assert np.isclose(driver.Eexchind200, expected_ExchInd20, atol=1e-9, rtol=1e-9)
         assert np.isclose(driver.E_SAPT0, expected_SAPT0, atol=1e-9, rtol=1e-9)
         
+
+    finally:
+        psi4.core.clean()
+
+def test_qedsapt0_driver_water_methanol():
+    dimer = """
+    O   -0.525329794  -0.050971084  -0.314516861
+    H   -0.942006633   0.747901631   0.011252816
+    H    0.403696525   0.059785981  -0.073568368
+    --
+    O    2.164777967   0.046634850   0.060313926
+    H    2.532760791  -0.525442553   0.737842253
+    C    2.629783038  -0.424995066  -1.201845184
+    H    2.198965943   0.226098625  -1.954959216
+    H    3.715746725  -0.374202205  -1.276157112
+    H    2.301440420  -1.444864563  -1.400925818
+    """
+
+    config = _water_water_sapt_config()
+
+    psi4.core.clean()
+    try:
+        dimer_geometry = psi4.geometry(dimer)
+        driver = QEDSAPT0Driver(
+            dimer_geometry=dimer_geometry,
+            config=config,
+            integral_backend="full_eri",
+        )
+
+        driver.run()
+        
+        expected_Elst100 = -2.022863936994e-02
+        expected_Eexch100 = 2.181434270454e-02
+        expected_Edisp200 = -5.073563201634e-03
+        expected_Eexchdisp200 = 1.127969697164e-03
+        expected_Eind200 = -9.309710760244e-03
+        expected_Eexchind200 = 5.605149106206e-03
+        expected_SAPT0 = -6.064451823912e-03
+        assert np.isclose(driver.Eelst100, expected_Elst100, atol=1e-9, rtol=1e-9)
+        assert np.isclose(driver.Eexch100, expected_Eexch100, atol=1e-9, rtol=1e-9)
+        assert np.isclose(driver.Edisp200, expected_Edisp200, atol=1e-9, rtol=1e-9)
+        assert np.isclose(driver.Eexchdisp200, expected_Eexchdisp200, atol=1e-9, rtol=1e-9)
+        assert np.isclose(driver.Eind200, expected_Eind200, atol=1e-9, rtol=1e-9)
+        assert np.isclose(driver.Eexchind200, expected_Eexchind200, atol=1e-9, rtol=1e-9)
+        assert np.isclose(driver.E_SAPT0, expected_SAPT0, atol=1e-9, rtol=1e-9)
+
 
     finally:
         psi4.core.clean()
