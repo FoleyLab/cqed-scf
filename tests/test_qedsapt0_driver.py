@@ -117,17 +117,17 @@ def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
         psi4.core.clean()
 
 
-def _he_h2_sapt_config():
+def _water_water_sapt_config():
     psi4_options = {
-        "basis": "6-31g",
+        "basis": "jun-cc-pVDZ",
         "scf_type": "pk",
-        "e_convergence": 1e-10,
-        "d_convergence": 1e-8,
+        "e_convergence": 1e-12,
+        "d_convergence": 1e-12,
     }
 
     return CQEDConfig(
-        lambda_vector=np.array([0.0, 0.0, 1.0]),
-        omega=0.07349864501573,
+        lambda_vector=np.array([0.0, 0.0, 0.0]),
+        omega=0.0,
         psi4_options=psi4_options,
         reference="rhf",
         functional=None,
@@ -139,19 +139,19 @@ def _he_h2_sapt_config():
     )
 
 
-def test_qedsapt0_driver_he_h2():
+def test_qedsapt0_driver_water_water():
     dimer = """
-    He 0.0000000000 0.0000000000 0.0000000000
+    O   -0.066999140   0.000000000   1.494354740
+    H    0.815734270   0.000000000   1.865866390
+    H    0.068855100   0.000000000   0.539142770
     --
-    Li  0.0000000000 0.0000000000 2.0000000000
-    H  0.0000000000 0.0000000000 3.0000000000
+    O    0.062547750   0.000000000  -1.422632080
+    H   -0.406965400  -0.760178410  -1.771744500
+    H   -0.406965400   0.760178410  -1.771744500
     symmetry c1
-    units angstrom
-    no_reorient
-    no_com
     """
 
-    config = _he_h2_sapt_config()
+    config = _water_water_sapt_config()
 
     psi4.core.clean()
     try:
@@ -162,18 +162,30 @@ def test_qedsapt0_driver_he_h2():
             integral_backend="full_eri",
         )
 
-        monomers = driver.prepare_monomers()
+        driver.run()
+        #Elst10: -0.013763635524
+        expected_Elst10 = -1.376153034932e-02
+        #Exch10: 0.010671445704
+        expected_Exch10 = 1.067102949788e-02
+        #Disp20: -0.002490829360
+        expected_Disp20 = -2.490914697507e-03
+        #Exch-Disp20: 0.000521337186
+        expected_ExchDisp20 = 5.213383314441e-04
+        #Ind20,r: -0.004267681293
+        expected_Ind20 = -4.267259551623e-03
+        #Exch-Ind20,r: 0.0023373573144267681293
+        expected_ExchInd20 = 2.337176071937e-03
+        #Total SAPT0: -0.006992005972
+        expected_SAPT0 = -6.990160697192e-03
 
-        assert monomers[0] is driver.dimer
-        assert monomers[1] is driver.monomer_A
-        assert monomers[2] is driver.monomer_B
-        assert tuple(monomer.label for monomer in monomers) == (
-            "dimer",
-            "monomer_A",
-            "monomer_B",
-        )
-
-        driver.build_integrals(monomers)
+        assert np.isclose(driver.Elst100, expected_Elst10, atol=1e-9, rtol=1e-9)
+        assert np.isclose(driver.Exch100, expected_Exch10, atol=1e-9, rtol=1e-9)
+        assert np.isclose(driver.Edisp200, expected_Disp20, atol=1e-9, rtol=1e-9)
+        assert np.isclose(driver.Eexchdisp200, expected_ExchDisp20, atol=1e-9, rtol=1e-9)
+        assert np.isclose(driver.Eind200, expected_Ind20, atol=1e-9, rtol=1e-9)
+        assert np.isclose(driver.ExchInd200, expected_ExchInd20, atol=1e-9, rtol=1e-9)
+        assert np.isclose(driver.E_SAPT0, expected_SAPT0, atol=1e-9, rtol=1e-9)
+        
 
     finally:
         psi4.core.clean()
