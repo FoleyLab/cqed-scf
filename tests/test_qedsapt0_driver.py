@@ -70,6 +70,8 @@ def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
         actual_Exch100 = driver.compute_Exch100()
         actual_Edisp200 = driver.compute_Edisp200()
         actual_Eexchdisp200 = driver.compute_Eexchdisp200()
+        actual_Eind200 = driver.compute_Eind200()
+        actual_ExchInd200 = driver.compute_Eexchind200()
 
         expected_varbs = np.array(
             [
@@ -95,6 +97,8 @@ def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
         expected_Exch100 = 2.863988537340e-03
         expected_Edisp200 = -1.642253534355e-05
         expected_Eexchdisp200 = -6.875724637967e-06
+        expected_Eind200 = -1.246065163870e-04
+        expected_ExchInd200 = 1.340706587265e-04
 
         assert actual_varbs.shape == expected_varbs.shape
         assert actual_sas.shape == expected_sas.shape
@@ -107,6 +111,8 @@ def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
         assert np.isclose(actual_Exch100, expected_Exch100, atol=1e-9, rtol=1e-9)
         assert np.isclose(actual_Edisp200, expected_Edisp200, atol=1e-9, rtol=1e-9)
         assert np.isclose(actual_Eexchdisp200, expected_Eexchdisp200, atol=1e-9, rtol=1e-9)
+        assert np.isclose(actual_Eind200, expected_Eind200, atol=1e-9, rtol=1e-9)
+        assert np.isclose(actual_ExchInd200, expected_ExchInd200, atol=1e-9, rtol=1e-9)
     finally:
         psi4.core.clean()
 

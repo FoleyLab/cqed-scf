@@ -351,7 +351,55 @@ class QEDSAPT0Driver:
         V += np.einsum("ik,jl->ijkl", S_A, S_B) * self.vt_nuc_rep
 
         return V
+    
+    def chf(self, monomer, ind=False):
+        if monomer not in ['A', 'B']:
+            psi4.core.clean()
+            raise Exception("chf: monomer %s is not A or B" % monomer)
         
+        if monomer == 'A':
+            w_n = 2 * oe.contract('saba->bs', self.v('saba'), optimize="optimal")
+            w_n += self.V_A_BB[self.slices['b'], self.slices['s']]
+            eps_ov = (self.eps('b', dim=2) - self.eps('s'))
+
+            # set terms
+            v_term1 = 'sbbs'
+            v_term2 = 'sbsb'
+            no, nv = self.ndocc_B, self.nvirt_B
+
+        if monomer == 'B':
+            w_n = 2 * oe.contract('rbab->ar', self.v('rbab'), optimize="optimal")
+            w_n += self.V_B_AA[self.slices['a'], self.slices['r']]
+            eps_ov = (self.eps('a', dim=2) - self.eps('r'))
+            v_term1 = 'raar'
+            v_term2 = 'rara'
+            no, nv = self.ndocc_A, self.nvirt_A
+
+        # form A matrix (LHS)
+        voov = self.v(v_term1)
+        v_vOov = 2 * voov - self.v(v_term2).swapaxes(2,3)
+        v_ooaa = voov.swapaxes(1,3)
+        v_vVoO = 2 * v_ooaa- v_ooaa.swapaxes(2,3)
+        # A_ovOV = np.einsum('vOoV->ovOV', v_vOoV + v_vVoO.swapaxes(1, 3))
+        #A_ovOV = oe.contract('vOov->ovOV', v_vOov + v_vVoO.swapaxes(1,3), optimize="optimal")
+        A_ovOV = oe.contract('vOoV->ovOV',  v_vOov + v_vVoO.swapaxes(1, 3),optimize="optimal")
+        # copy back to C contibous
+        nov = nv * no 
+        A_ovOV = A_ovOV.reshape(nov, nov).copy(order='C')
+        A_ovOV[np.diag_indices_from(A_ovOV)] -= eps_ov.ravel()
+
+        # call DGESV, need flat ov array 
+        B_ov = -1 * w_n.ravel()
+        t = np.linalg.solve(A_ovOV, B_ov)
+        t = t.reshape(no, nv).T
+
+        if ind:
+            e20_ind = 2 * oe.contract('vo,ov->', t, w_n, optimize="optimal")
+            return t, e20_ind
+        
+        else:
+            return t
+
     def compute_Elst100(self):
         return 4 * oe.contract('abab->', self.vt('abab'), optimize="optimal")
     
@@ -447,6 +495,101 @@ class QEDSAPT0Driver:
         xd_absr = self.vt('absr') + h_abrs.swapaxes(2,3) + q_abrs.swapaxes(2,3)
         Eexchdisp200 = -2 * oe.contract('absr,rsab->', xd_absr, self.t_rsab, optimize="optimal")
         return Eexchdisp200
+    
+    def compute_Eind200(self):
+        self.CPHF_ra, Ind200_ba = self.chf('B', ind=True)
+        self.CPHF_sb, Ind200_ab = self.chf('A', ind=True)
+
+        return Ind200_ba + Ind200_ab
+    
+    def compute_Eexchind200(self):
+        # A <- B
+        vt_abra = self.vt('abra')
+        vt_abar = self.vt('abar')
+
+        #ExchInd20_ab  =     np.einsum('ra,abbr', CPHF_ra, sapt.vt('abbr'), optimize=True)
+        ExchInd20_ab = oe.contract('ra,abbr->ab', self.CPHF_ra, self.vt('abbr'), optimize="optimal")
+        #ExchInd20_ab += 2 * np.einsum('rA,Ab,abar', CPHF_ra, sapt.s('ab'), vt_abar, optimize=True)
+        ExchInd20_ab += 2 * oe.contract('rA,Ab,abar->ab', self.CPHF_ra, self.s('ab'), vt_abar, optimize="optimal")
+        #ExchInd20_ab += 2 * np.einsum('ra,Ab,abrA', CPHF_ra, sapt.s('ab'), vt_abra, optimize=True)
+        ExchInd20_ab += 2 * oe.contract('ra,Ab,abrA->ab', self.CPHF_ra, self.s('ab'), vt_abra, optimize="optimal")
+        #ExchInd20_ab -=     np.einsum('rA,Ab,abra', CPHF_ra, sapt.s('ab'), vt_abra, optimize=True)
+        ExchInd20_ab -=     oe.contract('rA,Ab,abra->ab', self.CPHF_ra, self.s('ab'), vt_abra, optimize="optimal")
+
+        vt_abbb = self.vt('abbb')
+        vt_abab = self.vt('abab')
+        #ExchInd20_ab -=     np.einsum('ra,Ab,abAr', CPHF_ra, sapt.s('ab'), vt_abar, optimize=True)
+        ExchInd20_ab -=     oe.contract('ra,Ab,abAr->ab', self.CPHF_ra, self.s('ab'), vt_abar, optimize="optimal")
+        #ExchInd20_ab += 2 * np.einsum('ra,Br,abBb', CPHF_ra, sapt.s('br'), vt_abbb, optimize=True)
+        ExchInd20_ab += 2 * oe.contract('ra,Br,abBb->ab', self.CPHF_ra, self.s('br'), vt_abbb, optimize="optimal")
+        #ExchInd20_ab -=     np.einsum('ra,Br,abbB', CPHF_ra, sapt.s('br'), vt_abbb, optimize=True)
+        ExchInd20_ab -=     oe.contract('ra,Br,abbB->ab', self.CPHF_ra, self.s('br'), vt_abbb, optimize="optimal")
+        #ExchInd20_ab -= 2 * np.einsum('rA,Ab,Br,abaB', CPHF_ra, sapt.s('ab'), sapt.s('br'), vt_abab, optimize=True)
+        ExchInd20_ab -= 2 * oe.contract('rA,Ab,Br,abaB->ab', self.CPHF_ra, self.s('ab'), self.s('br'), vt_abab, optimize="optimal")
+
+        vt_abrb = self.vt('abrb')
+        #ExchInd20_ab -= 2 * np.einsum('ra,Ab,BA,abrB', CPHF_ra, sapt.s('ab'), sapt.s('ba'), vt_abrb, optimize=True)
+        ExchInd20_ab -= 2 * oe.contract('ra,Ab,BA,abrB->ab', self.CPHF_ra, self.s('ab'), self.s('ba'), vt_abrb, optimize="optimal")
+        #ExchInd20_ab -= 2 * np.einsum('ra,AB,Br,abAb', CPHF_ra, sapt.s('ab'), sapt.s('br'), vt_abab, optimize=True)
+        ExchInd20_ab -= 2 * oe.contract('ra,AB,Br,abAb->ab', self.CPHF_ra, self.s('ab'), self.s('br'), vt_abab, optimize="optimal")
+        #ExchInd20_ab -= 2 * np.einsum('rA,AB,Ba,abrb', CPHF_ra, sapt.s('ab'), sapt.s('ba'), vt_abrb, optimize=True)
+        ExchInd20_ab -= 2 * oe.contract('rA,AB,Ba,abrb->ab', self.CPHF_ra, self.s('ab'), self.s('ba'), vt_abrb, optimize="optimal")
+
+        #ExchInd20_ab +=     np.einsum('ra,Ab,Br,abAB', CPHF_ra, sapt.s('ab'), sapt.s('br'), vt_abab, optimize=True)
+        ExchInd20_ab +=     oe.contract('ra,Ab,Br,abAB->ab', self.CPHF_ra, self.s('ab'), self.s('br'), vt_abab, optimize="optimal")
+        #ExchInd20_ab +=     np.einsum('rA,Ab,Ba,abrB', CPHF_ra, sapt.s('ab'), sapt.s('ba'), vt_abrb, optimize=True)
+        ExchInd20_ab +=     oe.contract('rA,Ab,Ba,abrB->ab', self.CPHF_ra, self.s('ab'), self.s('ba'), vt_abrb, optimize="optimal")
+
+        ExchInd20_ab *= -2
+
+        # B <- A
+        vt_abbs = self.vt('abbs')
+        vt_absb = self.vt('absb')
+        #ExchInd20_ba  =     np.einsum('sb,absa', CPHF_sb, sapt.vt('absa'), optimize=True)
+        ExchInd20_ba  =     oe.contract('sb,absa->ba', self.CPHF_sb, self.vt('absa'), optimize="optimal")
+        #ExchInd20_ba += 2 * np.einsum('sB,Ba,absb', CPHF_sb, sapt.s('ba'), vt_absb, optimize=True)
+        ExchInd20_ba += 2 * oe.contract('sB,Ba,absb->ba', self.CPHF_sb, self.s('ba'), vt_absb, optimize="optimal")
+        #ExchInd20_ba += 2 * np.einsum('sb,Ba,abBs', CPHF_sb, sapt.s('ba'), vt_abbs, optimize=True)
+        ExchInd20_ba += 2 * oe.contract('sb,Ba,abBs->ba', self.CPHF_sb, self.s('ba'), vt_abbs, optimize="optimal")
+        #ExchInd20_ba -=     np.einsum('sB,Ba,abbs', CPHF_sb, sapt.s('ba'), vt_abbs, optimize=True)
+        ExchInd20_ba -=     oe.contract('sB,Ba,abbs->ba', self.CPHF_sb, self.s('ba'), vt_abbs, optimize="optimal")
+
+        #vt_abaa = sapt.vt('abaa')
+        #vt_abab = sapt.vt('abab')
+        vt_abaa = self.vt('abaa')
+        vt_abab = self.vt('abab')
+
+        #ExchInd20_ba -=     np.einsum('sb,Ba,absB', CPHF_sb, sapt.s('ba'), vt_absb, optimize=True)
+        ExchInd20_ba -=     oe.contract('sb,Ba,absB->ba', self.CPHF_sb, self.s('ba'), vt_absb, optimize="optimal")
+        #ExchInd20_ba += 2 * np.einsum('sb,As,abaA', CPHF_sb, sapt.s('as'), vt_abaa, optimize=True)
+        ExchInd20_ba += 2 * oe.contract('sb,As,abaA->ba', self.CPHF_sb, self.s('as'), vt_abaa, optimize="optimal")
+        #ExchInd20_ba -=     np.einsum('sb,As,abAa', CPHF_sb, sapt.s('as'), vt_abaa, optimize=True)
+        ExchInd20_ba -=     oe.contract('sb,As,abAa->ba', self.CPHF_sb, self.s('as'), vt_abaa, optimize="optimal")
+        #ExchInd20_ba -= 2 * np.einsum('sB,Ba,As,abAb', CPHF_sb, sapt.s('ba'), sapt.s('as'), vt_abab, optimize=True)
+        ExchInd20_ba -= 2 * oe.contract('sB,Ba,As,abAb->ba', self.CPHF_sb, self.s('ba'), self.s('as'), vt_abab, optimize="optimal")
+
+        #vt_abas = sapt.vt('abas')
+        vt_abas = self.vt('abas')
+        #ExchInd20_ba -= 2 * np.einsum('sb,Ba,AB,abAs', CPHF_sb, sapt.s('ba'), sapt.s('ab'), vt_abas, optimize=True)
+        ExchInd20_ba -= 2 * oe.contract('sb,Ba,AB,abAs->ba', self.CPHF_sb, self.s('ba'), self.s('ab'), vt_abas, optimize="optimal")
+        #ExchInd20_ba -= 2 * np.einsum('sb,BA,As,abaB', CPHF_sb, sapt.s('ba'), sapt.s('as'), vt_abab, optimize=True)
+        ExchInd20_ba -= 2 * oe.contract('sb,BA,As,abaB->ba', self.CPHF_sb, self.s('ba'), self.s('as'), vt_abab, optimize="optimal")
+        #ExchInd20_ba -= 2 * np.einsum('sB,BA,Ab,abas', CPHF_sb, sapt.s('ba'), sapt.s('ab'), vt_abas, optimize=True)
+        ExchInd20_ba -= 2 * oe.contract('sB,BA,Ab,abas->ba', self.CPHF_sb, self.s('ba'), self.s('ab'), vt_abas, optimize="optimal")
+
+        #ExchInd20_ba +=     np.einsum('sb,Ba,As,abAB', CPHF_sb, sapt.s('ba'), sapt.s('as'), vt_abab, optimize=True)
+        ExchInd20_ba +=     oe.contract('sb,Ba,As,abAB->ba', self.CPHF_sb, self.s('ba'), self.s('as'), vt_abab, optimize="optimal")
+        #ExchInd20_ba +=     np.einsum('sB,Ba,Ab,abAs', CPHF_sb, sapt.s('ba'), sapt.s('ab'), vt_abas, optimize=True)
+        ExchInd20_ba +=     oe.contract('sB,Ba,Ab,abAs->ba', self.CPHF_sb, self.s('ba'), self.s('ab'), vt_abas, optimize="optimal")
+
+        ExchInd20_ba *= -2
+        ExchInd200 = ExchInd20_ab + ExchInd20_ba
+        return ExchInd200
+
+
+
+
+
 
     def run(self) -> QEDSAPT0Results:
         """Run the future QED-SAPT0 workflow."""
