@@ -66,12 +66,12 @@ def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
         actual_varbs = driver.v("arbs")
         actual_sas = driver.s("as")
         actual_sbr = driver.s("br")
-        actual_Elst100 = driver.compute_Elst100()
-        actual_Exch100 = driver.compute_Exch100()
+        actual_Eelst100 = driver.compute_Elst100()
+        actual_Eexch100 = driver.compute_Exch100()
         actual_Edisp200 = driver.compute_Edisp200()
         actual_Eexchdisp200 = driver.compute_Eexchdisp200()
         actual_Eind200 = driver.compute_Eind200()
-        actual_ExchInd200 = driver.compute_Eexchind200()
+        actual_EexchInd200 = driver.compute_Eexchind200()
 
         expected_varbs = np.array(
             [
@@ -107,12 +107,12 @@ def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
         np.testing.assert_allclose(actual_varbs, expected_varbs, atol=1e-7, rtol=1e-7)
         np.testing.assert_allclose(np.abs(actual_sas), np.abs(expected_sas), atol=1e-7, rtol=1e-7)
         np.testing.assert_allclose(np.abs(actual_sbr), np.abs(expected_sbr), atol=1e-7, rtol=1e-7)
-        assert np.isclose(actual_Elst100, expected_Elst100, atol=1e-9, rtol=1e-9)
-        assert np.isclose(actual_Exch100, expected_Exch100, atol=1e-9, rtol=1e-9)
+        assert np.isclose(actual_Eelst100, expected_Elst100, atol=1e-9, rtol=1e-9)
+        assert np.isclose(actual_Eexch100, expected_Exch100, atol=1e-9, rtol=1e-9)
         assert np.isclose(actual_Edisp200, expected_Edisp200, atol=1e-9, rtol=1e-9)
         assert np.isclose(actual_Eexchdisp200, expected_Eexchdisp200, atol=1e-9, rtol=1e-9)
         assert np.isclose(actual_Eind200, expected_Eind200, atol=1e-9, rtol=1e-9)
-        assert np.isclose(actual_ExchInd200, expected_ExchInd200, atol=1e-9, rtol=1e-9)
+        assert np.isclose(actual_EexchInd200, expected_ExchInd200, atol=1e-9, rtol=1e-9)
     finally:
         psi4.core.clean()
 
@@ -178,12 +178,12 @@ def test_qedsapt0_driver_water_water():
         #Total SAPT0: -0.006992005972
         expected_SAPT0 = -6.990160697192e-03
 
-        assert np.isclose(driver.Elst100, expected_Elst10, atol=1e-9, rtol=1e-9)
-        assert np.isclose(driver.Exch100, expected_Exch10, atol=1e-9, rtol=1e-9)
+        assert np.isclose(driver.Eelst100, expected_Elst10, atol=1e-9, rtol=1e-9)
+        assert np.isclose(driver.Eexch100, expected_Exch10, atol=1e-9, rtol=1e-9)
         assert np.isclose(driver.Edisp200, expected_Disp20, atol=1e-9, rtol=1e-9)
         assert np.isclose(driver.Eexchdisp200, expected_ExchDisp20, atol=1e-9, rtol=1e-9)
         assert np.isclose(driver.Eind200, expected_Ind20, atol=1e-9, rtol=1e-9)
-        assert np.isclose(driver.ExchInd200, expected_ExchInd20, atol=1e-9, rtol=1e-9)
+        assert np.isclose(driver.EexchInd200, expected_ExchInd20, atol=1e-9, rtol=1e-9)
         assert np.isclose(driver.E_SAPT0, expected_SAPT0, atol=1e-9, rtol=1e-9)
         
 

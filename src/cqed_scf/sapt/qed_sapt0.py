@@ -597,13 +597,13 @@ class QEDSAPT0Driver:
         monomers = self.prepare_monomers()
         integrals = self.build_integrals(monomers)
 
-        self.Elst100 = self.compute_Elst100()
-        self.Exch100 = self.compute_Exch100()
+        self.Eelst100 = self.compute_Elst100()
+        self.Eexch100 = self.compute_Exch100()
         self.Edisp200 = self.compute_Edisp200()
         self.Eexchdisp200 = self.compute_Eexchdisp200()
         self.Eind200 = self.compute_Eind200()
-        self.ExchInd200 = self.compute_Eexchind200()
+        self.EexchInd200 = self.compute_Eexchind200()
         
-        self.E_SAPT0 = self.Elst100 + self.Exch100 + self.Edisp200 + self.Eexchdisp200 + self.Eind200 + self.ExchInd200
+        self.E_SAPT0 = self.Eelst100 + self.Eexch100 + self.Edisp200 + self.Eexchdisp200 + self.Eind200 + self.EexchInd200
         return self.E_SAPT0
 
