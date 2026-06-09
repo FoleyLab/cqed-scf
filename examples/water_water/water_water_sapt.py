@@ -57,6 +57,6 @@ print(f"{'Exchange:':<{w}} {sapt_driver.Eexch100:15.10f} Hartree")
 print(f"{'Dispersion:':<{w}} {sapt_driver.Edisp200:15.10f} Hartree")
 print(f"{'Exchange-Dispersion:':<{w}} {sapt_driver.Eexchdisp200:15.10f} Hartree")
 print(f"{'Induction:':<{w}} {sapt_driver.Eind200:15.10f} Hartree")
-print(f"{'Exchange-Induction:':<{w}} {sapt_driver.EexchInd200:15.10f} Hartree")
+print(f"{'Exchange-Induction:':<{w}} {sapt_driver.Eexchind200:15.10f} Hartree")
 print("-" * 50) # Visual separator for the total
 print(f"{'Total SAPT0 Energy:':<{w}} {SAPT0_Energy:15.10f} Hartree")

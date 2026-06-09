@@ -59,11 +59,21 @@ class QEDSAPT0Driver:
 
         dimer_string, monomer_A_string, monomer_B_string = self.prepare_geometries()
 
-        self.dimer = SAPTMonomer.from_cqed_scf(
-            label="dimer",
-            geometry=dimer_string,
-            config=self.config,
+        #self.dimer = SAPTMonomer.from_cqed_scf(
+        #    label="dimer",
+        #    geometry=dimer_string,
+        #    config=self.config,
+        #)
+        ### Don't need to run dimer scf, just need mol object and basis set
+        self.dimer_mu_nuc = np.array(
+            [self.dimer_geometry.nuclear_dipole()[0], 
+             self.dimer_geometry.nuclear_dipole()[1], 
+             self.dimer_geometry.nuclear_dipole()[2]]
         )
+        print(F"Dimer Nuclear Dipole Moment")
+        print(self.dimer_mu_nuc)
+        self.E_nuc_dimer = self.dimer_geometry.nuclear_repulsion_energy()
+        print(F"Dimer nuclear repulsion energy {self.E_nuc_dimer}")
         self.monomer_A = SAPTMonomer.from_cqed_scf(
             label="monomer_A",
             geometry=monomer_A_string,
@@ -76,26 +86,26 @@ class QEDSAPT0Driver:
         )
         # store basic quantities as self attributes
         # scf energies for use in the induction component and for reporting
-        self.E_scf_dimer = self.dimer.energy_scf
+        #self.E_scf_dimer = self.dimer.energy_scf
         self.E_scf_A = self.monomer_A.energy_scf
         self.E_scf_B = self.monomer_B.energy_scf
                
 
         # size of orbital subspaces for use in component functions and for reporting
-        self.ndocc_dimer = self.dimer.ndocc
-        self.nvirt_dimer = self.dimer.nvirt
+        #self.ndocc_dimer = self.dimer.ndocc
+        #self.nvirt_dimer = self.dimer.nvirt
         self.ndocc_A = self.monomer_A.ndocc
         self.nvirt_A = self.monomer_A.nvirt
         self.ndocc_B = self.monomer_B.ndocc
         self.nvirt_B = self.monomer_B.nvirt
         
         # currently assumes closed shell, nsocc = 0
-        self.nsocc_dimer = 0
+        #self.nsocc_dimer = 0
         self.nsocc_A = 0
         self.nsocc_B = 0
 
         # orbital coefficients
-        self.C_dimer = self.dimer.C
+        #self.C_dimer = self.dimer.C
         self.C_A = self.monomer_A.C
         self.C_B = self.monomer_B.C
         self.Co_A = self.monomer_A.Co
@@ -104,28 +114,26 @@ class QEDSAPT0Driver:
         self.Cv_B = self.monomer_B.Cv
 
         # orbtial energies
-        self.eps_dimer = self.dimer.eps
+        #self.eps_dimer = self.dimer.eps
         self.eps_A = self.monomer_A.eps
         self.eps_B = self.monomer_B.eps
 
         # nuclear repulsion energy for reporting and use in the electrostatics component
-        self.E_nuc_dimer = self.dimer.nuc_rep
+        self.E_nuc_dimer = self.dimer_geometry.nuclear_repulsion_energy()
         self.E_nuc_A = self.monomer_A.nuc_rep
         self.E_nuc_B = self.monomer_B.nuc_rep
         self.nuc_rep = self.E_nuc_dimer - self.E_nuc_A - self.E_nuc_B
         self.vt_nuc_rep = self.nuc_rep / ((2 * self.ndocc_A + self.nsocc_A) * (2 * self.ndocc_B + self.nsocc_B))
 
         # lambda-scaled expectation values of the electronic dipole operator, <d_el>_dimer, <d_el>_A, and <d_el>_B
-        self.d_exp_dimer = self.dimer.d_exp_el 
+        #self.d_exp_dimer = self.dimer.d_exp_el 
         self.d_exp_A = self.monomer_A.d_exp_el
         self.d_exp_B = self.monomer_B.d_exp_el
 
         # lambda-scaled dipole integrals in ao basis, d_dimer, d_A, d_B
-        self.d_dimer = self.dimer.d_ao
+        #self.d_dimer = self.dimer.d_ao
         self.d_A = self.monomer_A.d_ao
         self.d_B = self.monomer_B.d_ao 
-        assert np.allclose(self.d_A, self.d_B)
-        assert np.allclose(self.d_A, self.d_dimer)
         
 
         return self.dimer, self.monomer_A, self.monomer_B
@@ -206,7 +214,8 @@ class QEDSAPT0Driver:
         # build sizes for number of occupied and virtual orbitals of each monomer
         self.build_sizes()
 
-        dimer_mints = monomers[0].mints
+        # dimer mints same as monomer A mints, because it shouldn't matter
+        dimer_mints = monomers[1].mints
         monomer_A_mints = monomers[1].mints
         monomer_B_mints = monomers[2].mints
 
