@@ -1,8 +1,9 @@
 import numpy as np
 import psi4
+import warnings
 
 from cqed_scf import CQEDConfig
-from cqed_scf.sapt import QEDSAPT0Driver
+from cqed_scf.sapt import QEDSAPT0Driver, SAPTMonomer
 
 
 def _he_sapt_config():
@@ -61,16 +62,14 @@ def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
 
         monomers = driver.prepare_monomers()
 
-        #assert monomers[0] is driver.dimer
-        assert monomers[1] is driver.monomer_A
-        assert monomers[2] is driver.monomer_B
-        #assert tuple(monomer.label for monomer in monomers) == (
-        #    "dimer",
-        #    "monomer_A",
-        #    "monomer_B",
-        #)
+        assert monomers == (driver.monomer_A, driver.monomer_B)
+        assert tuple(monomer.label for monomer in monomers) == ("monomer_A", "monomer_B")
+        assert not isinstance(getattr(driver, "dimer", None), SAPTMonomer)
+        assert driver.E_nuc_dimer is not None
+        assert driver.dimer_mu_nuc.shape == (3,)
+        assert driver.nuc_rep is not None
 
-        driver.build_integrals(monomers)
+        driver.build_integrals()
         actual_varbs = driver.v("arbs")
         actual_sas = driver.s("as")
         actual_sbr = driver.s("br")
@@ -121,6 +120,90 @@ def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
         assert np.isclose(actual_Eexchdisp200, expected_Eexchdisp200, atol=1e-9, rtol=1e-9)
         assert np.isclose(actual_Eind200, expected_Eind200, atol=1e-9, rtol=1e-9)
         assert np.isclose(actual_EexchInd200, expected_ExchInd200, atol=1e-9, rtol=1e-9)
+    finally:
+        psi4.core.clean()
+
+
+def test_qedsapt0_driver_cavity_off_independent_of_no_cavity_backend():
+    dimer = """
+    He 0.0000000000 0.0000000000 0.0000000000
+    --
+    He 0.0000000000 0.0000000000 2.0000000000
+    symmetry c1
+    units angstrom
+    no_reorient
+    no_com
+    """
+
+    psi4.core.clean()
+    try:
+        dimer_geometry = psi4.geometry(dimer)
+        config = _he_sapt_config()
+
+        driver = QEDSAPT0Driver(
+            dimer_geometry=dimer_geometry,
+            config=config,
+            integral_backend="full_eri",
+            include_cavity_terms=False,
+        )
+        driver.run()
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            legacy_driver = QEDSAPT0Driver(
+                dimer_geometry=dimer_geometry,
+                config=config,
+                integral_backend="no_cavity",
+            )
+        legacy_driver.run()
+
+        assert legacy_driver.integral_backend == "full_eri"
+        assert legacy_driver.include_cavity_terms is False
+        np.testing.assert_allclose(driver.E_SAPT0, legacy_driver.E_SAPT0, atol=1e-12, rtol=1e-12)
+        np.testing.assert_allclose(driver.I_dimer, legacy_driver.I_dimer, atol=1e-12, rtol=1e-12)
+        np.testing.assert_allclose(driver.V_A, legacy_driver.V_A, atol=1e-12, rtol=1e-12)
+        np.testing.assert_allclose(driver.V_B, legacy_driver.V_B, atol=1e-12, rtol=1e-12)
+    finally:
+        psi4.core.clean()
+
+
+def test_qedsapt0_driver_lambda_zero_cavity_on_matches_cavity_off():
+    dimer = """
+    He 0.0000000000 0.0000000000 0.0000000000
+    --
+    He 0.0000000000 0.0000000000 2.0000000000
+    symmetry c1
+    units angstrom
+    no_reorient
+    no_com
+    """
+
+    psi4.core.clean()
+    try:
+        dimer_geometry = psi4.geometry(dimer)
+        config = _he_sapt_config()
+
+        cavity_on = QEDSAPT0Driver(
+            dimer_geometry=dimer_geometry,
+            config=config,
+            integral_backend="full_eri",
+            include_cavity_terms=True,
+        )
+        cavity_on.run()
+
+        cavity_off = QEDSAPT0Driver(
+            dimer_geometry=dimer_geometry,
+            config=config,
+            integral_backend="full_eri",
+            include_cavity_terms=False,
+        )
+        cavity_off.run()
+
+        np.testing.assert_allclose(cavity_on.I_dimer, cavity_off.I_dimer, atol=1e-12, rtol=1e-12)
+        np.testing.assert_allclose(cavity_on.V_A, cavity_off.V_A, atol=1e-12, rtol=1e-12)
+        np.testing.assert_allclose(cavity_on.V_B, cavity_off.V_B, atol=1e-12, rtol=1e-12)
+        np.testing.assert_allclose(cavity_on.vt_nuc_rep, cavity_off.vt_nuc_rep, atol=1e-12, rtol=1e-12)
+        np.testing.assert_allclose(cavity_on.E_SAPT0, cavity_off.E_SAPT0, atol=1e-12, rtol=1e-12)
     finally:
         psi4.core.clean()
 

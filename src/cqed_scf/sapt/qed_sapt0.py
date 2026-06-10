@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from typing import Any, Dict, Optional, Sequence, Tuple
+import warnings
 import opt_einsum as oe
 import numpy as np
 
@@ -28,16 +29,60 @@ class QEDSAPT0Driver:
 
     dimer_geometry: Any
     config: CQEDConfig
-    dimer : Optional[SAPTMonomer] = None
-    monomer_a: Optional[SAPTMonomer] = None
-    monomer_b: Optional[SAPTMonomer] = None
+    monomer_A: Optional[SAPTMonomer] = None
+    monomer_B: Optional[SAPTMonomer] = None
     monomer_definitions: Optional[Sequence[Any]] = None
     monomer_indices: Optional[Tuple[Sequence[int], Sequence[int]]] = None
-    integral_backend: str = "full_eri" # alternative is "no_cavity"
+    integral_backend: str = "full_eri"
+    include_cavity_terms: bool = True
     metadata: Dict[str, Any] = field(default_factory=dict)
+    monomer_a: InitVar[Optional[SAPTMonomer]] = None
+    monomer_b: InitVar[Optional[SAPTMonomer]] = None
+    dimer: InitVar[Optional[SAPTMonomer]] = None
 
-    def __post_init__(self) -> None:
+    def __post_init__(
+        self,
+        monomer_a: Optional[SAPTMonomer],
+        monomer_b: Optional[SAPTMonomer],
+        dimer: Optional[SAPTMonomer],
+    ) -> None:
+        if monomer_a is not None:
+            if self.monomer_A is not None:
+                raise ValueError("Specify only one of monomer_A or monomer_a.")
+            warnings.warn(
+                "monomer_a is deprecated; use monomer_A.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.monomer_A = monomer_a
+        if monomer_b is not None:
+            if self.monomer_B is not None:
+                raise ValueError("Specify only one of monomer_B or monomer_b.")
+            warnings.warn(
+                "monomer_b is deprecated; use monomer_B.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.monomer_B = monomer_b
+        if dimer is not None:
+            warnings.warn(
+                "Passing dimer as a SAPTMonomer is deprecated and ignored; "
+                "QEDSAPT0Driver now uses dimer_geometry for dimer nuclear and AO-basis data.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if self.integral_backend == "no_cavity":
+            warnings.warn(
+                'integral_backend="no_cavity" is deprecated; use '
+                "include_cavity_terms=False with an ordinary integral backend.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.integral_backend = "full_eri"
+            self.include_cavity_terms = False
+
         self.metadata.setdefault("integral_backend", self.integral_backend)
+        self.metadata.setdefault("include_cavity_terms", self.include_cavity_terms)
 
     def prepare_geometries(self) -> Tuple[str, str, str]:
         """Build dimer and ghosted monomer geometry strings from a Psi4 dimer."""
@@ -51,61 +96,64 @@ class QEDSAPT0Driver:
 
         return dimer_string, monomer_A_string, monomer_B_string
 
-    def prepare_monomers(self) -> Tuple[SAPTMonomer, SAPTMonomer, SAPTMonomer]:
+    def prepare_monomers(self) -> Tuple[SAPTMonomer, SAPTMonomer]:
         """Prepare or retrieve monomer references."""
 
-        if self.dimer is not None and self.monomer_A is not None and self.monomer_B is not None:
-            return self.dimer, self.monomer_A, self.monomer_B
+        if self.monomer_A is not None and self.monomer_B is not None:
+            self._populate_dimer_nuclear_terms()
+            self._populate_monomer_attributes()
+            return self.monomer_A, self.monomer_B
 
-        dimer_string, monomer_A_string, monomer_B_string = self.prepare_geometries()
+        _, monomer_A_string, monomer_B_string = self.prepare_geometries()
+        self._populate_dimer_nuclear_terms()
 
-        #self.dimer = SAPTMonomer.from_cqed_scf(
-        #    label="dimer",
-        #    geometry=dimer_string,
-        #    config=self.config,
-        #)
-        ### Don't need to run dimer scf, just need mol object and basis set
+        if self.monomer_A is None:
+            self.monomer_A = SAPTMonomer.from_cqed_scf(
+                label="monomer_A",
+                geometry=monomer_A_string,
+                config=self.config,
+            )
+        if self.monomer_B is None:
+            self.monomer_B = SAPTMonomer.from_cqed_scf(
+                label="monomer_B",
+                geometry=monomer_B_string,
+                config=self.config,
+            )
+
+        self._populate_monomer_attributes()
+        return self.monomer_A, self.monomer_B
+
+    def _populate_dimer_nuclear_terms(self) -> None:
+        """Populate dimer quantities that do not require a dimer SCF reference."""
+
+        dimer_mu_nuc = self.dimer_geometry.nuclear_dipole()
         self.dimer_mu_nuc = np.array(
-            [self.dimer_geometry.nuclear_dipole()[0], 
-             self.dimer_geometry.nuclear_dipole()[1], 
-             self.dimer_geometry.nuclear_dipole()[2]]
+            [dimer_mu_nuc[0], dimer_mu_nuc[1], dimer_mu_nuc[2]]
         )
-        print(F"Dimer Nuclear Dipole Moment")
-        print(self.dimer_mu_nuc)
         self.E_nuc_dimer = self.dimer_geometry.nuclear_repulsion_energy()
-        print(F"Dimer nuclear repulsion energy {self.E_nuc_dimer}")
-        self.monomer_A = SAPTMonomer.from_cqed_scf(
-            label="monomer_A",
-            geometry=monomer_A_string,
-            config=self.config,
-        )
-        self.monomer_B = SAPTMonomer.from_cqed_scf(
-            label="monomer_B",
-            geometry=monomer_B_string,
-            config=self.config,
-        )
-        # store basic quantities as self attributes
-        # scf energies for use in the induction component and for reporting
-        #self.E_scf_dimer = self.dimer.energy_scf
+        if self.config.debug:
+            print("Dimer nuclear dipole moment")
+            print(self.dimer_mu_nuc)
+            print(f"Dimer nuclear repulsion energy {self.E_nuc_dimer}")
+
+    def _populate_monomer_attributes(self) -> None:
+        """Cache monomer reference data used by the SAPT component formulas."""
+
+        if self.monomer_A is None or self.monomer_B is None:
+            raise RuntimeError("prepare_monomers requires both monomer references.")
+
         self.E_scf_A = self.monomer_A.energy_scf
         self.E_scf_B = self.monomer_B.energy_scf
-               
 
-        # size of orbital subspaces for use in component functions and for reporting
-        #self.ndocc_dimer = self.dimer.ndocc
-        #self.nvirt_dimer = self.dimer.nvirt
         self.ndocc_A = self.monomer_A.ndocc
         self.nvirt_A = self.monomer_A.nvirt
         self.ndocc_B = self.monomer_B.ndocc
         self.nvirt_B = self.monomer_B.nvirt
-        
+
         # currently assumes closed shell, nsocc = 0
-        #self.nsocc_dimer = 0
         self.nsocc_A = 0
         self.nsocc_B = 0
 
-        # orbital coefficients
-        #self.C_dimer = self.dimer.C
         self.C_A = self.monomer_A.C
         self.C_B = self.monomer_B.C
         self.Co_A = self.monomer_A.Co
@@ -113,22 +161,13 @@ class QEDSAPT0Driver:
         self.Co_B = self.monomer_B.Co
         self.Cv_B = self.monomer_B.Cv
 
-        # orbtial energies
-        #self.eps_dimer = self.dimer.eps
         self.eps_A = self.monomer_A.eps
         self.eps_B = self.monomer_B.eps
 
-        # nuclear repulsion energy for reporting and use in the electrostatics component
-        self.E_nuc_dimer = self.dimer_geometry.nuclear_repulsion_energy()
         self.E_nuc_A = self.monomer_A.nuc_rep
         self.E_nuc_B = self.monomer_B.nuc_rep
         self.nuc_rep = self.E_nuc_dimer - self.E_nuc_A - self.E_nuc_B
 
-        # nuclear constant term pre-scaled by 1/N_A and 1/N_B before building v_tilde
-        self.vt_nuc_rep = self.nuc_rep / ((2 * self.ndocc_A + self.nsocc_A) * (2 * self.ndocc_B + self.nsocc_B))
-
-        # lambda-scaled dipole quantities of the monomers <d_el>_A, and <d_el>_B
-        #self.d_exp_dimer = self.dimer.d_exp_el 
         self.d_exp_el_A = self.monomer_A.d_exp_el
         self.d_exp_el_B = self.monomer_B.d_exp_el
         self.d_exp_A = self.monomer_A.d_exp
@@ -136,36 +175,24 @@ class QEDSAPT0Driver:
         self.d_nuc_A = self.monomer_A.d_nuc
         self.d_nuc_B = self.monomer_B.d_nuc
 
-        if self.integral_backend == "full_eri":
-            # nuclear constant term pre-scaled by 1/N_A and 1/N_B before building v_tilde
-            self.vt_nuc_rep += self.d_nuc_A * self.d_nuc_B / ((2 * self.ndocc_A + self.nsocc_A) * (2 * self.ndocc_B + self.nsocc_B))
-
-        # sanity check: d_exp = d_exp_el + d_nuc
         assert np.isclose(self.d_exp_A, (self.d_exp_el_A + self.d_nuc_A))
         assert np.isclose(self.d_exp_B, (self.d_exp_el_B + self.d_nuc_B))
 
-        # lambda-scaled dipole integrals in ao basis, d_dimer, d_A, d_B
-        #self.d_dimer = self.dimer.d_ao
         self.d_A = self.monomer_A.d_ao
-        self.d_B = self.monomer_B.d_ao 
-        
+        self.d_B = self.monomer_B.d_ao
 
-        return self.dimer, self.monomer_A, self.monomer_B
+        electron_count_A = 2 * self.ndocc_A + self.nsocc_A
+        electron_count_B = 2 * self.ndocc_B + self.nsocc_B
+        self.vt_nuc_rep_standard = self.nuc_rep / (electron_count_A * electron_count_B)
+        self.vt_nuc_rep_cavity = (
+            self.d_nuc_A * self.d_nuc_B / (electron_count_A * electron_count_B)
+            if self.include_cavity_terms
+            else 0.0
+        )
+        self.vt_nuc_rep = self.vt_nuc_rep_standard + self.vt_nuc_rep_cavity
 
     def build_orbitals(self) -> Any:
         """Build orbital intermediates needed for QED-SAPT0 components.
-           Takes a tuple of monomer instances as input:
-           (dimer, monomer_a, monomer_b)
-
-           As an example, if you want to access the MO coefficients of monomer_a:
-           C_monomer_a = monomers[1].C
-
-           Occupied orbitals for monomer a
-           Co_monomer_a = monomers[1].Co
-
-           Virtual orbitals for monomer b
-           Cv_monomer_b = monomers[2].Cv
-
         """
         # organize orbitals into a dictionary for convenient access in component functions, using the same string labels as the original SAPT0 implementation where possible (a, b, r, s)
         self.orbitals = {'a' : self.Co_A,
@@ -178,11 +205,6 @@ class QEDSAPT0Driver:
         
     def build_slices(self) -> Any:
         """Build slice objects for occupied and virtual orbital subspaces of each monomer.
-           Takes a tuple of monomer instances as input:
-           (monomer_A, monomer_B)
-
-           As an example, if you want to access the occupied slice for monomer_a:
-           occ_slice_a = slice(0, monomers[0].ndocc)
         """
         self.slices = {'a' : slice(0, self.ndocc_A),
                        'r': slice(self.ndocc_A, None),
@@ -192,33 +214,33 @@ class QEDSAPT0Driver:
         
     def build_sizes(self) -> Any:
         """Build integers for number of occupied and virtual orbitals of each monomer.
-           Takes a tuple of monomer instances as input:
-           (monomer_a, monomer_b)
-
-           As an example, if you want to access the number of occupied orbitals for monomer_a:
-           nocc_a = monomers[0].ndocc
         """
         self.sizes = {'a' : self.ndocc_A,
                       'r': self.nvirt_A,
-                      'b': self.ndocc_A,
-                      's': self.nvirt_A
+                      'b': self.ndocc_B,
+                      's': self.nvirt_B
                       }
 
         
 
-    def build_integrals(self, monomers: Tuple[SAPTMonomer, SAPTMonomer, SAPTMonomer]) -> Any:
-        """Build all integral intermediates needed for QED-SAPT0 components.
-           Takes a tuple of monomer instances as input:
-           (dimer, monomer_a, monomer_b)
+    def build_integrals(self, monomers: Optional[Tuple[SAPTMonomer, SAPTMonomer]] = None) -> Any:
+        """Build all integral intermediates needed for QED-SAPT0 components."""
+        if monomers is not None:
+            warnings.warn(
+                "Passing monomers to build_integrals is deprecated; the driver "
+                "uses its prepared monomer_A and monomer_B references.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            if len(monomers) != 2:
+                raise ValueError("build_integrals expects only (monomer_A, monomer_B).")
+            self.monomer_A, self.monomer_B = monomers
+            self._populate_dimer_nuclear_terms()
+            self._populate_monomer_attributes()
 
-           As an example, if you want to access the mints of the dimer:
-           dimer_mints = monomers[0].mints
+        if self.monomer_A is None or self.monomer_B is None:
+            self.prepare_monomers()
 
-           mints of monomer_a: monomers[1].mints
-
-        
-        
-        """
         # build orbitals using monomer A and monomer B SCF results, which may be None if the monomer SCF references were not run with orbital storage enabled
         self.build_orbitals()
 
@@ -228,31 +250,37 @@ class QEDSAPT0Driver:
         # build sizes for number of occupied and virtual orbitals of each monomer
         self.build_sizes()
 
-        # dimer mints same as monomer A mints, because it shouldn't matter
-        dimer_mints = monomers[1].mints
-        monomer_A_mints = monomers[1].mints
-        monomer_B_mints = monomers[2].mints
+        # Monomer A and B are ghosted calculations in the dimer basis, so either
+        # MintsHelper can define the shared AO integral environment.
+        shared_mints = self.monomer_A.mints
+        monomer_A_mints = self.monomer_A.mints
+        monomer_B_mints = self.monomer_B.mints
 
         # overlap of dimer in AO basis
-        self.S_dimer = np.asarray(dimer_mints.ao_overlap())
+        self.S_dimer = np.asarray(shared_mints.ao_overlap())
 
         # overlap transformed on bra with monomer A and ket with monomer B
         self.S_AB = oe.contract("uI,vJ,uv->IJ", self.C_A, self.C_B, self.S_dimer)
 
         # 1. Get the ERI array directly (try to avoid copying if ao_eri() allows)
-        self.I_dimer = np.asarray(dimer_mints.ao_eri())
+        I_dimer_standard = np.asarray(shared_mints.ao_eri())
+        I_dimer = I_dimer_standard.copy()
 
         # 2. Reshape self.d_A and self.d_B to broadcast into a 4D shape (pqrs)
         #    d_A (p, q) -> (p, q, 1, 1)
         #    d_B (r, s) -> (1, 1, r, s)
         # This adds the outer product directly to self.I_dimer in-place, swapping axes on the fly.
-        if self.integral_backend=="full_eri":
-            self.I_dimer += self.d_A[:, :, np.newaxis, np.newaxis] * self.d_B[np.newaxis, np.newaxis, :, :]
+        I_dimer_cavity = np.zeros_like(I_dimer)
+        if self.include_cavity_terms:
+            I_dimer_cavity = self.d_A[:, :, np.newaxis, np.newaxis] * self.d_B[np.newaxis, np.newaxis, :, :]
+            I_dimer += I_dimer_cavity
 
         # 3. Swap axes in-place (creates a view, zero memory overhead)
         #    Note: If a contiguous array is strictly required by downstream code, 
         #    append .copy() here, but it will double the memory momentarily.
-        self.I_dimer = self.I_dimer.swapaxes(1, 2)
+        self.I_dimer_standard = I_dimer_standard.swapaxes(1, 2)
+        self.I_dimer_cavity = I_dimer_cavity.swapaxes(1, 2)
+        self.I_dimer = I_dimer.swapaxes(1, 2)
 
 
         # build the one-electron potential integrals for monomer A and monomer B
@@ -260,9 +288,15 @@ class QEDSAPT0Driver:
         self.V_A = np.asarray(monomer_A_mints.ao_potential())
         self.V_B = np.asarray(monomer_B_mints.ao_potential())
 
-        if self.integral_backend=="full_eri":
-            self.V_A += self.d_nuc_B * self.d_A
-            self.V_B += self.d_nuc_A * self.d_B
+        self.V_A_standard = self.V_A.copy()
+        self.V_B_standard = self.V_B.copy()
+        self.V_A_cavity = np.zeros_like(self.V_A)
+        self.V_B_cavity = np.zeros_like(self.V_B)
+        if self.include_cavity_terms:
+            self.V_A_cavity = self.d_nuc_B * self.d_A
+            self.V_B_cavity = self.d_nuc_A * self.d_B
+            self.V_A += self.V_A_cavity
+            self.V_B += self.V_B_cavity
 
         # potential integrals
         self.V_A_BB = oe.contract("uI,vJ,uv->IJ", self.C_B, self.C_B, self.V_A, optimize="optimal")
@@ -628,7 +662,7 @@ class QEDSAPT0Driver:
         """Run the future QED-SAPT0 workflow."""
 
         monomers = self.prepare_monomers()
-        integrals = self.build_integrals(monomers)
+        integrals = self.build_integrals()
 
         self.Eelst100 = self.compute_Elst100()
         self.Eexch100 = self.compute_Exch100()
@@ -639,4 +673,3 @@ class QEDSAPT0Driver:
         
         self.E_SAPT0 = self.Eelst100 + self.Eexch100 + self.Edisp200 + self.Eexchdisp200 + self.Eind200 + self.Eexchind200
         return self.E_SAPT0
-
