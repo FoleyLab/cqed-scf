@@ -56,7 +56,15 @@ class SAPTMonomer:
     @property
     def d_ao(self):
         return self.scf_results.get("d_ao")
-
+    
+    @property
+    def d_exp(self):
+        return self.scf_results.get("d_exp")
+    
+    @property
+    def d_nuc(self):
+        return self.scf_results.get("d_nuc")
+    
     @property
     def d_exp_el(self): # electronic only, <d_el>
         return self.scf_results.get("d_exp_el")

@@ -332,6 +332,7 @@ class CQEDSCF:
             dipole_nuc=mu_nuc,
             nuc_rep=Enuc,
             d_ao=d_ao,
+            d_nuc=d_nuc,
             d_exp=d_exp,
             d_exp_el=d_exp_el,
             H0=H0,

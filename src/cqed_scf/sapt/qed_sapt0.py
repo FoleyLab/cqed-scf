@@ -33,7 +33,7 @@ class QEDSAPT0Driver:
     monomer_b: Optional[SAPTMonomer] = None
     monomer_definitions: Optional[Sequence[Any]] = None
     monomer_indices: Optional[Tuple[Sequence[int], Sequence[int]]] = None
-    integral_backend: str = "full_eri"
+    integral_backend: str = "full_eri" # alternative is "no_cavity"
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -123,12 +123,26 @@ class QEDSAPT0Driver:
         self.E_nuc_A = self.monomer_A.nuc_rep
         self.E_nuc_B = self.monomer_B.nuc_rep
         self.nuc_rep = self.E_nuc_dimer - self.E_nuc_A - self.E_nuc_B
+
+        # nuclear constant term pre-scaled by 1/N_A and 1/N_B before building v_tilde
         self.vt_nuc_rep = self.nuc_rep / ((2 * self.ndocc_A + self.nsocc_A) * (2 * self.ndocc_B + self.nsocc_B))
 
-        # lambda-scaled expectation values of the electronic dipole operator, <d_el>_dimer, <d_el>_A, and <d_el>_B
+        # lambda-scaled dipole quantities of the monomers <d_el>_A, and <d_el>_B
         #self.d_exp_dimer = self.dimer.d_exp_el 
-        self.d_exp_A = self.monomer_A.d_exp_el
-        self.d_exp_B = self.monomer_B.d_exp_el
+        self.d_exp_el_A = self.monomer_A.d_exp_el
+        self.d_exp_el_B = self.monomer_B.d_exp_el
+        self.d_exp_A = self.monomer_A.d_exp
+        self.d_exp_B = self.monomer_B.d_exp
+        self.d_nuc_A = self.monomer_A.d_nuc
+        self.d_nuc_B = self.monomer_B.d_nuc
+
+        if self.integral_backend == "full_eri":
+            # nuclear constant term pre-scaled by 1/N_A and 1/N_B before building v_tilde
+            self.vt_nuc_rep += self.d_nuc_A * self.d_nuc_B / ((2 * self.ndocc_A + self.nsocc_A) * (2 * self.ndocc_B + self.nsocc_B))
+
+        # sanity check: d_exp = d_exp_el + d_nuc
+        assert np.isclose(self.d_exp_A, (self.d_exp_el_A + self.d_nuc_A))
+        assert np.isclose(self.d_exp_B, (self.d_exp_el_B + self.d_nuc_B))
 
         # lambda-scaled dipole integrals in ao basis, d_dimer, d_A, d_B
         #self.d_dimer = self.dimer.d_ao
@@ -232,7 +246,8 @@ class QEDSAPT0Driver:
         #    d_A (p, q) -> (p, q, 1, 1)
         #    d_B (r, s) -> (1, 1, r, s)
         # This adds the outer product directly to self.I_dimer in-place, swapping axes on the fly.
-        self.I_dimer += self.d_A[:, :, np.newaxis, np.newaxis] * self.d_B[np.newaxis, np.newaxis, :, :]
+        if self.integral_backend=="full_eri":
+            self.I_dimer += self.d_A[:, :, np.newaxis, np.newaxis] * self.d_B[np.newaxis, np.newaxis, :, :]
 
         # 3. Swap axes in-place (creates a view, zero memory overhead)
         #    Note: If a contiguous array is strictly required by downstream code, 
@@ -241,19 +256,19 @@ class QEDSAPT0Driver:
 
 
         # build the one-electron potential integrals for monomer A and monomer B
+        # the V_A and V_B terms are scaled by 1 / N_A and 1 / N_B in the v_tilde build
         self.V_A = np.asarray(monomer_A_mints.ao_potential())
-        self.V_A -= 0.5 * self.d_exp_B * self.d_A
-
         self.V_B = np.asarray(monomer_B_mints.ao_potential())
-        self.V_B -= 0.5 * self.d_exp_A * self.d_B
+
+        if self.integral_backend=="full_eri":
+            self.V_A += self.d_nuc_B * self.d_A
+            self.V_B += self.d_nuc_A * self.d_B
 
         # potential integrals
         self.V_A_BB = oe.contract("uI,vJ,uv->IJ", self.C_B, self.C_B, self.V_A, optimize="optimal")
         self.V_A_AB = oe.contract("uI,vJ,uv->IJ", self.C_A, self.C_B, self.V_A, optimize="optimal")
         self.V_B_AA = oe.contract("uI,vJ,uv->IJ", self.C_A, self.C_A, self.V_B, optimize="optimal")
         self.V_B_AB = oe.contract("uI,vJ,uv->IJ", self.C_A, self.C_B, self.V_B, optimize="optimal")
-
-
 
 
     def compute_components(self, monomers, integrals) -> QEDSAPT0Results:
@@ -266,6 +281,10 @@ class QEDSAPT0Driver:
         )
     
     def v(self, string):
+        """
+        Builds two-electron integrals dressed with monomerA - monomerB dipole integrals
+        transformed with appropriate MO coefficients
+        """
         if len(string) != 4:
             psi4.core.clean()
             raise Exception("v: string %s does not have length 4" % string)
@@ -279,6 +298,7 @@ class QEDSAPT0Driver:
         return V
     
     def s(self, string):
+        # Grap appropriate overlap integrals 
         if len(string) != 2:
             psi4.core.clean()
             raise Exception("s: string %s does not have length 2" % string)
@@ -312,6 +332,10 @@ class QEDSAPT0Driver:
     
 
     def potential(self, string, side):
+        """
+        Grab one-electron potential integrals for monomer X dressed with dipole integrals for monomer X scaled by nuclear
+        dipole term for monomer Y
+        """
         if len(string) != 2:
             psi4.core.clean()
             raise Exception("potential: string %s does not have length 2" % string)
@@ -356,7 +380,7 @@ class QEDSAPT0Driver:
         V_B = self.potential(s_left, 'B') / (2 * self.ndocc_B + self.nsocc_B)
         V += np.einsum('ik,jl->ijkl', V_B, S_B)
 
-        # nuclear
+        # nuclear - scaling by 1/N_A and 1/N_B already happened in prepare_monomers
         V += np.einsum("ik,jl->ijkl", S_A, S_B) * self.vt_nuc_rep
 
         return V
