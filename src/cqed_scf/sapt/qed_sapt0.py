@@ -14,6 +14,10 @@ from .monomer import SAPTMonomer
 from .results import QEDSAPT0Results
 
 
+_VT_PART_KEYS = ("eri", "potential_A", "potential_B", "nuclear")
+_OPERATOR_CONTEXTS = ("standard", "total", "cavity")
+
+
 @dataclass
 class QEDSAPT0Driver:
     """Future QED-SAPT0 driver.
@@ -295,8 +299,8 @@ class QEDSAPT0Driver:
         if self.include_cavity_terms:
             self.V_A_cavity = self.d_nuc_B * self.d_A
             self.V_B_cavity = self.d_nuc_A * self.d_B
-            self.V_A += self.V_A_cavity
-            self.V_B += self.V_B_cavity
+            self.V_A -= self.V_A_cavity
+            self.V_B -= self.V_B_cavity
 
         # potential integrals
         self.V_A_BB = oe.contract("uI,vJ,uv->IJ", self.C_B, self.C_B, self.V_A, optimize="optimal")
@@ -314,7 +318,58 @@ class QEDSAPT0Driver:
             "compute_ind20, compute_disp20, and compute_qed_dse_cross."
         )
     
-    def v(self, string):
+    def _validate_operator_context(self, context: str) -> str:
+        if context not in _OPERATOR_CONTEXTS:
+            allowed = ", ".join(_OPERATOR_CONTEXTS)
+            raise ValueError(f"operator context must be one of {allowed}; got {context!r}")
+        return context
+
+    def _eri_for_context(self, context: str):
+        context = self._validate_operator_context(context)
+        if context == "standard":
+            return self.I_dimer_standard
+        if context == "cavity":
+            return self.I_dimer_cavity
+        return self.I_dimer
+
+    def _potential_for_context(self, side: str, context: str):
+        context = self._validate_operator_context(context)
+        if side == "A":
+            if context == "standard":
+                return self.V_A_standard
+            if context == "cavity":
+                return self.V_A_cavity
+            return self.V_A
+        if side == "B":
+            if context == "standard":
+                return self.V_B_standard
+            if context == "cavity":
+                return self.V_B_cavity
+            return self.V_B
+
+        psi4.core.clean()
+        raise Exception("potential: side %s is not A or B" % side)
+
+    def _vt_nuc_rep_for_context(self, context: str):
+        context = self._validate_operator_context(context)
+        if context == "standard":
+            return self.vt_nuc_rep_standard
+        if context == "cavity":
+            return self.vt_nuc_rep_cavity
+        return self.vt_nuc_rep
+
+    def _zero_vt_parts(self):
+        zero = np.array([0]).reshape(1, 1, 1, 1)
+        return {key: zero.copy() for key in _VT_PART_KEYS}
+
+    def _sum_vt_parts(self, parts):
+        total = parts["eri"].copy()
+        total += parts["potential_A"]
+        total += parts["potential_B"]
+        total += parts["nuclear"]
+        return total
+
+    def v(self, string, context: str = "total"):
         """
         Builds two-electron integrals dressed with monomerA - monomerB dipole integrals
         transformed with appropriate MO coefficients
@@ -322,10 +377,11 @@ class QEDSAPT0Driver:
         if len(string) != 4:
             psi4.core.clean()
             raise Exception("v: string %s does not have length 4" % string)
+        I_dimer = self._eri_for_context(context)
         
         # ERI's from mints are in chemist's notation (pq|rs), but we want to access them in physicist's notation (pr|qs)
         # so we need to swap the middle two indices
-        V = oe.contract("pA,pqrs->Aqrs", self.orbitals[string[0]], self.I_dimer, optimize="optimal")
+        V = oe.contract("pA,pqrs->Aqrs", self.orbitals[string[0]], I_dimer, optimize="optimal")
         V = oe.contract("qB,Aqrs->ABrs", self.orbitals[string[1]], V, optimize="optimal")
         V = oe.contract("rC,ABrs->ABCs", self.orbitals[string[2]], V, optimize="optimal")
         V = oe.contract("sD,ABCs->ABCD", self.orbitals[string[3]], V, optimize="optimal")
@@ -365,7 +421,7 @@ class QEDSAPT0Driver:
             raise Exception("eps: string %s does not have valid monomer label" % string)
     
 
-    def potential(self, string, side):
+    def potential(self, string, side, context: str = "total"):
         """
         Grab one-electron potential integrals for monomer X dressed with dipole integrals for monomer X scaled by nuclear
         dipole term for monomer Y
@@ -376,48 +432,103 @@ class QEDSAPT0Driver:
         
         s1 = string[0]
         s2 = string[1]
+        potential = self._potential_for_context(side, context)
 
-        if side == 'A':
-            return (self.orbitals[s1].T).dot(self.V_A).dot(self.orbitals[s2])
-        
-        elif side == 'B':
-            return (self.orbitals[s1].T).dot(self.V_B).dot(self.orbitals[s2])
-        
-        else:
-            psi4.core.clean()
-            raise Exception("potential: side %s is not A or B" % side)
+        return (self.orbitals[s1].T).dot(potential).dot(self.orbitals[s2])
         
 
-    def vt(self, string):
+    def vt_parts(self, string, context: str = "total"):
         if len(string)!=4:
             psi4.core.clean()
             raise Exception('Compute tilde{v}: string %s does not have 4 elements' % string)
         
         for alpha in 'ijab':
             if (alpha in string) and (self.sizes[alpha] == 0):
-                return np.array([0]).reshape(1,1,1,1)
+                return self._zero_vt_parts()
             
         # grab left and right strings
         s_left = string[0] + string[2]
         s_right = string[1] + string[3]
 
         # ERI term
-        V = self.v(string)
+        eri = self.v(string, context=context)
 
         # potential A
         S_A = self.s(s_left)
-        V_A = self.potential(s_right, 'A') / (2 * self.ndocc_A + self.nsocc_A)
-        V += oe.contract("ik,jl->ijkl", S_A, V_A)
+        V_A = self.potential(s_right, 'A', context=context) / (2 * self.ndocc_A + self.nsocc_A)
+        potential_A = oe.contract("ik,jl->ijkl", S_A, V_A)
 
         # potential B
         S_B = self.s(s_right)
-        V_B = self.potential(s_left, 'B') / (2 * self.ndocc_B + self.nsocc_B)
-        V += np.einsum('ik,jl->ijkl', V_B, S_B)
+        V_B = self.potential(s_left, 'B', context=context) / (2 * self.ndocc_B + self.nsocc_B)
+        potential_B = np.einsum('ik,jl->ijkl', V_B, S_B)
 
         # nuclear - scaling by 1/N_A and 1/N_B already happened in prepare_monomers
-        V += np.einsum("ik,jl->ijkl", S_A, S_B) * self.vt_nuc_rep
+        nuclear = np.einsum("ik,jl->ijkl", S_A, S_B) * self._vt_nuc_rep_for_context(context)
 
-        return V
+        return {
+            "eri": eri,
+            "potential_A": potential_A,
+            "potential_B": potential_B,
+            "nuclear": nuclear,
+        }
+
+    def vt(self, string, context: str = "total"):
+        return self._sum_vt_parts(self.vt_parts(string, context=context))
+
+    def vt_partitions(self, string):
+        standard = self.vt_parts(string, context="standard")
+        total = self.vt_parts(string, context="total")
+        cavity = {key: total[key] - standard[key] for key in _VT_PART_KEYS}
+
+        partitions = {
+            "standard": dict(standard),
+            "total": dict(total),
+            "cavity": cavity,
+        }
+        for context in _OPERATOR_CONTEXTS:
+            partitions[context]["total"] = self._sum_vt_parts(partitions[context])
+
+        return partitions
+
+    def _contract_vt_array(self, string, array, contraction):
+        if callable(contraction):
+            return float(contraction(array))
+        if contraction is None or contraction in {"einsum", "sapt"}:
+            return float(np.einsum(f"{string}->", array))
+        if contraction == "sum":
+            return float(np.sum(array))
+        return float(np.einsum(contraction, array))
+
+    def contract_vt_parts(self, string, contraction=None, prefactor: float = 1.0):
+        partitions = self.vt_partitions(string)
+        return {
+            context: {
+                key: prefactor * self._contract_vt_array(string, value, contraction)
+                for key, value in parts.items()
+            }
+            for context, parts in partitions.items()
+        }
+
+    def diagnostic_summary(self, print_output: Optional[bool] = None):
+        print_output = self.config.debug if print_output is None else print_output
+        summary = {
+            "Elst100": self.contract_vt_parts("abab", prefactor=4.0),
+        }
+
+        if print_output:
+            print("QED-SAPT0 operator diagnostics")
+            print("Component: Elst100")
+            print(f"{'context':<10} {'piece':<14} {'value / Eh':>18}")
+            print("-" * 44)
+            for context in ("standard", "cavity", "total"):
+                for piece in ("eri", "potential_A", "potential_B", "nuclear", "total"):
+                    print(f"{context:<10} {piece:<14} {summary['Elst100'][context][piece]:18.10f}")
+
+        return summary
+
+    def print_diagnostics(self):
+        return self.diagnostic_summary(print_output=True)
     
     def chf(self, monomer, ind=False):
         if monomer not in ['A', 'B']:

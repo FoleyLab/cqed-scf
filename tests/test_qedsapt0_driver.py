@@ -28,6 +28,42 @@ def _he_sapt_config():
     )
 
 
+_HE_DIMER = """
+He 0.0000000000 0.0000000000 0.0000000000
+--
+He 0.0000000000 0.0000000000 2.0000000000
+symmetry c1
+units angstrom
+no_reorient
+no_com
+"""
+
+
+def _build_he_vt_driver(lambda_vector=None, include_cavity_terms=True):
+    config = _he_sapt_config()
+    if lambda_vector is not None:
+        config = config.copy_with(lambda_vector=np.array(lambda_vector), omega=0.1)
+
+    dimer_geometry = psi4.geometry(_HE_DIMER)
+    driver = QEDSAPT0Driver(
+        dimer_geometry=dimer_geometry,
+        config=config,
+        integral_backend="full_eri",
+        include_cavity_terms=include_cavity_terms,
+    )
+    driver.prepare_monomers()
+    driver.build_integrals()
+    return driver
+
+
+def _sum_vt_parts(parts):
+    total = parts["eri"].copy()
+    total += parts["potential_A"]
+    total += parts["potential_B"]
+    total += parts["nuclear"]
+    return total
+
+
 
 
 def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
@@ -204,6 +240,123 @@ def test_qedsapt0_driver_lambda_zero_cavity_on_matches_cavity_off():
         np.testing.assert_allclose(cavity_on.V_B, cavity_off.V_B, atol=1e-12, rtol=1e-12)
         np.testing.assert_allclose(cavity_on.vt_nuc_rep, cavity_off.vt_nuc_rep, atol=1e-12, rtol=1e-12)
         np.testing.assert_allclose(cavity_on.E_SAPT0, cavity_off.E_SAPT0, atol=1e-12, rtol=1e-12)
+    finally:
+        psi4.core.clean()
+
+
+def test_qedsapt0_driver_vt_parts_sum_to_vt():
+    psi4.core.clean()
+    try:
+        driver = _build_he_vt_driver(lambda_vector=[0.0, 0.0, 0.1])
+
+        for string in ("abab", "abba", "abrs"):
+            parts = driver.vt_parts(string)
+            np.testing.assert_allclose(
+                _sum_vt_parts(parts),
+                driver.vt(string),
+                atol=1e-12,
+                rtol=1e-12,
+            )
+    finally:
+        psi4.core.clean()
+
+
+def test_qedsapt0_driver_vt_partitions_standard_cavity_total_relationship():
+    psi4.core.clean()
+    try:
+        driver = _build_he_vt_driver(lambda_vector=[0.0, 0.0, 0.1])
+
+        for string in ("abab", "abba", "abrs"):
+            partitions = driver.vt_partitions(string)
+            direct_cavity_parts = driver.vt_parts(string, context="cavity")
+            for piece in ("eri", "potential_A", "potential_B", "nuclear", "total"):
+                np.testing.assert_allclose(
+                    partitions["standard"][piece] + partitions["cavity"][piece],
+                    partitions["total"][piece],
+                    atol=1e-12,
+                    rtol=1e-12,
+                )
+                np.testing.assert_allclose(
+                    partitions["cavity"][piece],
+                    partitions["total"][piece] - partitions["standard"][piece],
+                    atol=1e-12,
+                    rtol=1e-12,
+                )
+                if piece != "total":
+                    np.testing.assert_allclose(
+                        direct_cavity_parts[piece],
+                        partitions["cavity"][piece],
+                        atol=1e-12,
+                        rtol=1e-12,
+                    )
+
+            np.testing.assert_allclose(
+                partitions["total"]["total"],
+                driver.vt(string),
+                atol=1e-12,
+                rtol=1e-12,
+            )
+            np.testing.assert_allclose(
+                partitions["standard"]["total"],
+                driver.vt(string, context="standard"),
+                atol=1e-12,
+                rtol=1e-12,
+            )
+            np.testing.assert_allclose(
+                partitions["cavity"]["total"],
+                driver.vt(string, context="cavity"),
+                atol=1e-12,
+                rtol=1e-12,
+            )
+
+        elst_parts = driver.contract_vt_parts("abab", prefactor=4.0)
+        elst_partitions = driver.vt_partitions("abab")
+        for context in ("standard", "cavity", "total"):
+            np.testing.assert_allclose(
+                elst_parts[context]["total"],
+                4.0 * np.einsum("abab->", elst_partitions[context]["total"]),
+                atol=1e-12,
+                rtol=1e-12,
+            )
+    finally:
+        psi4.core.clean()
+
+
+def test_qedsapt0_driver_lambda_zero_vt_cavity_parts_are_zero():
+    psi4.core.clean()
+    try:
+        driver = _build_he_vt_driver(lambda_vector=[0.0, 0.0, 0.0])
+
+        for string in ("abab", "abba", "abrs"):
+            for value in driver.vt_partitions(string)["cavity"].values():
+                np.testing.assert_allclose(value, np.zeros_like(value), atol=1e-12, rtol=1e-12)
+    finally:
+        psi4.core.clean()
+
+
+def test_qedsapt0_driver_cavity_disabled_vt_standard_equals_total():
+    psi4.core.clean()
+    try:
+        driver = _build_he_vt_driver(
+            lambda_vector=[0.0, 0.0, 0.1],
+            include_cavity_terms=False,
+        )
+
+        for string in ("abab", "abba", "abrs"):
+            partitions = driver.vt_partitions(string)
+            for piece in ("eri", "potential_A", "potential_B", "nuclear", "total"):
+                np.testing.assert_allclose(
+                    partitions["standard"][piece],
+                    partitions["total"][piece],
+                    atol=1e-12,
+                    rtol=1e-12,
+                )
+                np.testing.assert_allclose(
+                    partitions["cavity"][piece],
+                    np.zeros_like(partitions["cavity"][piece]),
+                    atol=1e-12,
+                    rtol=1e-12,
+                )
     finally:
         psi4.core.clean()
 

@@ -15,8 +15,8 @@ psi4_options = {
 }
 
 config = CQEDConfig(
-    lambda_vector=np.array([0.0, 0.0, 0.01]),
-    omega=0.0,
+    lambda_vector=np.array([0.0, 0.0, 0.1]),
+    omega=0.1,
     psi4_options=psi4_options,
     reference="rhf",
     functional=None,
@@ -45,7 +45,7 @@ sapt_driver = QEDSAPT0Driver(
     dimer_geometry=dimer_geometry,
     config=config,
     integral_backend="full_eri",
-    include_cavity_terms=False,
+    include_cavity_terms=True,
 )
 
 SAPT0_Energy = sapt_driver.run()
@@ -62,3 +62,18 @@ print(f"{'Induction:':<{w}} {sapt_driver.Eind200:15.10f} Hartree")
 print(f"{'Exchange-Induction:':<{w}} {sapt_driver.Eexchind200:15.10f} Hartree")
 print("-" * 50)  # Visual separator for the total
 print(f"{'Total QED-SAPT0 Energy:':<{w}} {SAPT0_Energy:15.10f} Hartree")
+
+print()
+sapt_driver.print_diagnostics()
+
+print("d_nuc_A", sapt_driver.d_nuc_A)
+print("d_exp_el_A", sapt_driver.d_exp_el_A)
+print("d_exp_A", sapt_driver.d_exp_A)
+
+print("d_nuc_B", sapt_driver.d_nuc_B)
+print("d_exp_el_B", sapt_driver.d_exp_el_B)
+print("d_exp_B", sapt_driver.d_exp_B)
+
+print("d_nuc_A * d_nuc_B", sapt_driver.d_nuc_A * sapt_driver.d_nuc_B)
+print("d_exp_el_A * d_exp_el_B", sapt_driver.d_exp_el_A * sapt_driver.d_exp_el_B)
+print("d_exp_A * d_exp_B", sapt_driver.d_exp_A * sapt_driver.d_exp_B)
