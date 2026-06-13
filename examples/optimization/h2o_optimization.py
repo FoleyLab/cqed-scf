@@ -45,7 +45,7 @@ psi4.set_options(psi4_options)
 # Cavity parameters
 # =========================
 
-lambda_vector = [0., 0.3, 0.3]   # polarization along z
+lambda_vector = [0., 0.0, 0.05]   # polarization along z
 omega = 0.0                       # cavity frequency (a.u.)
 
 # =========================
