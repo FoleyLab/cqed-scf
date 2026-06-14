@@ -260,8 +260,7 @@ def project_cartesian_gradient_remove_translation_rotation(
     This is a Cartesian projected-gradient operation for geometry
     optimization: it removes components along mass-weighted translation and
     rigid-body rotation modes before the gradient is passed to the optimizer.
-    It is not an internal-coordinate optimization and is not a strict
-    holonomic fixed-orientation constraint; it suppresses net translational
+    It is not an internal-coordinate optimization; it suppresses net translational
     and rotational components of the Cartesian gradient.
 
     Parameters
