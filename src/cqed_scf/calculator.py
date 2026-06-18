@@ -2,7 +2,8 @@ import psi4
 import numpy as np
 from .scf import CQEDSCF
 from .gradients import CQEDGradient
-
+from .drivers import project_cartesian_gradient_remove_translation_rotation
+from .utils import AMU_TO_AU
 
 class CQEDCalculator:
     def __init__(
@@ -180,6 +181,33 @@ class CQEDCalculator:
         psi4.core.clean_options()
 
         return E_total, grad_total, g
+    
+    def energy_and_projected_gradient(self, geometry, canonical="psi4"):
+        """
+        Compute energy and a Cartesian gradient projected away from rigid modes.
+
+        This wraps ``energy_and_gradient`` and removes components along the
+        mass-weighted translation and rigid-body rotation modes. Coordinates
+        and gradients remain Cartesian; this is not an internal-coordinate
+        optimization interface.
+        """
+
+        # get masses in atomic units and coordinates in bohr
+        mol = psi4.geometry(geometry)
+        coords_bohr = mol.geometry().to_array()
+        masses = np.array([mol.mass(i) for i in range(mol.natom())]) * AMU_TO_AU
+
+        # get energy and full gradient at current geometry
+        E, grad, g = self.energy_and_gradient(geometry, canonical)
+
+        grad_proj = project_cartesian_gradient_remove_translation_rotation(
+            coords_bohr,
+            grad,
+            masses,
+            return_diagnostics=False,
+        )
+        
+        return E, grad_proj, g
 
 # backward-compatible alias
 CQEDRHFCalculator = CQEDCalculator
