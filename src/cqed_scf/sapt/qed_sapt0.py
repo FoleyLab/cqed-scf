@@ -179,10 +179,8 @@ class QEDSAPT0Driver:
         self.d_nuc_A = self.monomer_A.d_nuc
         self.d_nuc_B = self.monomer_B.d_nuc
 
-        # there is a term -1/2 (<d_A> + <d_B>)^2 that arises by treating
-        # the dimer interaction term which contains -w b^dagger b consistently with 
-        # the local coherent state transformations for monomer A and monomer B
-        self.sum_d_exp_A_d_exp_B_squared = +(self.d_exp_A * self.d_exp_B)
+        # there is a term <d_A> * <d_B>
+        self.sum_d_exp_A_d_exp_B = +(self.d_exp_A * self.d_exp_B)
 
         assert np.isclose(self.d_exp_A, (self.d_exp_el_A + self.d_nuc_A))
         assert np.isclose(self.d_exp_B, (self.d_exp_el_B + self.d_nuc_B))
@@ -194,7 +192,7 @@ class QEDSAPT0Driver:
         electron_count_B = 2 * self.ndocc_B + self.nsocc_B
         self.vt_nuc_rep_standard = self.nuc_rep / (electron_count_A * electron_count_B)
         self.vt_nuc_rep_cavity = (
-            (self.d_nuc_A * self.d_nuc_B + self.sum_d_exp_A_d_exp_B_squared) / (electron_count_A * electron_count_B)
+            (self.d_exp_A * self.d_exp_B) / (electron_count_A * electron_count_B)
             if self.include_cavity_terms
             else 0.0
         )
@@ -302,8 +300,8 @@ class QEDSAPT0Driver:
         self.V_A_cavity = np.zeros_like(self.V_A)
         self.V_B_cavity = np.zeros_like(self.V_B)
         if self.include_cavity_terms: 
-            self.V_A_cavity = self.d_nuc_B * self.d_A
-            self.V_B_cavity = self.d_nuc_A * self.d_B
+            self.V_A_cavity = -self.d_exp_B * self.d_A
+            self.V_B_cavity = -self.d_exp_A * self.d_B
             self.V_A += self.V_A_cavity
             self.V_B += self.V_B_cavity
 
@@ -428,8 +426,8 @@ class QEDSAPT0Driver:
 
     def potential(self, string, side, context: str = "total"):
         """
-        Grab one-electron potential integrals for monomer X dressed with dipole integrals for monomer X scaled by nuclear
-        dipole term for monomer Y
+        Grab one-electron potential integrals for monomer X dressed with dipole integrals for monomer X scaled by expectation value of
+        <d_Y>
         """
         if len(string) != 2:
             psi4.core.clean()
