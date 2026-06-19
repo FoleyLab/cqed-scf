@@ -14,7 +14,7 @@ from .monomer import SAPTMonomer
 from .results import QEDSAPT0Results
 
 
-_VT_PART_KEYS = ("eri", "potential_A", "potential_B", "nuclear")
+_VT_PART_KEYS = ("eri", "potential_A", "potential_B", "constant")
 _OPERATOR_CONTEXTS = ("standard", "total", "cavity")
 
 
@@ -179,8 +179,9 @@ class QEDSAPT0Driver:
         self.d_nuc_A = self.monomer_A.d_nuc
         self.d_nuc_B = self.monomer_B.d_nuc
 
-        # there is a term <d_A> * <d_B>
-        self.sum_d_exp_A_d_exp_B = +(self.d_exp_A * self.d_exp_B)
+        # Constant term in the coherent-state fluctuation product,
+        # + <d_A><d_B>.
+        self.d_exp_cross_AB = self.d_exp_A * self.d_exp_B
 
         assert np.isclose(self.d_exp_A, (self.d_exp_el_A + self.d_nuc_A))
         assert np.isclose(self.d_exp_B, (self.d_exp_el_B + self.d_nuc_B))
@@ -192,7 +193,7 @@ class QEDSAPT0Driver:
         electron_count_B = 2 * self.ndocc_B + self.nsocc_B
         self.vt_nuc_rep_standard = self.nuc_rep / (electron_count_A * electron_count_B)
         self.vt_nuc_rep_cavity = (
-            (self.d_exp_A * self.d_exp_B) / (electron_count_A * electron_count_B)
+            (self.d_exp_el_A * self.d_exp_el_B) / (electron_count_A * electron_count_B)
             if self.include_cavity_terms
             else 0.0
         )
@@ -300,10 +301,10 @@ class QEDSAPT0Driver:
         self.V_A_cavity = np.zeros_like(self.V_A)
         self.V_B_cavity = np.zeros_like(self.V_B)
         if self.include_cavity_terms: 
-            self.V_A_cavity = -self.d_exp_B * self.d_A
-            self.V_B_cavity = -self.d_exp_A * self.d_B
-            self.V_A += self.V_A_cavity
-            self.V_B += self.V_B_cavity
+            self.V_A_cavity = self.d_exp_el_A * self.d_B
+            self.V_B_cavity = self.d_exp_el_B * self.d_A
+            self.V_A -= self.V_A_cavity
+            self.V_B -= self.V_B_cavity
 
         # potential integrals
         self.V_A_BB = oe.contract("uI,vJ,uv->IJ", self.C_B, self.C_B, self.V_A, optimize="optimal")
@@ -369,7 +370,7 @@ class QEDSAPT0Driver:
         total = parts["eri"].copy()
         total += parts["potential_A"]
         total += parts["potential_B"]
-        total += parts["nuclear"]
+        total += parts["constant"]
         return total
 
     def v(self, string, context: str = "total"):
@@ -426,8 +427,11 @@ class QEDSAPT0Driver:
 
     def potential(self, string, side, context: str = "total"):
         """
-        Grab one-electron potential integrals for monomer X dressed with dipole integrals for monomer X scaled by expectation value of
-        <d_Y>
+        Grab one-electron potential integrals for monomer X.
+
+        In the cavity context these are dressed by dipole integrals scaled by the
+        total coherent-state expectation value <d_Y> = d_exp_Y, including both
+        electronic and nuclear contributions.
         """
         if len(string) != 2:
             psi4.core.clean()
@@ -466,14 +470,14 @@ class QEDSAPT0Driver:
         V_B = self.potential(s_left, 'B', context=context) / (2 * self.ndocc_B + self.nsocc_B)
         potential_B = np.einsum('ik,jl->ijkl', V_B, S_B)
 
-        # nuclear - scaling by 1/N_A and 1/N_B already happened in prepare_monomers
-        nuclear = np.einsum("ik,jl->ijkl", S_A, S_B) * self._vt_nuc_rep_for_context(context)
+        # constant - scaling by 1/N_A and 1/N_B already happened in prepare_monomers
+        constant = np.einsum("ik,jl->ijkl", S_A, S_B) * self._vt_nuc_rep_for_context(context)
 
         return {
             "eri": eri,
             "potential_A": potential_A,
             "potential_B": potential_B,
-            "nuclear": nuclear,
+            "constant": constant,
         }
 
     def vt(self, string, context: str = "total"):
@@ -513,20 +517,135 @@ class QEDSAPT0Driver:
             for context, parts in partitions.items()
         }
 
+    def _diagnostic_scalar_summary(self):
+        scalars = {
+            "include_cavity_terms": self.include_cavity_terms,
+            "integral_backend": self.integral_backend,
+            "d_exp_A": self.d_exp_A,
+            "d_exp_el_A": self.d_exp_el_A,
+            "d_nuc_A": self.d_nuc_A,
+            "d_exp_A_residual": self.d_exp_A - self.d_exp_el_A - self.d_nuc_A,
+            "d_exp_B": self.d_exp_B,
+            "d_exp_el_B": self.d_exp_el_B,
+            "d_nuc_B": self.d_nuc_B,
+            "d_exp_B_residual": self.d_exp_B - self.d_exp_el_B - self.d_nuc_B,
+            "d_exp_A_times_d_exp_B": self.d_exp_A * self.d_exp_B,
+            "d_exp_el_A_times_d_exp_el_B": self.d_exp_el_A * self.d_exp_el_B,
+            "d_nuc_A_times_d_nuc_B": self.d_nuc_A * self.d_nuc_B,
+        }
+
+        if hasattr(self, "I_dimer_cavity"):
+            scalars["I_dimer_cavity_norm"] = np.linalg.norm(self.I_dimer_cavity)
+        if hasattr(self, "V_A_cavity"):
+            scalars["V_A_cavity_norm"] = np.linalg.norm(self.V_A_cavity)
+        if hasattr(self, "V_B_cavity"):
+            scalars["V_B_cavity_norm"] = np.linalg.norm(self.V_B_cavity)
+        if hasattr(self, "vt_nuc_rep_cavity"):
+            scalars["vt_nuc_rep_cavity"] = self.vt_nuc_rep_cavity
+
+        return scalars
+
+    def _diagnostic_vt_summary(self):
+        prefactor = 4.0
+        elst100 = self.contract_vt_parts("abab", prefactor=prefactor)
+        check_compute = float(self.compute_Elst100() - elst100["total"]["total"])
+        elst100.update(
+            {
+                "label": "Elst100",
+                "prefactor": prefactor,
+                "checks": {
+                    "standard_plus_cavity_minus_total": float(
+                        elst100["standard"]["total"]
+                        + elst100["cavity"]["total"]
+                        - elst100["total"]["total"]
+                    ),
+                    "cavity_total_abs": float(abs(elst100["cavity"]["total"])),
+                    "compute_Elst100_minus_diagnostic_total": check_compute,
+                },
+            }
+        )
+        return {"abab": elst100}
+
+    def _print_scalar_diagnostics(self, scalars):
+        def _print_value(label, value):
+            if isinstance(value, (bool, str)):
+                print(f"{label:<32} {value}")
+            else:
+                print(f"{label:<32} {float(value):18.10e}")
+
+        print("QED-SAPT0 cavity diagnostics")
+        print()
+        print("Scalar dipole checks")
+        print("--------------------")
+        for key, label in (
+            ("d_exp_A", "d_exp_A"),
+            ("d_exp_el_A", "d_exp_el_A"),
+            ("d_nuc_A", "d_nuc_A"),
+            ("d_exp_A_residual", "d_exp_A_residual"),
+            ("d_exp_B", "d_exp_B"),
+            ("d_exp_el_B", "d_exp_el_B"),
+            ("d_nuc_B", "d_nuc_B"),
+            ("d_exp_B_residual", "d_exp_B_residual"),
+            ("d_exp_A_times_d_exp_B", "d_exp_A * d_exp_B"),
+            ("d_exp_el_A_times_d_exp_el_B", "d_exp_el_A * d_exp_el_B"),
+            ("d_nuc_A_times_d_nuc_B", "d_nuc_A * d_nuc_B"),
+        ):
+            _print_value(label, scalars[key])
+
+        norm_keys = (
+            ("I_dimer_cavity_norm", "||I_dimer_cavity||"),
+            ("V_A_cavity_norm", "||V_A_cavity||"),
+            ("V_B_cavity_norm", "||V_B_cavity||"),
+            ("vt_nuc_rep_cavity", "vt_nuc_rep_cavity"),
+        )
+        if any(key in scalars for key, _ in norm_keys):
+            print()
+            print("Operator norms")
+            print("--------------")
+            for key, label in norm_keys:
+                if key in scalars:
+                    _print_value(label, scalars[key])
+
+    def _print_vt_diagnostics(self, vt_summary):
+        vt_abab = vt_summary["abab"]
+        print()
+        print("QED-SAPT0 operator diagnostics")
+        print(
+            f"Component: {vt_abab['label']}, tensor: vt(\"abab\"), "
+            f"prefactor: {vt_abab['prefactor']:.1f}"
+        )
+        print(f"{'context':<10} {'piece':<14} {'value / Eh':>18}")
+        print("-" * 44)
+        for context in ("standard", "cavity", "total"):
+            for piece in ("eri", "potential_A", "potential_B", "constant", "total"):
+                print(f"{context:<10} {piece:<14} {vt_abab[context][piece]:18.10f}")
+
+        print()
+        print("Checks")
+        print("------")
+        checks = vt_abab["checks"]
+        print(
+            f"{'standard + cavity - total':<32} "
+            f"{checks['standard_plus_cavity_minus_total']:18.10e}"
+        )
+        print(f"{'abs(cavity total)':<32} {checks['cavity_total_abs']:18.10e}")
+        print(
+            f"{'compute_Elst100 - diagnostic':<32} "
+            f"{checks['compute_Elst100_minus_diagnostic_total']:18.10e}"
+        )
+
     def diagnostic_summary(self, print_output: Optional[bool] = None):
         print_output = self.config.debug if print_output is None else print_output
+        vt_summary = self._diagnostic_vt_summary()
         summary = {
-            "Elst100": self.contract_vt_parts("abab", prefactor=4.0),
+            "scalars": self._diagnostic_scalar_summary(),
+            "vt": vt_summary,
+            "Elst100": vt_summary["abab"],
         }
 
         if print_output:
-            print("QED-SAPT0 operator diagnostics")
-            print("Component: Elst100")
-            print(f"{'context':<10} {'piece':<14} {'value / Eh':>18}")
-            print("-" * 44)
-            for context in ("standard", "cavity", "total"):
-                for piece in ("eri", "potential_A", "potential_B", "nuclear", "total"):
-                    print(f"{context:<10} {piece:<14} {summary['Elst100'][context][piece]:18.10f}")
+            self._print_scalar_diagnostics(summary["scalars"])
+            self._print_vt_diagnostics(summary["vt"])
 
         return summary
 

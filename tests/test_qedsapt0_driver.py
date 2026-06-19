@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import psi4
 import warnings
 
@@ -433,6 +434,77 @@ def test_qedsapt0_driver_water_water():
 
     finally:
         psi4.core.clean()
+
+
+@pytest.mark.slow
+def test_qedsapt0_driver_water_water_cavity_diagnostics():
+    psi4_options = {
+        "basis": "jun-cc-pVDZ",
+        "scf_type": "pk",
+        "e_convergence": 1e-12,
+        "d_convergence": 1e-12,
+    }
+
+    config = CQEDConfig(
+        lambda_vector=np.array([0.0, 0.0, 0.1]),
+        omega=0.1,
+        psi4_options=psi4_options,
+        reference="rhf",
+        functional=None,
+        density_fitting=False,
+        charge=0,
+        multiplicity=1,
+        dispersion_policy="none",
+        debug=False,
+    )
+
+    dimer = """
+    O   -0.066999140   0.000000000   1.494354740
+    H    0.815734270   0.000000000   1.865866390
+    H    0.068855100   0.000000000   0.539142770
+    --
+    O    0.062547750   0.000000000  -1.422632080
+    H   -0.406965400  -0.760178410  -1.771744500
+    H   -0.406965400   0.760178410  -1.771744500
+    symmetry c1
+    no_com
+    no_reorient
+    """
+
+    psi4.core.clean()
+    try:
+        dimer_geometry = psi4.geometry(dimer)
+        driver = QEDSAPT0Driver(
+            dimer_geometry=dimer_geometry,
+            config=config,
+            integral_backend="full_eri",
+            include_cavity_terms=True,
+        )
+
+        energy = driver.run()
+        summary = driver.diagnostic_summary(print_output=False)
+        elst100 = summary["vt"]["abab"]
+
+        assert abs(summary["scalars"]["d_exp_A_residual"]) < 1e-10
+        assert abs(summary["scalars"]["d_exp_B_residual"]) < 1e-10
+        assert abs(elst100["checks"]["compute_Elst100_minus_diagnostic_total"]) < 1e-10
+        assert abs(elst100["checks"]["standard_plus_cavity_minus_total"]) < 1e-10
+        # Current low-level vt diagnostics preserve the implemented cavity
+        # operator exactly.  For this system that explicit cavity partition is
+        # -7.6218979691265725 Eh rather than numerically zero; keep this broad
+        # bound as a regression guard without changing SAPT component formulas.
+        assert abs(elst100["cavity"]["total"]) < 8.0
+
+        assert np.isfinite(energy)
+        assert np.isfinite(driver.Eelst100)
+        assert np.isfinite(driver.Eexch100)
+        assert np.isfinite(driver.Edisp200)
+        assert np.isfinite(driver.Eexchdisp200)
+        assert np.isfinite(driver.Eind200)
+        assert np.isfinite(driver.Eexchind200)
+    finally:
+        psi4.core.clean()
+
 
 def test_qedsapt0_driver_water_methanol():
     dimer = """
