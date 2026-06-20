@@ -301,10 +301,10 @@ class QEDSAPT0Driver:
         self.V_A_cavity = np.zeros_like(self.V_A)
         self.V_B_cavity = np.zeros_like(self.V_B)
         if self.include_cavity_terms: 
-            self.V_A_cavity = self.d_exp_el_A * self.d_B
-            self.V_B_cavity = self.d_exp_el_B * self.d_A
-            self.V_A -= self.V_A_cavity
-            self.V_B -= self.V_B_cavity
+            self.V_A_cavity = -self.d_exp_el_A * self.d_B
+            self.V_B_cavity = -self.d_exp_el_B * self.d_A
+            self.V_A += self.V_A_cavity
+            self.V_B += self.V_B_cavity
 
         # potential integrals
         self.V_A_BB = oe.contract("uI,vJ,uv->IJ", self.C_B, self.C_B, self.V_A, optimize="optimal")
@@ -429,9 +429,9 @@ class QEDSAPT0Driver:
         """
         Grab one-electron potential integrals for monomer X.
 
-        In the cavity context these are dressed by dipole integrals scaled by the
-        total coherent-state expectation value <d_Y> = d_exp_Y, including both
-        electronic and nuclear contributions.
+        In the cavity context these are dressed by dipole integrals scaled by
+        electronic coherent-state expectation values from the fluctuation
+        residual.
         """
         if len(string) != 2:
             psi4.core.clean()

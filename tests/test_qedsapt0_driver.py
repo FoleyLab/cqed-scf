@@ -61,7 +61,7 @@ def _sum_vt_parts(parts):
     total = parts["eri"].copy()
     total += parts["potential_A"]
     total += parts["potential_B"]
-    total += parts["nuclear"]
+    total += parts["constant"]
     return total
 
 
@@ -270,7 +270,7 @@ def test_qedsapt0_driver_vt_partitions_standard_cavity_total_relationship():
         for string in ("abab", "abba", "abrs"):
             partitions = driver.vt_partitions(string)
             direct_cavity_parts = driver.vt_parts(string, context="cavity")
-            for piece in ("eri", "potential_A", "potential_B", "nuclear", "total"):
+            for piece in ("eri", "potential_A", "potential_B", "constant", "total"):
                 np.testing.assert_allclose(
                     partitions["standard"][piece] + partitions["cavity"][piece],
                     partitions["total"][piece],
@@ -345,7 +345,7 @@ def test_qedsapt0_driver_cavity_disabled_vt_standard_equals_total():
 
         for string in ("abab", "abba", "abrs"):
             partitions = driver.vt_partitions(string)
-            for piece in ("eri", "potential_A", "potential_B", "nuclear", "total"):
+            for piece in ("eri", "potential_A", "potential_B", "constant", "total"):
                 np.testing.assert_allclose(
                     partitions["standard"][piece],
                     partitions["total"][piece],
@@ -489,11 +489,9 @@ def test_qedsapt0_driver_water_water_cavity_diagnostics():
         assert abs(summary["scalars"]["d_exp_B_residual"]) < 1e-10
         assert abs(elst100["checks"]["compute_Elst100_minus_diagnostic_total"]) < 1e-10
         assert abs(elst100["checks"]["standard_plus_cavity_minus_total"]) < 1e-10
-        # Current low-level vt diagnostics preserve the implemented cavity
-        # operator exactly.  For this system that explicit cavity partition is
-        # -7.6218979691265725 Eh rather than numerically zero; keep this broad
-        # bound as a regression guard without changing SAPT component formulas.
-        assert abs(elst100["cavity"]["total"]) < 8.0
+        for piece in ("eri", "potential_A", "potential_B", "constant", "total"):
+            assert piece in elst100["cavity"]
+        assert abs(elst100["cavity"]["total"]) < 1e-10
 
         assert np.isfinite(energy)
         assert np.isfinite(driver.Eelst100)
