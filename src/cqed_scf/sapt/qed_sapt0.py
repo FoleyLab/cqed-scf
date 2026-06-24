@@ -194,10 +194,10 @@ class QEDSAPT0Driver:
         self.vt_nuc_rep_standard = self.nuc_rep / (electron_count_A * electron_count_B)
         self.vt_nuc_rep_cavity = (
             (self.d_exp_el_A * self.d_exp_el_B) / (electron_count_A * electron_count_B)
-            if self.include_cavity_terms
+            if self.include_cavity_terms 
             else 0.0
         )
-        self.vt_nuc_rep = self.vt_nuc_rep_standard + self.vt_nuc_rep_cavity
+        self.vt_nuc_rep = self.vt_nuc_rep_standard + self.vt_nuc_rep_cavity 
 
     def build_orbitals(self) -> Any:
         """Build orbital intermediates needed for QED-SAPT0 components.

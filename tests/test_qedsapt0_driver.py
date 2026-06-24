@@ -549,3 +549,104 @@ def test_qedsapt0_driver_water_methanol():
 
     finally:
         psi4.core.clean()
+
+
+def test_qedsapt0_driver_water_methylamine_qed_sapt_example():
+    psi4_options = {
+        "basis": "jun-cc-pVDZ",
+        "scf_type": "pk",
+        "e_convergence": 1e-12,
+        "d_convergence": 1e-12,
+    }
+
+    config = CQEDConfig(
+        lambda_vector=np.array([0.0, 0.0, 0.1]),
+        omega=0.1,
+        psi4_options=psi4_options,
+        reference="rhf",
+        functional=None,
+        density_fitting=False,
+        charge=0,
+        multiplicity=1,
+        dispersion_policy="none",
+        debug=False,
+    )
+
+    dimer = """
+    0 1
+    O   -0.687464896  -0.111744327  -0.019625472
+    H   -1.046121544   0.775938208   0.012706845
+    H    0.274042519   0.025850654  -0.003497262
+    --
+    0 1
+    N    2.787113199   0.125007400   0.008492726
+    H    3.082477630  -0.427630575  -0.786298137
+    H    3.097193694  -0.385713691   0.825352219
+    C    3.446448476   1.433371365  -0.031748912
+    H    3.135906054   2.015096325   0.832766508
+    H    4.537757766   1.394076393  -0.040704580
+    H    3.119736204   1.969288834  -0.919572724
+    symmetry c1
+    no_com
+    no_reorient
+    """
+
+    hartree_to_kcal_mol = 627.5094740631
+    expected_components_hartree = {
+        "Elst10": -0.00867371,
+        "Exch10": 0.00308053,
+        "Disp20": -0.00271511,
+        "ExchDisp20": 0.00019666,
+        "Ind20r": -0.00178878,
+        "ExchInd20r": 0.00081671,
+        "Total": -0.00908369,
+    }
+    expected_components_kcal_mol = {
+        "Elst10": -5.4428,
+        "Exch10": 1.9331,
+        "Disp20": -1.7038,
+        "ExchDisp20": 0.1234,
+        "Ind20r": -1.1225,
+        "ExchInd20r": 0.5125,
+        "Total": -5.7001,
+    }
+
+    psi4.core.be_quiet()
+    psi4.core.clean()
+    try:
+        dimer_geometry = psi4.geometry(dimer)
+        driver = QEDSAPT0Driver(
+            dimer_geometry=dimer_geometry,
+            config=config,
+            integral_backend="full_eri",
+            include_cavity_terms=True,
+        )
+
+        energy = driver.run()
+        actual_components_hartree = {
+            "Elst10": driver.Eelst100,
+            "Exch10": driver.Eexch100,
+            "Disp20": driver.Edisp200,
+            "ExchDisp20": driver.Eexchdisp200,
+            "Ind20r": driver.Eind200,
+            "ExchInd20r": driver.Eexchind200,
+            "Total": energy,
+        }
+
+        for component, expected_hartree in expected_components_hartree.items():
+            assert actual_components_hartree[component] == pytest.approx(
+                expected_hartree,
+                abs=0.5e-8,
+                rel=0.0,
+            )
+
+        for component, expected_kcal_mol in expected_components_kcal_mol.items():
+            assert actual_components_hartree[component] * hartree_to_kcal_mol == pytest.approx(
+                expected_kcal_mol,
+                abs=0.5e-4,
+                rel=0.0,
+            )
+
+        assert driver.E_SAPT0 == pytest.approx(energy, abs=1e-12, rel=0.0)
+    finally:
+        psi4.core.clean()
