@@ -23,22 +23,6 @@ class CQEDGradient:
         self.canonical = canonical
         self.debug = debug
 
-    def _update_wfn_with_cqed(self, scf):
-        wfn = scf["wfn"]
-
-        C = psi4.core.Matrix.from_array(scf["coefficients"])
-        D = psi4.core.Matrix.from_array(scf["density"])
-        eps = psi4.core.Vector.from_array(scf["orbital_energies"])
-
-        wfn.Ca().nph[0][:, :] = C
-        wfn.Cb().nph[0][:, :] = C
-        wfn.Da().nph[0][:, :] = D
-        wfn.Db().nph[0][:, :] = D
-        wfn.epsilon_a().nph[0][:] = eps
-        wfn.epsilon_b().nph[0][:] = eps
-
-        return wfn
-
 
     # =========================
     # Public driver
@@ -78,7 +62,8 @@ class CQEDGradient:
     # =========================
 
     def _canonical_gradient_psi4(self, scf):
-        wfn = self._update_wfn_with_cqed(scf) #<-- update wfn to reflect CQED-RHF density
+        # wfn = self._update_wfn_with_cqed(scf) #<-- update wfn to reflect CQED-RHF density
+        wfn = scf["wfn"]
         if self.debug:
             D_wfn = np.asarray(wfn.Da())
             assert np.allclose(D_wfn, scf["density"], atol=1e-10)

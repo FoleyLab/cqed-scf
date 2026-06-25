@@ -315,24 +315,36 @@ class CQEDSCF:
         d_nuc = np.dot(self.lambda_vector, mu_nuc)
         d_exp = d_exp_el + d_nuc
 
+        # update wavefunction with final CQED-SCF state for use in gradients and future SAPT0 integrals
+        self.wfn = self._update_wfn_with_cqed(self.wfn, C, D, eps)
+        
         results = dict(
             energy_scf=E,
             energy_psi4=E_psi4,
             density=D,
             coefficients=C,
+            Co=Cocc,
+            Cv=C[:, self.ndocc :],
             orbital_energies=eps,
             mints=self.mints,
             wfn=self.wfn,
             dipole_el=mu_el,
             dipole_nuc=mu_nuc,
+            nuc_rep=Enuc,
             d_ao=d_ao,
+            d_nuc=d_nuc,
             d_exp=d_exp,
+            d_exp_el=d_exp_el,
             H0=H0,
             F=F,
             ndocc=self.ndocc,
+            nvirt=self.nbf - self.ndocc,
+            nmo=self.nbf,
             natom=self.mol.natom(),
             method=self.method,
+            reference=self.method,
             functional=self.functional,
+            density_fitting=self.density_fitting,
             x_alpha=self.x_alpha,
         )
 
@@ -444,6 +456,18 @@ class CQEDSCF:
         evecs = evecs[:, idx]
         Cguess = A @ evecs
         return Cguess[:, :self.ndocc]
+    
+    def _update_wfn_with_cqed(self, wfn, C, D, eps):
+        """ Update a Psi4 wavefunction's C, D, and eps to reflect the current CQED-SCF state. This is needed for gradients and future SAPT0 integrals. """
+
+        wfn.Ca().nph[0][:, :] = C
+        wfn.Cb().nph[0][:, :] = C
+        wfn.Da().nph[0][:, :] = D
+        wfn.Db().nph[0][:, :] = D
+        wfn.epsilon_a().nph[0][:] = eps
+        wfn.epsilon_b().nph[0][:] = eps
+
+        return wfn
 
 
 # backward compatibility for older imports
