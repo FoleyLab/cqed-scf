@@ -79,7 +79,7 @@ print("Starting projected gradient BFGS optimization sweep for fixed direction l
 results = []
 for lam_mag in lambda_magnitudes:
     lambda_vector = (lam_mag * lambda_direction).tolist()
-    xyz_file = f"nitro_cavity_opt_projected_df_lam_{lam_mag:.2f}.xyz"
+    xyz_file = f"nitro_cavity_opt_projected_df_ortho_70_31_lam_{lam_mag:.2f}.xyz"
     traj_file_para = f"nitro_cavity_opt_projected_df_lam_{lam_mag:.2f}.npz"
 
     # Clear old trajectory if it exists for this lambda magnitude.
@@ -111,20 +111,25 @@ for lam_mag in lambda_magnitudes:
 
     coords_opt_bohr = opt_result.x.reshape(-1, 3)
     coords_opt_angstrom = coords_opt_bohr / ANGSTROM_TO_BOHR
+    grad_norm = float(np.linalg.norm(opt_result.jac)) if getattr(opt_result, "jac", None) is not None else float("nan")
 
     write_xyz(
         xyz_file,
         symbols,
         coords_opt_angstrom,
-        comment=f"FINAL OPTIMIZED | lambda = {lam_mag:.2f} | E = {opt_result.fun:.10f} Ha",
+        comment=(
+            f"FINAL OPTIMIZED | lambda = {lam_mag:.2f} | "
+            f"E = {opt_result.fun:.10f} Ha | |grad| = {grad_norm:.6e} Ha/Bohr"
+        ),
         mode="a",
     )
 
-    results.append((lam_mag, opt_result.success, opt_result.fun, xyz_file, traj_file_para))
+    results.append((lam_mag, opt_result.success, opt_result.fun, grad_norm, xyz_file, traj_file_para))
 
 print("\nOptimization sweep finished.")
-for lam_mag, success, energy, xyz_file, traj_file_para in results:
+for lam_mag, success, energy, grad_norm, xyz_file, traj_file_para in results:
     print(
         f"|lambda| = {lam_mag:.2f} | Converged: {success} | "
-        f"Final energy (Ha): {energy:.10f} | XYZ: {xyz_file} | Trajectory: {traj_file_para}"
+        f"Final energy (Ha): {energy:.10f} | |grad|: {grad_norm:.6e} Ha/Bohr | "
+        f"XYZ: {xyz_file} | Trajectory: {traj_file_para}"
     )

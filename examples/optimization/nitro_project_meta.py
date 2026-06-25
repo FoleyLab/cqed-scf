@@ -58,8 +58,8 @@ psi4.set_options(psi4_options)
 # Cavity parameters
 # =========================
 
-theta_central = 63 # 63° from z-axis
-phi_central = 63 # 63° from x-axis in xy-plane
+theta_central = 70 # 70° from z-axis
+phi_central = 31 # 31° from x-axis in xy-plane
 d_alpha = 1.0 # deviation angle in degrees
 
 # pre-compute different field vectors for finite differences of QED-RHF energy wrt theta and phi
@@ -84,7 +84,7 @@ print("Starting projected gradient BFGS optimization sweep for fixed direction l
 results = []
 for lam_mag in lambda_magnitudes:
     lambda_vector = (lam_mag * lambda_direction).tolist()
-    xyz_file = f"nitro_cavity_opt_projected_df_lam_{lam_mag:.2f}.xyz"
+    xyz_file = f"nitro_cavity_opt_projected_df_meta_70_31_lam_{lam_mag:.2f}.xyz"
 
     print(F"Lambda vector after scaling")
     print(lambda_vector)
@@ -124,7 +124,7 @@ for lam_mag in lambda_magnitudes:
         xyz_file,
         symbols,
         coords_opt_angstrom,
-        comment=f"FINAL OPTIMIZED | lambda = {lam_mag:.2f} | E = {opt_result.fun:.10f} Ha",
+        comment=f"FINAL OPTIMIZED | lambda = {lam_mag:.2f} | E = {opt_result.fun:.10f} Ha" | f" Norm of gradient = {np.linalg.norm(opt_result.jac):.6e}",
         mode="a",
     )
 
