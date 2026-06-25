@@ -1,8 +1,10 @@
 import psi4
 import numpy as np
+from typing import Any, Mapping, Optional
 from .scf import CQEDSCF
 from .gradients import CQEDGradient
 from .drivers import project_cartesian_gradient_remove_translation_rotation
+from .references import CQEDConfig
 from .utils import AMU_TO_AU
 
 class CQEDCalculator:
@@ -322,8 +324,6 @@ class CQEDCalculator:
         from .sapt import QEDSAPT0Driver
 
         return QEDSAPT0Driver(dimer_geometry=dimer_geometry, config=self.config, **kwargs)
-
-        return E_total, grad_total, g
     
     def energy_and_projected_gradient(self, geometry, canonical="psi4"):
         """
