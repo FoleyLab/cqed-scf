@@ -1,7 +1,3 @@
-"""
-Geometry optimization of water in an optical cavity using CQED-RHF + BFGS,
-with Cartesian projected-gradient removal of translation/rotation.
-"""
 
 import numpy as np
 import psi4
@@ -15,23 +11,23 @@ from cqed_scf.utils import write_xyz, ANGSTROM_TO_BOHR, generate_field_vector_fr
 # Psi4 geometry (angstrom)
 # =========================
 
-meta_string = """
+para_string = """
 1 1
-C           -0.929257263947     2.021527608578     0.744707683350
-C            0.476075706053     1.968481358578     0.682883583350 
-C            1.153033166053     0.732862858578     0.671089073350 
-C            0.486309286053    -0.455398891422     0.707696283350 
-C           -1.646688783947     0.850023888578     0.786483593350 
-H           -1.430027043947     2.980198348578     0.754644003350 
-H            1.068570756053     2.878318968578     0.644324213350 
-H            1.030908186053    -1.394630481422     0.699715393350 
-H           -2.730391873947     0.862207158578     0.834726773350 
-N            2.627601876053     0.732774608578     0.609077593350 
-O            3.188360516053    -0.377859281422     0.588451963350 
-O            3.186221516053     1.845711198578     0.586422223350 
-C           -0.982368843947    -0.464026221422     0.760065283350 
-H           -1.395507033947    -1.190671951422     1.465426213350 
-BR          -1.494673453947    -1.187920261422    -1.064256256650 
+C         -0.511618296797     1.244386024531     0.732140048697
+C          0.856500593203     1.251903714531     0.717948218697
+C          1.524118723203     0.024661924531     0.713927788697
+H         -1.071804396797     2.172682314531     0.745925708697
+H          1.436128963203     2.163921874531     0.712099008697
+N          3.008539583203     0.046097104531     0.698823798697
+O          3.575097303203    -1.082768165469     0.699174708697
+O          3.542114363203     1.190870854531     0.689202018697
+C         -0.475464946797    -1.253402765469     0.742118638697
+H         -1.008574426797    -2.197377955469     0.762945788697
+C          0.892227703203    -1.221407805469     0.728065818697
+H          1.498048423203    -2.116244695469     0.729653208697
+C         -1.267906576797    -0.015841805469     0.712127418697
+H         -2.116520796797    -0.025293215469     1.403161498697
+Br        -2.114966986797    -0.034666925469    -1.121874081303
 units angstrom
 no_reorient
 no_com
@@ -58,17 +54,12 @@ psi4.set_options(psi4_options)
 # Cavity parameters
 # =========================
 
-theta_central = 63 # 63° from z-axis
-phi_central = 63 # 63° from x-axis in xy-plane
+theta_central = 63 # 70° from z-axis
+phi_central = 63 # 31° from x-axis in xy-plane
 d_alpha = 1.0 # deviation angle in degrees
 
 # pre-compute different field vectors for finite differences of QED-RHF energy wrt theta and phi
 field_vector_center = generate_field_vector_from_theta_and_phi(theta_central, phi_central)
-vec_mag = np.linalg.norm(field_vector_center)
-print(F"Field Magnitude before scaling is {vec_mag}")
-print(F"Field Vector is")
-print(field_vector_center)
-
 
 lambda_direction = np.asarray(field_vector_center, dtype=float)
 lambda_direction /= np.linalg.norm(lambda_direction)
@@ -76,7 +67,7 @@ lambda_magnitudes = np.linspace(0.02, 0.10, 5)
 omega = 0.06615
 
 # Extract symbols once (for XYZ writing)
-mol = psi4.geometry(meta_string)
+mol = psi4.geometry(para_string)
 symbols = [mol.symbol(i) for i in range(mol.natom())]
 
 print("Starting projected gradient BFGS optimization sweep for fixed direction lambda vectors...\n")
@@ -85,11 +76,8 @@ results = []
 for lam_mag in lambda_magnitudes:
     lambda_vector = (lam_mag * lambda_direction).tolist()
     xyz_file = f"nitro_cavity_opt_projected_df_lam_{lam_mag:.2f}.xyz"
+    traj_file_para = f"nitro_cavity_opt_projected_df_lam_{lam_mag:.2f}.npz"
 
-    print(F"Lambda vector after scaling")
-    print(lambda_vector)
-    mag = np.linalg.norm(lambda_vector)
-    print(F"Mag after scaling {mag}")
     # Clear old trajectory if it exists for this lambda magnitude.
     open(xyz_file, "w").close()
 
@@ -107,14 +95,14 @@ for lam_mag in lambda_magnitudes:
 
     opt_result, _ = bfgs_optimize(
         calculator=calc,
-        geometry=meta_string,
+        geometry=para_string,
         canonical="psi4",
         gtol=1e-5,
         maxiter=50,
         debug=True,
         project_tr_rot=True,
         projection_debug=True,
-        trajectory_file="nitro_opt_meta.npz",
+        trajectory_file=traj_file_para,
     )
 
     coords_opt_bohr = opt_result.x.reshape(-1, 3)
@@ -128,11 +116,11 @@ for lam_mag in lambda_magnitudes:
         mode="a",
     )
 
-    results.append((lam_mag, opt_result.success, opt_result.fun, xyz_file))
+    results.append((lam_mag, opt_result.success, opt_result.fun, xyz_file, traj_file_para))
 
 print("\nOptimization sweep finished.")
-for lam_mag, success, energy, xyz_file in results:
+for lam_mag, success, energy, xyz_file, traj_file_para in results:
     print(
         f"|lambda| = {lam_mag:.2f} | Converged: {success} | "
-        f"Final energy (Ha): {energy:.10f} | XYZ: {xyz_file}"
+        f"Final energy (Ha): {energy:.10f} | XYZ: {xyz_file} | Trajectory: {traj_file_para}"
     )
