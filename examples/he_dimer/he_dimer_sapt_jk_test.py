@@ -3,7 +3,8 @@ import numpy as np
 
 # Make sure we import the C++ core and the target driver module
 from psi4 import core
-from psi4.driver.procrouting.sapt import sapt_jk_terms
+from cqed_scf.sapt import qed_sapt_jk
+from cqed_scf.sapt.dse_jk import DSEJK, PauliFierzJK, DSECPHF
 
 # 1. Configuration & Geometry Setup
 psi4.set_memory('2 GB')
@@ -35,7 +36,7 @@ print("==> Running Reference Monomer RHF Calculations (DCBS) <==\n")
 e_scf_A, wfn_A = psi4.energy("scf", molecule=monomer_A, return_wfn=True)
 e_scf_B, wfn_B = psi4.energy("scf", molecule=monomer_B, return_wfn=True)
 
-# 2. Re-constructing the core JK builder required by sapt_jk_terms
+# 2. Re-constructing the core JK builder required by local qed_sapt_jk
 # The driver needs an active JK object initialized with the full dimer basis.
 full_basis = wfn_A.basisset()
 # Build the corresponding auxiliary fit basis for DF
@@ -45,13 +46,42 @@ jk = core.JK.build_JK(full_basis, aux_basis)
 jk.set_memory(int(5e8)) # Allocate memory slot for JK operations
 jk.initialize()
 
-print("\n==> Triggering sapt_jk_terms internal machinery <==\n")
+# Cavity/DSE scaffold: lambda_vector is zero for now, and DSEJK currently
+# returns zero J/K contributions. Once DSEJK.jk_from_density is implemented,
+# this example becomes the PF-SAPT0 test driver.
+lambda_vector = np.array([0.0, 0.0, 0.0])
+
+mints = core.MintsHelper(full_basis)
+mu_x, mu_y, mu_z = [np.asarray(mu) for mu in mints.ao_dipole()]
+d_ao = (
+    lambda_vector[0] * mu_x
+    + lambda_vector[1] * mu_y
+    + lambda_vector[2] * mu_z
+)
+
+dse_jk = DSEJK(
+    d_ao=d_ao,
+    j_scale=1.0,
+    k_scale=1.0,
+    enabled=True,
+    metadata={"description": "No-op DSEJK scaffold for future PF-SAPT0 work"},
+)
+
+pf_jk = PauliFierzJK(jk, dse_jk=dse_jk)
+
+print("\n==> Triggering local qed_sapt_jk internal machinery <==\n")
 # Step A: Build the cache (This wraps densities, eigenvalues, and custom J/K operators)
-cache = sapt_jk_terms.build_sapt_jk_cache(wfn_A, wfn_B, jk, do_print=False)
+cache = qed_sapt_jk.build_sapt_jk_cache(
+    wfn_A,
+    wfn_B,
+    pf_jk,
+    do_print=False,
+    dse_jk=dse_jk,
+)
 
 # Step B: Call first-order electrostatics and exchange explicit routines
-elst_results = sapt_jk_terms.electrostatics(cache, do_print=False)
-exch_results = sapt_jk_terms.exchange(cache, jk, do_print=False)
+elst_results = qed_sapt_jk.electrostatics(cache, do_print=False)
+exch_results = qed_sapt_jk.exchange(cache, pf_jk, do_print=False)
 
 # Safely shut down the JK tracking memory block
 jk.C_clear()
