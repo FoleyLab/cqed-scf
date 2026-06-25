@@ -99,6 +99,36 @@ def parse_psi4_geometry(geometry):
 
     return symbols, np.asarray(coords), charge, multiplicity
 
+def generate_field_vector_from_theta_and_phi(theta, phi):
+    """
+    Generate a unit field vector from spherical coordinates.
+    
+    Parameters:
+    -----------
+    theta : float
+        Polar angle in degrees (0° = +z axis, 90° = xy-plane, 180° = -z axis)
+        phi : float
+        Azimuthal angle in degrees (0° = +x axis, 90° = +y axis)
+    
+    Returns:
+    --------
+    array : Field vector [x, y, z] as a unit vector
+    
+    Spherical to Cartesian conversion:
+    x = sin(θ) cos(φ)
+    y = sin(θ) sin(φ)
+    z = cos(θ)
+    """
+# Convert degrees to radians
+    theta_rad = np.radians(theta)
+    phi_rad = np.radians(phi)
+
+# Compute Cartesian components
+    x = np.sin(theta_rad) * np.cos(phi_rad)
+    y = np.sin(theta_rad) * np.sin(phi_rad)
+    z = np.cos(theta_rad)
+    
+    return np.array([x, y, z])
 
 # =========================
 # Optimizer / MD helpers

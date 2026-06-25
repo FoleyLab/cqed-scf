@@ -1,6 +1,6 @@
 """
-Geometry optimization of water in an optical cavity
-using CQED-RHF + BFGS, with XYZ trajectory output.
+Geometry optimization of water in an optical cavity using CQED-RHF + BFGS,
+with Cartesian projected-gradient removal of translation/rotation.
 """
 
 import numpy as np
@@ -45,7 +45,7 @@ psi4.set_options(psi4_options)
 # Cavity parameters
 # =========================
 
-lambda_vector = [0., 0.0, 0.05]   # polarization along z
+lambda_vector = [0., 0.05, 0.05]   # polarization along z
 omega = 0.0                       # cavity frequency (a.u.)
 
 # =========================
@@ -61,18 +61,12 @@ calc = CQEDCalculator(
     multiplicity=1,
     functional="wb97x",  # try None for RHF
 )
-#calc = CQEDCalculator(
-#    lambda_vector=lambda_vector,
-#    psi4_options=psi4_options,
-#    omega=omega,
-#    density_fitting=True,
-#)
 
 # =========================
 # Prepare XYZ output
 # =========================
 
-xyz_file = "h2o_cavity_opt_df.xyz"
+xyz_file = "h2o_cavity_opt_projected_df.xyz"
 
 # Clear old trajectory if it exists
 open(xyz_file, "w").close()
@@ -85,15 +79,17 @@ symbols = [mol.symbol(i) for i in range(mol.natom())]
 # Run BFGS optimization
 # =========================
 
-print("Starting BFGS optimization of H2O in cavity...\n")
+print("Starting projected-gradient BFGS optimization of H2O in cavity...\n")
 
 opt_result, _ = bfgs_optimize(
     calculator=calc,
     geometry=h2o_string,
-    canonical="psi4",   # use exact gradients for optimization
+    canonical="psi4",
     gtol=1e-5,
     maxiter=50,
-    debug=True,          # <-- enables XYZ writing + detailed output
+    debug=True,
+    project_tr_rot=True,
+    projection_debug=True,
 )
 
 # =========================
@@ -119,4 +115,3 @@ print("\nOptimization finished.")
 print(f"Converged: {opt_result.success}")
 print(f"Final energy (Ha): {opt_result.fun:.10f}")
 print(f"XYZ trajectory written to: {xyz_file}")
-

@@ -1,17 +1,9 @@
-"""User-facing CQED calculation facade.
-
-The calculator owns compatibility with the historical package API and routes
-work to lower-level engines.  Restricted CQED-SCF and gradients remain the only
-implemented physics paths; unrestricted references, response theory, and
-QED-SAPT0 are exposed here as explicit future hooks.
-"""
-
-from __future__ import annotations
-
-from typing import Any, Mapping, Optional
-
-from .references import CQEDConfig
-
+import psi4
+import numpy as np
+from .scf import CQEDSCF
+from .gradients import CQEDGradient
+from .drivers import project_cartesian_gradient_remove_translation_rotation
+from .utils import AMU_TO_AU
 
 class CQEDCalculator:
     """Facade and dispatcher for CQED calculations.
@@ -331,6 +323,34 @@ class CQEDCalculator:
 
         return QEDSAPT0Driver(dimer_geometry=dimer_geometry, config=self.config, **kwargs)
 
+        return E_total, grad_total, g
+    
+    def energy_and_projected_gradient(self, geometry, canonical="psi4"):
+        """
+        Compute energy and a Cartesian gradient projected away from rigid modes.
+
+        This wraps ``energy_and_gradient`` and removes components along the
+        mass-weighted translation and rigid-body rotation modes. Coordinates
+        and gradients remain Cartesian; this is not an internal-coordinate
+        optimization interface.
+        """
+
+        # get masses in atomic units and coordinates in bohr
+        mol = psi4.geometry(geometry)
+        coords_bohr = mol.geometry().to_array()
+        masses = np.array([mol.mass(i) for i in range(mol.natom())]) * AMU_TO_AU
+
+        # get energy and full gradient at current geometry
+        E, grad, g = self.energy_and_gradient(geometry, canonical)
+
+        grad_proj = project_cartesian_gradient_remove_translation_rotation(
+            coords_bohr,
+            grad,
+            masses,
+            return_diagnostics=False,
+        )
+        
+        return E, grad_proj, g
 
 # backward-compatible alias
 CQEDRHFCalculator = CQEDCalculator

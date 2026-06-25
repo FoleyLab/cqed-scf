@@ -248,6 +248,118 @@ def apply_freeze_constraints(coords, velocities, gradients, freeze_atoms):
     return coords, velocities, gradients
 
 
+def project_cartesian_gradient_remove_translation_rotation(
+    coords_bohr,
+    grad,
+    masses,
+    return_diagnostics=False,
+):
+    """
+    Project a Cartesian nuclear gradient away from rigid-body modes.
+
+    This is a Cartesian projected-gradient operation for geometry
+    optimization: it removes components along mass-weighted translation and
+    rigid-body rotation modes before the gradient is passed to the optimizer.
+    It is not an internal-coordinate optimization; it suppresses net translational
+    and rotational components of the Cartesian gradient.
+
+    Parameters
+    ----------
+    coords_bohr : ndarray, shape (N, 3)
+        Cartesian coordinates in bohr.
+    grad : ndarray, shape (N, 3)
+        Cartesian gradient in Hartree/bohr.
+    masses : ndarray, shape (N,)
+        Atomic masses in atomic units/electron masses.
+    return_diagnostics : bool
+        If True, return a diagnostics dictionary with force/torque residuals.
+
+    Returns
+    -------
+    grad_proj : ndarray, shape (N, 3)
+        Projected Cartesian gradient in Hartree/bohr.
+    diagnostics : dict, optional
+        Projection diagnostics, returned only when requested.
+    """
+    coords_bohr = np.asarray(coords_bohr, dtype=float)
+    grad = np.asarray(grad, dtype=float)
+    masses = np.asarray(masses, dtype=float)
+
+    if coords_bohr.ndim != 2 or coords_bohr.shape[1] != 3:
+        raise ValueError("coords_bohr must have shape (N, 3)")
+
+    if grad.shape != coords_bohr.shape:
+        raise ValueError("grad must have the same shape as coords_bohr")
+
+    if masses.ndim != 1 or masses.shape[0] != coords_bohr.shape[0]:
+        raise ValueError("masses must have shape (N,), matching coords_bohr")
+
+    if not np.all(np.isfinite(coords_bohr)):
+        raise ValueError("coords_bohr must contain only finite values")
+
+    if not np.all(np.isfinite(grad)):
+        raise ValueError("grad must contain only finite values")
+
+    if not np.all(np.isfinite(masses)):
+        raise ValueError("masses must contain only finite values")
+
+    if np.any(masses <= 0.0):
+        raise ValueError("masses must be strictly positive")
+
+    total_mass = np.sum(masses)
+    if total_mass <= 0.0:
+        raise ValueError("total mass must be positive")
+
+    natom = coords_bohr.shape[0]
+    com = np.sum(coords_bohr * masses[:, None], axis=0) / total_mass
+    x = coords_bohr - com
+    sqrtm = np.sqrt(masses)
+
+    modes = []
+
+    for axis in range(3):
+        mode = np.zeros((natom, 3))
+        mode[:, axis] = sqrtm
+        modes.append(mode.reshape(-1))
+
+    for axis in range(3):
+        axis_vec = np.eye(3)[axis]
+        mode = np.cross(axis_vec[None, :], x)
+        mode *= sqrtm[:, None]
+        modes.append(mode.reshape(-1))
+
+    B = np.column_stack(modes)
+    U, s, _ = np.linalg.svd(B, full_matrices=False)
+    keep = s > 1e-10
+    Q = U[:, keep]
+
+    gmw = (grad / sqrtm[:, None]).reshape(-1)
+    gmw_proj = gmw - Q @ (Q.T @ gmw)
+    grad_proj = gmw_proj.reshape(natom, 3) * sqrtm[:, None]
+
+    if not return_diagnostics:
+        return grad_proj
+
+    forces_raw = -grad
+    forces_proj = -grad_proj
+    diagnostics = {
+        "forces_raw": forces_raw,
+        "forces_proj": forces_proj,
+        "net_force_raw": np.sum(forces_raw, axis=0),
+        "net_force_proj": np.sum(forces_proj, axis=0),
+        "torque_raw": np.sum(np.cross(x, forces_raw), axis=0),
+        "torque_proj": np.sum(np.cross(x, forces_proj), axis=0),
+        "raw_grad_norm": np.linalg.norm(grad),
+        "proj_grad_norm": np.linalg.norm(grad_proj),
+        "raw_force_norm": np.linalg.norm(forces_raw),
+        "proj_force_norm": np.linalg.norm(forces_proj),
+        "rank": Q.shape[1],
+        "singular_values": s,
+    }
+
+    return grad_proj, diagnostics
+
+
 def bfgs_optimize(
     calculator,
     geometry,
@@ -256,6 +368,8 @@ def bfgs_optimize(
     maxiter=5,
     observers=None,
     debug=False,
+    project_tr_rot=False,
+    projection_debug=False,
 ):
     """
     Geometry optimization using BFGS with cached energy/gradient evaluations.
@@ -275,6 +389,12 @@ def bfgs_optimize(
         Objects with an observe(coords_bohr) method.
     debug : bool
         Print progress.
+    project_tr_rot : bool
+        If True, pass a Cartesian gradient projected to remove mass-weighted
+        rigid-body translation and rotation modes to BFGS.
+    projection_debug : bool
+        If True and project_tr_rot is enabled, print compact projection
+        diagnostics during debug output.
 
     Returns
     -------
@@ -295,6 +415,7 @@ def bfgs_optimize(
     mol = psi4.geometry(geometry)
     symbols = [mol.symbol(i) for i in range(mol.natom())]
     x0_bohr = mol.geometry().to_array()
+    masses = np.array([mol.mass(i) for i in range(mol.natom())]) * AMU_TO_AU
 
     if mol.molecular_charge() != calculator.charge:
         raise ValueError("Charge mismatch between geometry and calculator")
@@ -328,17 +449,54 @@ def bfgs_optimize(
             geom, canonical=canonical
         )
 
+        grad_raw = grad.copy()
+        proj_info = None
+
+        if project_tr_rot:
+            grad, proj_info = project_cartesian_gradient_remove_translation_rotation(
+                coords_bohr,
+                grad_raw,
+                masses,
+                return_diagnostics=True,
+            )
+
         if debug:
             print("Current Grad is")
             print(grad)
-            print("Norm of grad is")
-            print(np.linalg.norm(grad))
+
+            if project_tr_rot:
+                print("Norm of projected grad is")
+                print(np.linalg.norm(grad))
+                print("Norm of raw grad is")
+                print(np.linalg.norm(grad_raw))
+            else:
+                print("Norm of grad is")
+                print(np.linalg.norm(grad))
+
+            if projection_debug and project_tr_rot:
+                print("Projection diagnostics:")
+                print(f"  raw |grad|       = {proj_info['raw_grad_norm']:.6e}")
+                print(f"  projected |grad| = {proj_info['proj_grad_norm']:.6e}")
+                print(f"  raw |net force|  = {np.linalg.norm(proj_info['net_force_raw']):.6e}")
+                print(f"  proj |net force| = {np.linalg.norm(proj_info['net_force_proj']):.6e}")
+                print(f"  raw |torque|     = {np.linalg.norm(proj_info['torque_raw']):.6e}")
+                print(f"  proj |torque|    = {np.linalg.norm(proj_info['torque_proj']):.6e}")
+                print(f"  rigid mode rank  = {proj_info['rank']}")
+
+            if project_tr_rot:
+                comment = (
+                    f"E={E:.10f} "
+                    f"|grad_proj|={np.linalg.norm(grad):.3e} "
+                    f"|grad_raw|={np.linalg.norm(grad_raw):.3e}"
+                )
+            else:
+                comment = f"E={E:.10f} |grad|={np.linalg.norm(grad):.3e}"
 
             write_xyz(
                 "opt_traj.xyz",
                 symbols,
                 coords_angstrom,
-                comment=f"E={E:.10f} |grad|={np.linalg.norm(grad):.3e}",
+                comment=comment,
                 mode="a",
             )
 
