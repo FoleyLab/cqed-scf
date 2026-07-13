@@ -31,11 +31,16 @@ def _native_jk(jk):
 
 def _effective_jk(jk, dse_jk=None):
     """Return a PauliFierzJK wrapper when a DSEJK object is supplied."""
-    if dse_jk is None:
-        return jk
     if isinstance(jk, PauliFierzJK):
         return jk
+    if dse_jk is None:
+        return jk
     return PauliFierzJK(jk, dse_jk)
+
+
+def _matrix_jk(cache, jk=None):
+    """Return the composite JK object used for Python SAPT matrix builds."""
+    return cache.get("jk", jk)
 
 
 def build_sapt_jk_cache(wfn_A, wfn_B, jk, do_print=True, dse_jk=None, dse_cphf_A=None, dse_cphf_B=None):
@@ -45,6 +50,7 @@ def build_sapt_jk_cache(wfn_A, wfn_B, jk, do_print=True, dse_jk=None, dse_cphf_A
 
     core.print_out("\n  ==> Preparing SAPT Data Cache <== \n\n")
     jk_eff = _effective_jk(jk, dse_jk)
+    dse_jk_eff = jk_eff.dse_jk if isinstance(jk_eff, PauliFierzJK) else dse_jk
     jk_eff.print_header()
 
     cache = {}
@@ -52,9 +58,7 @@ def build_sapt_jk_cache(wfn_A, wfn_B, jk, do_print=True, dse_jk=None, dse_cphf_A
     cache["wfn_B"] = wfn_B
     cache["jk"] = jk_eff
     cache["native_jk"] = _native_jk(jk_eff)
-    cache["dse_jk"] = dse_jk
-    cache["dse_cphf_A"] = dse_cphf_A
-    cache["dse_cphf_B"] = dse_cphf_B
+    cache["dse_jk"] = dse_jk_eff
 
     # First grab the orbitals
     cache["Cocc_A"] = wfn_A.Ca_subset("AO", "OCC")
@@ -62,6 +66,14 @@ def build_sapt_jk_cache(wfn_A, wfn_B, jk, do_print=True, dse_jk=None, dse_cphf_A
 
     cache["Cocc_B"] = wfn_B.Ca_subset("AO", "OCC")
     cache["Cvir_B"] = wfn_B.Ca_subset("AO", "VIR")
+
+    if dse_jk_eff is not None and dse_jk_eff.is_active():
+        if dse_cphf_A is None:
+            dse_cphf_A = DSECPHF(dse_jk=dse_jk_eff, Cocc=cache["Cocc_A"], Cvir=cache["Cvir_A"])
+        if dse_cphf_B is None:
+            dse_cphf_B = DSECPHF(dse_jk=dse_jk_eff, Cocc=cache["Cocc_B"], Cvir=cache["Cvir_B"])
+    cache["dse_cphf_A"] = dse_cphf_A
+    cache["dse_cphf_B"] = dse_cphf_B
 
     cache["eps_occ_A"] = wfn_A.epsilon_a_subset("AO", "OCC")
     cache["eps_vir_A"] = wfn_A.epsilon_a_subset("AO", "VIR")
@@ -147,13 +159,14 @@ def electrostatics(cache, do_print=True):
     return {"Elst10,r": Elst10}
 
 
-def exchange(cache, jk, do_print=True):
+def exchange(cache, jk=None, do_print=True):
     """
     Computes the E10 exchange (S^2 and S^inf) from a build_sapt_jk_cache datacache.
     """
 
     if do_print:
         core.print_out("\n  ==> E10 Exchange <== \n\n")
+    jk = _matrix_jk(cache, jk)
 
     # Build potenitals
     h_A = cache["V_A"].clone()
@@ -251,13 +264,14 @@ def exchange(cache, jk, do_print=True):
     return {"Exch10(S^2)": Exch_s2, "Exch10": Exch10}
 
 
-def induction(cache, jk, do_print=True, maxiter=12, conv=1.e-8, do_response=True, Sinf=False, sapt_jk_B=None):
+def induction(cache, jk=None, do_print=True, maxiter=12, conv=1.e-8, do_response=True, Sinf=False, sapt_jk_B=None):
     """
     Compute Ind20 and Exch-Ind20 quantities from a SAPT cache and JK object.
     """
 
     if do_print:
         core.print_out("\n  ==> E20 Induction <== \n\n")
+    jk = _matrix_jk(cache, jk)
 
     # Build Induction and Exchange-Induction potentials
     S = cache["S"]

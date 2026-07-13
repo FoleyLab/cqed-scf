@@ -46,9 +46,8 @@ jk = core.JK.build_JK(full_basis, aux_basis)
 jk.set_memory(int(5e8)) # Allocate memory slot for JK operations
 jk.initialize()
 
-# Cavity/DSE scaffold: lambda_vector is zero for now, and DSEJK currently
-# returns zero J/K contributions. Once DSEJK.jk_from_density is implemented,
-# this example becomes the PF-SAPT0 test driver.
+# Cavity/DSE adapter: lambda_vector is zero here, so the active DSEJK
+# contribution is numerically zero for this benchmark.
 lambda_vector = np.array([0.0, 0.0, 0.0])
 
 mints = core.MintsHelper(full_basis)
@@ -64,7 +63,7 @@ dse_jk = DSEJK(
     j_scale=1.0,
     k_scale=1.0,
     enabled=True,
-    metadata={"description": "No-op DSEJK scaffold for future PF-SAPT0 work"},
+    metadata={"description": "Active DSEJK provider for PF-SAPT0 work"},
 )
 
 pf_jk = PauliFierzJK(jk, dse_jk=dse_jk)
