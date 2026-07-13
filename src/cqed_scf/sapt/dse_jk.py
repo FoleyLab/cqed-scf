@@ -2,6 +2,7 @@
 
 import numpy as np
 from psi4 import core
+import opt_einsum as oe
 
 
 def _asarray(matrix):
@@ -100,8 +101,9 @@ class DSEJK:
             K_DSE[pq] = sum_rs d[pr] d[qs] D[rs]
         """
         D_array = _asarray(D)
-        J = np.zeros_like(D_array)
-        K = np.zeros_like(D_array)
+
+        J = oe.contract("pq,rs,rs->pq", self.d_ao, self.d_ao, D, optimize="optimal")
+        K = oe.contract("pr,qs,rs->pq", self.d_ao, self.d_ao, D, optimize="optimal")
 
         if self.return_core_matrices:
             return _core_matrix(J), _core_matrix(K)
@@ -193,6 +195,8 @@ class DSECPHF:
         self.Cvir = Cvir
         self.enabled = enabled
         self.metadata = {} if metadata is None else dict(metadata)
+        self._J = None
+        self._K = None
 
     def hx_array(self, X):
         """Return a zero response contribution with the same shape as ``X``."""

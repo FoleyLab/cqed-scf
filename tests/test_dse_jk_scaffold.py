@@ -45,34 +45,45 @@ class FakeJK:
         pass
 
 
-def test_dsejk_compute_returns_zero_core_matrices():
-    dse_jk = DSEJK(d_ao=np.eye(2))
-    dse_jk.C_left_add(np.array([[1.0], [0.0]]))
-    dse_jk.C_right_add(np.array([[0.0], [1.0]]))
+def test_dsejk_compute_matches_rank_one_exchange_formula():
+    d = np.eye(2)
+    C_L = np.array([[1.0], [0.0]])
+    C_R = np.array([[0.0], [1.0]])
+    D = C_L @ C_R.T
 
+    dse_jk = DSEJK(d_ao=d)
+    dse_jk.C_left_add(C_L)
+    dse_jk.C_right_add(C_R)
     dse_jk.compute()
 
-    assert len(dse_jk.J()) == 1
-    assert len(dse_jk.K()) == 1
-    np.testing.assert_allclose(dse_jk.J()[0].np, np.zeros((2, 2)))
-    np.testing.assert_allclose(dse_jk.K()[0].np, np.zeros((2, 2)))
+    expected_J = np.einsum("pq,rs,rs->pq", d, d, D)
+    expected_K = np.einsum("pr,qs,rs->pq", d, d, D)
+
+    np.testing.assert_allclose(dse_jk.J()[0].np, expected_J)
+    np.testing.assert_allclose(dse_jk.K()[0].np, expected_K)
 
 
-def test_pauli_fierz_jk_adds_zero_dse_without_mutating_native():
+def test_pauli_fierz_jk_adds_dse_without_mutating_native():
     native_jk = FakeJK()
-    dse_jk = DSEJK(d_ao=np.eye(2))
+    d = np.eye(2)
+    dse_jk = DSEJK(d_ao=d)
     pf_jk = PauliFierzJK(native_jk, dse_jk=dse_jk)
 
     pf_jk.C_add(np.eye(2))
     pf_jk.compute()
 
     J_native_before = native_jk.J()[0].np.copy()
+    K_native_before = native_jk.K()[0].np.copy()
     J_pf = pf_jk.J()[0]
     K_pf = pf_jk.K()[0]
+    D = np.eye(2)
+    expected_J = J_native_before + np.einsum("pq,rs,rs->pq", d, d, D)
+    expected_K = K_native_before + np.einsum("pr,qs,rs->pq", d, d, D)
 
-    np.testing.assert_allclose(J_pf.np, np.ones((2, 2)))
-    np.testing.assert_allclose(K_pf.np, 2.0 * np.ones((2, 2)))
+    np.testing.assert_allclose(J_pf.np, expected_J)
+    np.testing.assert_allclose(K_pf.np, expected_K)
     np.testing.assert_allclose(native_jk.J()[0].np, J_native_before)
+    np.testing.assert_allclose(native_jk.K()[0].np, K_native_before)
     assert pf_jk.native_jk() is native_jk
 
 

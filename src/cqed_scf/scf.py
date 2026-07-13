@@ -204,7 +204,7 @@ class CQEDSCF:
 
             # N from opt_einsum contraction of d_ao, D, d_ao
             N = oe.contract("pr,qs,rs->pq", d_ao, d_ao, D, optimize="optimal")
-
+            #                ms,ln,ls->mn
             if self.method == "rhf":
                 F = H + 2.0 * J - K - N
 
