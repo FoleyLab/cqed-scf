@@ -26,6 +26,7 @@ from cqed_scf import CQEDConfig
 from cqed_scf.sapt import QEDSAPT0Driver
 from cqed_scf.sapt import qed_sapt_jk
 from cqed_scf.sapt.dse_jk import DSEJK, PauliFierzJK
+import time
 
 
 REFERENCE_COMPONENTS = {
@@ -232,9 +233,11 @@ def main():
     with contextlib.redirect_stdout(io.StringIO()):
         driver = _prepare_qed_monomers()
 
+    start = time.time()
     jk_components = _compute_jk_components(driver)
     _print_comparison(jk_components)
-
+    end = time.time()
+    print(F"JK/DSE path component evaluation took {end - start:.2f} seconds.")
 
 if __name__ == "__main__":
     main()

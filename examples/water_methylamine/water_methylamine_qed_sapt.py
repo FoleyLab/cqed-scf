@@ -5,7 +5,7 @@ from cqed_scf import CQEDConfig
 from cqed_scf.sapt import QEDSAPT0Driver
 
 psi4.core.be_quiet()  # Suppress Psi4 output for cleaner test output
-
+import time
 
 psi4_options = {
     "basis": "jun-cc-pVDZ",
@@ -54,9 +54,10 @@ sapt_driver = QEDSAPT0Driver(
     integral_backend="full_eri",
     include_cavity_terms=True,
 )
-
+start = time.time()
 SAPT0_Energy = sapt_driver.run()
-
+end = time.time()
+print(f"QED-SAPT0 evaluation took {end - start:.2f} seconds.")
 
 # Define a width for the labels to ensure perfect alignment
 w = 22
