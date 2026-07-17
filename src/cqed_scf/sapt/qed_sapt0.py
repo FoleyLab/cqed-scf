@@ -168,6 +168,9 @@ class QEDSAPT0Driver:
         self.eps_A = self.monomer_A.eps
         self.eps_B = self.monomer_B.eps
 
+        self.eps_canonical_A = self.monomer_A.eps_canonical
+        self.eps_canonical_B = self.monomer_B.eps_canonical
+
         self.E_nuc_A = self.monomer_A.nuc_rep
         self.E_nuc_B = self.monomer_B.nuc_rep
         self.nuc_rep = self.E_nuc_dimer - self.E_nuc_A - self.E_nuc_B
@@ -423,6 +426,24 @@ class QEDSAPT0Driver:
         else:
             psi4.core.clean()
             raise Exception("eps: string %s does not have valid monomer label" % string)
+        
+    def eps_canonical(self, string, dim=1):
+        if len(string) != 1:
+            psi4.core.clean()
+            raise Exception("eps: string %s does not have length 1" % string)
+        
+        shape = (-1,) + tuple([1] * (dim - 1))
+
+        if (string=='i') or (string=='a') or (string=='r'):
+            return self.eps_canonical_A[self.slices[string]].reshape(shape)
+        
+        elif (string=='j') or (string=='b') or (string=='s'):
+            return self.eps_canonical_B[self.slices[string]].reshape(shape)
+        
+        else:
+            psi4.core.clean()
+            raise Exception("eps: string %s does not have valid monomer label" % string)
+
     
 
     def potential(self, string, side, context: str = "total"):
@@ -726,11 +747,16 @@ class QEDSAPT0Driver:
 
         return Exch100
     
-    def compute_Edisp200(self):
+    def compute_Edisp200(self, canonical_denom=False):
 
         v_abrs = self.v('abrs')
         self.v_rsab = self.v('rsab')
-        self.eps_rsab = 1 / (-self.eps('r', dim=4) - self.eps('s', dim=3) + self.eps('a', dim=2) + self.eps('b'))
+
+        if canonical_denom:
+            self.eps_rsab = 1 / (-self.eps_canonical('r', dim=4) - self.eps_canonical('s', dim=3) + self.eps_canonical('a', dim=2) + self.eps_canonical('b'))
+        else:
+            self.eps_rsab = 1 / (-self.eps('r', dim=4) - self.eps('s', dim=3) + self.eps('a', dim=2) + self.eps('b'))
+
         self.t_rsab = oe.contract("rsab,rsab->rsab", self.v_rsab, self.eps_rsab, optimize="optimal")
         Disp200 = 4 * oe.contract('rsab,abrs->', self.t_rsab, v_abrs, optimize="optimal")
         return Disp200

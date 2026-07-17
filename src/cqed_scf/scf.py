@@ -129,6 +129,10 @@ class CQEDSCF:
         ref_method = self._reference_method_string()
         E_psi4, self.wfn = psi4.energy(ref_method, return_wfn=True)
 
+        # get the canonical orbital energies from the Psi4 reference wavefunction
+
+        eps_canonical = np.asarray(self.wfn.epsilon_a())
+
         self.mints = psi4.core.MintsHelper(self.wfn.basisset())
         self.nbf = self.wfn.nmo()
         self.ndocc = self.wfn.nalpha()
@@ -326,6 +330,7 @@ class CQEDSCF:
             Co=Cocc,
             Cv=C[:, self.ndocc :],
             orbital_energies=eps,
+            canonical_orbital_energies=eps_canonical,
             mints=self.mints,
             wfn=self.wfn,
             dipole_el=mu_el,

@@ -112,7 +112,7 @@ def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
         actual_sbr = driver.s("br")
         actual_Eelst100 = driver.compute_Elst100()
         actual_Eexch100 = driver.compute_Exch100()
-        actual_Edisp200 = driver.compute_Edisp200()
+        actual_Edisp200 = driver.compute_Edisp200(canonical_denom=True)
         actual_Eexchdisp200 = driver.compute_Eexchdisp200()
         actual_Eind200 = driver.compute_Eind200()
         actual_EexchInd200 = driver.compute_Eexchind200()
