@@ -22,7 +22,7 @@
 
 Reference confirmation:
 
-- The hard-coded dense reference values in `examples/water_methylamine/water_methylamine_qed_sapt_jk.py` were independently reproduced by running the dense reference driver in `examples/water_methylamine/water_methylamine_qed_sapt.py`, which uses `cqed_scf/sapt/qed_sapt0.py::QEDSAPT0Driver` with the same geometry, lambda vector `[0.0, 0.0, 0.1]`, omega `0.1`, `jun-cc-pVDZ`, and `include_cavity_terms=True`.
+- The hard-coded dense reference values in `examples/water_methylamine/water_methylamine_qed_sapt_jk.py` were independently reproduced by running the reference driver (which matches Kenny's adaptation of Konrad's notebook) in `examples/water_methylamine/water_methylamine_qed_sapt.py`, which uses `cqed_scf/sapt/qed_sapt0.py::QEDSAPT0Driver` with the same geometry, lambda vector `[0.0, 0.0, 0.1]`, omega `0.1`, `jun-cc-pVDZ`, and `include_cavity_terms=True`.
 - The reproduced values are:
   - Electrostatics: `-0.0086737093`
   - Exchange: `0.0030805286`
@@ -32,24 +32,22 @@ Reference confirmation:
   - Exchange-Induction: `0.0008167150`
   - Total: `-0.0090836941`
 
-Cavity-modified monomer data flow:
+Cavity-modified monomer data flow - inspected by hand by Jay and confirmed by Codex:
 
 - `cqed_scf/scf.py::CQEDSCF.run()` updates the returned Psi4 wavefunction with the final CQED-SCF state in `_update_wfn_with_cqed()`, including `Ca`, `Cb`, `Da`, `Db`, `epsilon_a`, and `epsilon_b`.
 - `cqed_scf/sapt/monomer.py::SAPTMonomer.from_cqed_scf()` stores that same updated wavefunction in `scf_results["wfn"]`.
 - `cqed_scf/sapt/qed_sapt_jk.py::build_sapt_jk_cache()` then reads orbitals and orbital energies from the wavefunction via `Ca_subset("AO", "OCC")`, `Ca_subset("AO", "VIR")`, `epsilon_a_subset("AO", "OCC")`, and `epsilon_a_subset("AO", "VIR")`.
 - Spot checks showed zero numerical difference between the stored monomer coefficient/epsilon arrays and the wavefunction subsets. The JK path is therefore being fed the cavity-relaxed density, orbital coefficients, and orbital energies.
 
-Needed fixes / follow-up:
+Exchange Convention and CPHF Sign Conventions raised by GPT 5.5. Jay confirmed Exchange convention, Kenny should implement and test.  No confirmation of CPHF sign convention yet, Kenny should implement and test. 
 
 1. Exchange comparison key in `examples/water_methylamine/water_methylamine_qed_sapt_jk.py`
-   - The dense reference `qed_sapt0.py::compute_Exch100()` implements the S^2 exchange expression.
+   - The reference `qed_sapt0.py::compute_Exch100()` that follows Kenny's / Kondrad's reference implements the S^2 exchange expression, 
    - `qed_sapt_jk.py::exchange()` returns both `Exch10(S^2)` and `Exch10`.
    - The water-methylamine JK comparison currently reports `exch["Exch10"]`, which is the S^inf-style value from the Psi4 JK helper path. That is the source of the apparent exchange discrepancy.
-   - For comparison against the current dense reference, use `exch["Exch10(S^2)"]`.
-   - Diagnostic values:
-     - Dense exchange: `0.0030805285602`
-     - JK `Exch10(S^2)`: `0.0030805285647`
-     - JK `Exch10`: `0.0030886178404`
+
+**TO DO FOR KENNY** For comparison against the current adapt `water_methylamine_qed_sapt_jk.py` to use `exch["Exch10(S^2)"]` instead of `exch["Exch10"]`.  Re-run comparisons and report back on the agreement between the exchange term.
+
 
 2. Coupled induction response sign/convention in `cqed_scf/sapt/qed_sapt_jk.py` and `cqed_scf/sapt/dse_jk.py`
    - Direct/uncoupled induction agrees between dense and JK/DSE to numerical noise, so the induction RHS/electrostatic potential construction is OK.
@@ -61,13 +59,13 @@ Needed fixes / follow-up:
    - This sign/convention needs to be reconciled. A local sign-flip experiment for the DSE Hx term largely corrected induction, which supports this as the right area to fix, but it should be implemented with a clear convention rather than an ad hoc patch.
 
 3. Exchange-induction coupled-response mismatch
-   - Uncoupled exchange-induction agrees between dense and JK/DSE:
-     - Dense `Exch-Ind20,u`: `0.0006174109081502`
+   - Uncoupled exchange-induction agrees between reference and JK/DSE:
+     - Referemce `Exch-Ind20,u`: `0.0006174109081502`
      - JK/DSE `Exch-Ind20,u`: `0.0006174109081214`
    - Coupled exchange-induction differs:
-     - Dense total `Exch-Ind20,r`: `0.0008167149799`
+     - Reference total `Exch-Ind20,r`: `0.0008167149799`
      - JK/DSE total `Exch-Ind20,r`: `0.0008137244180`
    - There is already a standard-only coupled exchange-induction difference of about `2.6e-6 Eh`, before adding DSE terms, so this is not purely a cavity/DSE issue.
-   - Relevant dense code: `qed_sapt0.py::compute_Eexchind200()` and `qed_sapt0.py::chf()`.
+   - Relevant reference code: `qed_sapt0.py::compute_Eexchind200()` and `qed_sapt0.py::chf()`.
    - Relevant JK code: `qed_sapt_jk.py::induction()`, especially the EX_A/EX_B potential construction and `_sapt_cpscf_solve()` response amplitudes.
    - Recommended next diagnostic: compare dense `compute_Eexchind200()` using the exact dense CPHF amplitudes against the JK EX_A/EX_B contractions using the same amplitudes. This will separate EX potential construction errors from response-amplitude convention errors.
