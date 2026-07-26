@@ -78,6 +78,15 @@ UNCOUPLED_COMPONENT_ORDER = (
     "Exch-Ind20,u",
 )
 
+COUPLED_COMPONENT_ORDER = (
+    "Ind20,r (A<-B)",
+    "Ind20,r (A->B)",
+    "Ind20,r",
+    "Exch-Ind20,r (A<-B)",
+    "Exch-Ind20,r (A->B)",
+    "Exch-Ind20,r",
+)
+
 
 @dataclass
 class CaseResult:
@@ -127,6 +136,7 @@ def _dense_components(driver):
         "Total QED-SAPT0 Energy": float(driver.E_SAPT0),
     }
     components.update(_dense_uncoupled_components(driver))
+    components.update(_dense_coupled_components(driver))
     return components
 
 
@@ -149,6 +159,29 @@ def _dense_uncoupled_components(driver):
         "Ind20,u": float(ind_ab + ind_ba),
     }
     components.update(exch_ind)
+    return components
+
+
+def _dense_coupled_components(driver):
+    w_B_MOA = driver.diagnostic_chf_rhs("B")
+    w_A_MOB = driver.diagnostic_chf_rhs("A")
+
+    ind_ab = 2.0 * np.einsum("ar,ar->", driver.CPHF_ra.T, w_B_MOA)
+    ind_ba = 2.0 * np.einsum("bs,bs->", driver.CPHF_sb.T, w_A_MOB)
+    exch_ind = _dense_uncoupled_exch_ind_components(
+        driver,
+        driver.CPHF_ra,
+        driver.CPHF_sb,
+    )
+
+    components = {
+        "Ind20,r (A<-B)": float(ind_ab),
+        "Ind20,r (A->B)": float(ind_ba),
+        "Ind20,r": float(ind_ab + ind_ba),
+    }
+    components.update(
+        {key.replace(",u", ",r"): value for key, value in exch_ind.items()}
+    )
     return components
 
 
@@ -286,6 +319,12 @@ def _compute_jk_components(driver):
         "Exch-Ind20,u (A<-B)": float(ind["Exch-Ind20,u (A<-B)"]),
         "Exch-Ind20,u (A->B)": float(ind["Exch-Ind20,u (A->B)"]),
         "Exch-Ind20,u": float(ind["Exch-Ind20,u"]),
+        "Ind20,r (A<-B)": float(ind["Ind20,r (A<-B)"]),
+        "Ind20,r (A->B)": float(ind["Ind20,r (A->B)"]),
+        "Ind20,r": float(ind["Ind20,r"]),
+        "Exch-Ind20,r (A<-B)": float(ind["Exch-Ind20,r (A<-B)"]),
+        "Exch-Ind20,r (A->B)": float(ind["Exch-Ind20,r (A->B)"]),
+        "Exch-Ind20,r": float(ind["Exch-Ind20,r"]),
         "Exchange S^inf": float(exch["Exch10"]),
     }
 
@@ -369,6 +408,15 @@ def _print_case(result):
     print(f"{'Component':<25} {'Dense / Eh':>16} {'JK / Eh':>18} {'Delta / Eh':>14}")
     print("-" * 78)
     for name in UNCOUPLED_COMPONENT_ORDER:
+        dense = result.dense_components[name]
+        jk = result.jk_components[name]
+        print(f"{name:<25} {dense:16.10f} {jk:18.10f} {jk - dense:14.6e}")
+
+    print()
+    print("Coupled induction diagnostics")
+    print(f"{'Component':<25} {'Dense / Eh':>16} {'JK / Eh':>18} {'Delta / Eh':>14}")
+    print("-" * 78)
+    for name in COUPLED_COMPONENT_ORDER:
         dense = result.dense_components[name]
         jk = result.jk_components[name]
         print(f"{name:<25} {dense:16.10f} {jk:18.10f} {jk - dense:14.6e}")

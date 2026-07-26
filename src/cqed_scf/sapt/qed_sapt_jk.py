@@ -385,7 +385,17 @@ def exchange(cache, jk=None, do_print=True):
     return {"Exch10(S^2)": Exch_s2, "Exch10": Exch10}
 
 
-def induction(cache, jk=None, do_print=True, maxiter=12, conv=1.e-8, do_response=True, Sinf=False, sapt_jk_B=None):
+def induction(
+    cache,
+    jk=None,
+    do_print=True,
+    maxiter=12,
+    conv=1.e-8,
+    do_response=True,
+    Sinf=False,
+    sapt_jk_B=None,
+    diagnostics=None,
+):
     """
     Compute Ind20 and Exch-Ind20 quantities from a SAPT cache and JK object.
     """
@@ -486,12 +496,24 @@ def induction(cache, jk=None, do_print=True, maxiter=12, conv=1.e-8, do_response
     w_B_MOA = core.triplet(cache["Cocc_A"], w_B, cache["Cvir_A"], True, False, False)
     w_A_MOB = core.triplet(cache["Cocc_B"], w_A, cache["Cvir_B"], True, False, False)
 
+    if diagnostics is not None:
+        diagnostics["w_B_MOA"] = w_B_MOA.np.copy()
+        diagnostics["w_A_MOB"] = w_A_MOB.np.copy()
+        diagnostics["EX_A"] = EX_A.np.copy()
+        diagnostics["EX_B"] = EX_B.np.copy()
+
     # Do uncoupled
     core.print_out("   => Uncoupled Induction <= \n\n")
     unc_x_B_MOA = w_B_MOA.clone()
     unc_x_B_MOA.np[:] /= (cache["eps_occ_A"].np.reshape(-1, 1) - cache["eps_vir_A"].np)
     unc_x_A_MOB = w_A_MOB.clone()
     unc_x_A_MOB.np[:] /= (cache["eps_occ_B"].np.reshape(-1, 1) - cache["eps_vir_B"].np)
+
+    if diagnostics is not None:
+        diagnostics["uncoupled_amplitudes"] = {
+            "A<-B": unc_x_B_MOA.np.copy(),
+            "A->B": unc_x_A_MOB.np.copy(),
+        }
 
     unc_ind_ab = 2.0 * unc_x_B_MOA.vector_dot(w_B_MOA)
     unc_ind_ba = 2.0 * unc_x_A_MOB.vector_dot(w_A_MOB)
@@ -662,7 +684,22 @@ def induction(cache, jk=None, do_print=True, maxiter=12, conv=1.e-8, do_response
 
         cphf_r_convergence = core.get_option("SAPT", "CPHF_R_CONVERGENCE")
 
-        x_B_MOA, x_A_MOB = _sapt_cpscf_solve(cache, jk, w_B_MOA, w_A_MOB, 20, cphf_r_convergence, sapt_jk_B=sapt_jk_B)
+        x_B_MOA, x_A_MOB = _sapt_cpscf_solve(
+            cache,
+            jk,
+            w_B_MOA,
+            w_A_MOB,
+            20,
+            cphf_r_convergence,
+            sapt_jk_B=sapt_jk_B,
+            diagnostics=diagnostics,
+        )
+
+        if diagnostics is not None:
+            diagnostics["coupled_amplitudes"] = {
+                "A<-B": x_B_MOA.np.copy(),
+                "A->B": x_A_MOB.np.copy(),
+            }
 
         ind_ab = 2.0 * x_B_MOA.vector_dot(w_B_MOA)
         ind_ba = 2.0 * x_A_MOB.vector_dot(w_A_MOB)
@@ -727,16 +764,29 @@ def induction(cache, jk=None, do_print=True, maxiter=12, conv=1.e-8, do_response
     return ret
 
 
-def _sapt_cpscf_solve(cache, jk, rhsA, rhsB, maxiter, conv, sapt_jk_B=None):
+def _sapt_cpscf_solve(
+    cache,
+    jk,
+    rhsA,
+    rhsB,
+    maxiter,
+    conv,
+    sapt_jk_B=None,
+    diagnostics=None,
+    standard_action="matrix_free",
+):
     """
     Solve the SAPT CPHF (or CPKS) equations.
     """
 
     native = cache.get("native_jk", _native_jk(jk))
+    native_A = native
     cache["wfn_A"].set_jk(native)
     if sapt_jk_B:
-        cache["wfn_B"].set_jk(_native_jk(sapt_jk_B))
+        native_B = _native_jk(sapt_jk_B)
+        cache["wfn_B"].set_jk(native_B)
     else:
+        native_B = native
         cache["wfn_B"].set_jk(native)
 
     # Make a preconditioner function
@@ -745,6 +795,135 @@ def _sapt_cpscf_solve(cache, jk, rhsA, rhsB, maxiter, conv, sapt_jk_B=None):
 
     P_B = core.Matrix(cache["eps_occ_B"].shape[0], cache["eps_vir_B"].shape[0])
     P_B.np[:] = (cache["eps_occ_B"].np.reshape(-1, 1) - cache["eps_vir_B"].np)
+
+    def _as_matrix(value, shape):
+        if isinstance(value, core.Matrix):
+            mat = value.clone()
+        else:
+            mat = core.Matrix.from_array(np.ascontiguousarray(value, dtype=float))
+        if mat.shape != shape:
+            raise ValueError(f"trial response shape must be {shape}; got {mat.shape}.")
+        return mat
+
+    def _dse_action(label, trial):
+        dse_cphf = cache.get(f"dse_cphf_{label}", None)
+        if dse_cphf is not None and dse_cphf.is_active():
+            return dse_cphf.hx_matrix(trial)
+        return core.Matrix(trial.shape[0], trial.shape[1])
+
+    def _psi4_standard_action(label, trial):
+        if label == "A":
+            shape = (cache["eps_occ_A"].shape[0], cache["eps_vir_A"].shape[0])
+            trial = _as_matrix(trial, shape)
+            return cache["wfn_A"].cphf_Hx([trial])[0]
+        elif label == "B":
+            shape = (cache["eps_occ_B"].shape[0], cache["eps_vir_B"].shape[0])
+            trial = _as_matrix(trial, shape)
+            return cache["wfn_B"].cphf_Hx([trial])[0]
+        else:
+            raise ValueError(f"response label must be 'A' or 'B'; got {label!r}.")
+
+    def _matrix_free_standard_action(label, trial):
+        if label == "A":
+            Cocc = cache["Cocc_A"]
+            Cvir = cache["Cvir_A"]
+            eps_occ = cache["eps_occ_A"].np.reshape(-1, 1)
+            eps_vir = cache["eps_vir_A"].np.reshape(1, -1)
+            response_jk = native_A
+        elif label == "B":
+            Cocc = cache["Cocc_B"]
+            Cvir = cache["Cvir_B"]
+            eps_occ = cache["eps_occ_B"].np.reshape(-1, 1)
+            eps_vir = cache["eps_vir_B"].np.reshape(1, -1)
+            response_jk = native_B
+        else:
+            raise ValueError(f"response label must be 'A' or 'B'; got {label!r}.")
+
+        trial = _as_matrix(trial, (Cocc.shape[1], Cvir.shape[1]))
+
+        # Apply the ordinary ERI response block in the same occupied-virtual
+        # convention as DSECPHF, then convert to Psi4 cg_solver's H x = rhs
+        # convention: H_std X = (eps_occ - eps_vir) X - G[X].
+        left = core.doublet(Cocc, trial, False, False)
+        response_jk.C_clear()
+        response_jk.C_left_add(left)
+        response_jk.C_right_add(Cvir)
+        response_jk.compute()
+        J = response_jk.J()[0]
+        K = response_jk.K()[0]
+        K_T = K.clone()
+        K_T.transpose_this()
+
+        G = J.clone()
+        G.scale(4.0)
+        G.axpy(-1.0, K)
+        G.axpy(-1.0, K_T)
+
+        response = core.triplet(Cocc, G, Cvir, True, False, False)
+        action = trial.clone()
+        action.np[:] *= (eps_occ - eps_vir)
+        action.axpy(-1.0, response)
+        return action
+
+    def _standard_action(label, trial):
+        if standard_action == "matrix_free":
+            return _matrix_free_standard_action(label, trial)
+        if standard_action == "psi4":
+            return _psi4_standard_action(label, trial)
+        raise ValueError(
+            "standard_action must be 'matrix_free' or 'psi4'; "
+            f"got {standard_action!r}."
+        )
+
+    def _response_actions(label, trial):
+        standard = _standard_action(label, trial)
+        trial = _as_matrix(trial, standard.shape)
+
+        dse = _dse_action(label, trial)
+        total = standard.clone()
+        total.axpy(-1.0, dse)
+        return standard, dse, total
+
+    def _standard_response_action(label, trial):
+        return _response_actions(label, trial)[0].np.copy()
+
+    def _psi4_standard_response_action(label, trial):
+        return _psi4_standard_action(label, trial).np.copy()
+
+    def _dse_response_action(label, trial):
+        if label == "A":
+            shape = (cache["eps_occ_A"].shape[0], cache["eps_vir_A"].shape[0])
+        elif label == "B":
+            shape = (cache["eps_occ_B"].shape[0], cache["eps_vir_B"].shape[0])
+        else:
+            raise ValueError(f"response label must be 'A' or 'B'; got {label!r}.")
+        trial = _as_matrix(trial, shape)
+        return _dse_action(label, trial).np.copy()
+
+    def _total_response_action(label, trial):
+        return _response_actions(label, trial)[2].np.copy()
+
+    if diagnostics is not None:
+        diagnostics["hessian_action_convention"] = {
+            "standard": standard_action,
+            "combined": f"{standard_action} standard - dse",
+            "solver": "Psi4 cg_solver solves H x = rhs",
+            "shape": "(nocc, nvir)",
+        }
+        diagnostics["hessian_actions"] = {
+            "A<-B": {
+                "psi4_standard": lambda X: _psi4_standard_response_action("A", X),
+                "standard": lambda X: _standard_response_action("A", X),
+                "dse": lambda X: _dse_response_action("A", X),
+                "total": lambda X: _total_response_action("A", X),
+            },
+            "A->B": {
+                "psi4_standard": lambda X: _psi4_standard_response_action("B", X),
+                "standard": lambda X: _standard_response_action("B", X),
+                "dse": lambda X: _dse_response_action("B", X),
+                "total": lambda X: _total_response_action("B", X),
+            },
+        }
 
     # Preconditioner function
     def apply_precon(x_vec, act_mask):
@@ -765,18 +944,12 @@ def _sapt_cpscf_solve(cache, jk, rhsA, rhsB, maxiter, conv, sapt_jk_B=None):
     # Hx function
     def hessian_vec(x_vec, act_mask):
         if act_mask[0]:
-            xA = cache["wfn_A"].cphf_Hx([x_vec[0]])[0]
-            dse_cphf_A = cache.get("dse_cphf_A", None)
-            if dse_cphf_A is not None and dse_cphf_A.is_active():
-                xA.axpy(-1.0, dse_cphf_A.hx_matrix(x_vec[0]))
+            xA = _response_actions("A", x_vec[0])[2]
         else:
             xA = False
 
         if act_mask[1]:
-            xB = cache["wfn_B"].cphf_Hx([x_vec[1]])[0]
-            dse_cphf_B = cache.get("dse_cphf_B", None)
-            if dse_cphf_B is not None and dse_cphf_B.is_active():
-                xB.axpy(-1.0, dse_cphf_B.hx_matrix(x_vec[1]))
+            xB = _response_actions("B", x_vec[1])[2]
         else:
             xB = False
 
@@ -830,5 +1003,15 @@ def _sapt_cpscf_solve(cache, jk, rhsA, rhsB, maxiter, conv, sapt_jk_B=None):
                                     printlvl=0,
                                     printer=pfunc)
     core.print_out("   " + ("-" * sep_size) + "\n")
+
+    if diagnostics is not None:
+        diagnostics["cphf_residual_norms"] = {
+            "A<-B": float(resid[0].sum_of_squares() ** 0.5),
+            "A->B": float(resid[1].sum_of_squares() ** 0.5),
+        }
+        diagnostics["cphf_relative_residual_norms"] = {
+            "A<-B": float((resid[0].sum_of_squares() / start_resid[0]) ** 0.5),
+            "A->B": float((resid[1].sum_of_squares() / start_resid[1]) ** 0.5),
+        }
 
     return vecs

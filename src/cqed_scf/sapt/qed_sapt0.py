@@ -721,6 +721,102 @@ class QEDSAPT0Driver:
         else:
             return t
 
+    def diagnostic_chf_rhs(self, monomer, context: str = "total"):
+        """Return the dense CPHF RHS in the occupied-virtual convention.
+
+        ``monomer`` follows :meth:`chf`: ``"B"`` means monomer A responds to
+        the field from B and the returned shape is ``(nocc_A, nvir_A)``;
+        ``"A"`` means monomer B responds to the field from A.
+        """
+        self._validate_operator_context(context)
+        if monomer not in ['A', 'B']:
+            psi4.core.clean()
+            raise Exception("diagnostic_chf_rhs: monomer %s is not A or B" % monomer)
+
+        if monomer == 'A':
+            w_n = 2 * oe.contract('saba->bs', self.v('saba', context=context), optimize="optimal")
+            w_n += self.potential("bs", "A", context=context)
+        else:
+            w_n = 2 * oe.contract('rbab->ar', self.v('rbab', context=context), optimize="optimal")
+            w_n += self.potential("ar", "B", context=context)
+
+        return np.ascontiguousarray(w_n)
+
+    def diagnostic_chf_matrix(
+        self,
+        monomer,
+        context: str = "total",
+        include_orbital_diagonal: bool = True,
+    ):
+        """Return the dense occupied-virtual CPHF matrix used by :meth:`chf`.
+
+        The matrix is returned in the dense solver's flattened ``(occ, vir)``
+        ordering.  With ``include_orbital_diagonal=False`` only the two-electron
+        response block for the selected operator context is returned.
+        """
+        context = self._validate_operator_context(context)
+        if monomer not in ['A', 'B']:
+            psi4.core.clean()
+            raise Exception("diagnostic_chf_matrix: monomer %s is not A or B" % monomer)
+
+        if monomer == 'A':
+            eps_ov = (self.eps('b', dim=2) - self.eps('s'))
+            v_term1 = 'sbbs'
+            v_term2 = 'sbsb'
+            no, nv = self.ndocc_B, self.nvirt_B
+        else:
+            eps_ov = (self.eps('a', dim=2) - self.eps('r'))
+            v_term1 = 'raar'
+            v_term2 = 'rara'
+            no, nv = self.ndocc_A, self.nvirt_A
+
+        voov = self.v(v_term1, context=context)
+        v_vOov = 2 * voov - self.v(v_term2, context=context).swapaxes(2, 3)
+        v_ooaa = voov.swapaxes(1, 3)
+        v_vVoO = 2 * v_ooaa - v_ooaa.swapaxes(2, 3)
+        A_ovOV = oe.contract(
+            'vOoV->ovOV',
+            v_vOov + v_vVoO.swapaxes(1, 3),
+            optimize="optimal",
+        )
+        A_ovOV = A_ovOV.reshape(no * nv, no * nv).copy(order='C')
+
+        if include_orbital_diagonal:
+            A_ovOV[np.diag_indices_from(A_ovOV)] -= eps_ov.ravel()
+
+        return A_ovOV
+
+    def diagnostic_chf_hessian_action(
+        self,
+        monomer,
+        amplitude,
+        context: str = "total",
+        include_orbital_diagonal: bool = True,
+        psi4_convention: bool = True,
+    ):
+        """Apply the dense CPHF matrix to a trial occupied-virtual amplitude.
+
+        By default this accepts and returns Psi4-style ``(nocc, nvir)`` arrays.
+        Set ``psi4_convention=False`` to use the dense energy-expression
+        convention ``(nvir, nocc)``.
+        """
+        A_ovOV = self.diagnostic_chf_matrix(
+            monomer,
+            context=context,
+            include_orbital_diagonal=include_orbital_diagonal,
+        )
+        trial = np.asarray(amplitude, dtype=float)
+        if psi4_convention:
+            flat = trial.ravel()
+            no, nv = trial.shape
+            action = A_ovOV @ flat
+            return np.ascontiguousarray(action.reshape(no, nv))
+
+        flat = trial.T.ravel()
+        nv, no = trial.shape
+        action = A_ovOV @ flat
+        return np.ascontiguousarray(action.reshape(no, nv).T)
+
     def compute_Elst100(self):
         return 4 * oe.contract('abab->', self.vt('abab'), optimize="optimal")
     
