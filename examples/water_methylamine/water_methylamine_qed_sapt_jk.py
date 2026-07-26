@@ -121,7 +121,7 @@ def _compute_jk_components(driver):
     wfn_A = driver.monomer_A.wfn
     wfn_B = driver.monomer_B.wfn
     native_jk = _build_native_jk(wfn_A)
-    dse_jk = DSEJK(d_ao=_shared_dse_operator(driver))
+    dse_jk = DSEJK(d_ao=_shared_dse_operator(driver), enabled=driver.include_cavity_terms)
     pf_jk = PauliFierzJK(native_jk, dse_jk=dse_jk)
 
     cache = qed_sapt_jk.build_sapt_jk_cache(
@@ -129,8 +129,11 @@ def _compute_jk_components(driver):
         wfn_B,
         pf_jk,
         do_print=False,
+        d_exp_el_A=driver.d_exp_el_A,
+        d_exp_el_B=driver.d_exp_el_B,
+        include_cavity_terms=driver.include_cavity_terms,
+        nuclear_repulsion_energy=driver.nuc_rep,
     )
-    _apply_cavity_one_body_terms(cache, driver, dse_jk.d_ao)
 
     elst = qed_sapt_jk.electrostatics(cache, do_print=False)
     exch = qed_sapt_jk.exchange(cache, do_print=False)
@@ -142,34 +145,6 @@ def _compute_jk_components(driver):
         "Induction": ind["Ind20,r"],
         "Exchange-Induction": ind["Exch-Ind20,r"],
     }
-
-
-def _apply_cavity_one_body_terms(cache, driver, d_ao):
-    """Add the dense-reference cavity one-body/constant terms to the JK cache.
-
-    ``DSEJK`` supplies the factorizable two-electron dipole-dipole operator.
-    The dense reference also evaluates the coherent-state fluctuation residual
-    terms
-
-    ``V_A_cavity = -<d_A>_el d`` and ``V_B_cavity = -<d_B>_el d``
-
-    plus the constant ``<d_A>_el <d_B>_el``. Applying them here makes the
-    first-order and induction formulas use the same effective operator as the
-    dense QED-SAPT0 implementation while still sourcing the two-electron
-    builds from the JK/DSE path.
-    """
-    V_A_cavity = -float(driver.d_exp_el_A) * d_ao
-    V_B_cavity = -float(driver.d_exp_el_B) * d_ao
-
-    cache["V_A"].axpy(1.0, psi4.core.Matrix.from_array(np.ascontiguousarray(V_A_cavity)))
-    cache["V_B"].axpy(1.0, psi4.core.Matrix.from_array(np.ascontiguousarray(V_B_cavity)))
-
-    # The copied Psi4 helper extracts this from the ghosted monomer molecule;
-    # use the dense driver's dimer-minus-monomer value for the same geometry.
-    cache["nuclear_repulsion_energy"] = float(
-        driver.nuc_rep + driver.d_exp_el_A * driver.d_exp_el_B
-    )
-
 
 def _print_comparison(jk_components):
     components = dict(jk_components)

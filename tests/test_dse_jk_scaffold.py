@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 from psi4 import core
 
+from cqed_scf.sapt import qed_sapt_jk
 from cqed_scf.sapt.dse_jk import DSECPHF, DSEJK, PauliFierzJK
 
 
@@ -68,6 +69,45 @@ def test_dsejk_compute_matches_rank_one_exchange_formula():
 
     np.testing.assert_allclose(dse_jk.J()[0].np, expected_J)
     np.testing.assert_allclose(dse_jk.K()[0].np, expected_K)
+
+
+def test_dse_cavity_terms_match_dense_vt_convention():
+    d_A = np.array([[1.0, 0.2], [0.2, -0.4]])
+    d_B = np.array([[0.3, -0.1], [-0.1, 0.8]])
+
+    V_A, V_B, constant = qed_sapt_jk._dse_cavity_terms(
+        (2, 2),
+        d_ao_A=d_A,
+        d_ao_B=d_B,
+        d_exp_el_A=1.25,
+        d_exp_el_B=-0.5,
+    )
+
+    np.testing.assert_allclose(V_A.np, -1.25 * d_B)
+    np.testing.assert_allclose(V_B.np, 0.5 * d_A)
+    assert constant == pytest.approx(-0.625)
+
+
+def test_dse_cavity_terms_disable_cleanly_and_validate_shapes():
+    V_A, V_B, constant = qed_sapt_jk._dse_cavity_terms(
+        (2, 2),
+        d_ao=np.ones((2, 2)),
+        d_exp_el_A=1.0,
+        d_exp_el_B=2.0,
+        include_cavity_terms=False,
+    )
+
+    np.testing.assert_allclose(V_A.np, np.zeros((2, 2)))
+    np.testing.assert_allclose(V_B.np, np.zeros((2, 2)))
+    assert constant == 0.0
+
+    with pytest.raises(ValueError, match="must match the shared AO shape"):
+        qed_sapt_jk._dse_cavity_terms(
+            (2, 2),
+            d_ao=np.ones((3, 3)),
+            d_exp_el_A=1.0,
+            d_exp_el_B=2.0,
+        )
 
 
 def test_dsejk_applies_scales_and_supports_disabled_zero_builds():

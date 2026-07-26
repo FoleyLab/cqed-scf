@@ -69,6 +69,15 @@ COMPONENT_ORDER = (
     "Total QED-SAPT0 Energy",
 )
 
+UNCOUPLED_COMPONENT_ORDER = (
+    "Ind20,u (A<-B)",
+    "Ind20,u (A->B)",
+    "Ind20,u",
+    "Exch-Ind20,u (A<-B)",
+    "Exch-Ind20,u (A->B)",
+    "Exch-Ind20,u",
+)
+
 
 @dataclass
 class CaseResult:
@@ -108,7 +117,7 @@ def _build_dense_driver(lambda_vector, omega, psi4_options, include_cavity_terms
 
 
 def _dense_components(driver):
-    return {
+    components = {
         "Electrostatics": float(driver.Eelst100),
         "Exchange": float(driver.Eexch100),
         "Dispersion": float(driver.Edisp200),
@@ -116,6 +125,108 @@ def _dense_components(driver):
         "Induction": float(driver.Eind200),
         "Exchange-Induction": float(driver.Eexchind200),
         "Total QED-SAPT0 Energy": float(driver.E_SAPT0),
+    }
+    components.update(_dense_uncoupled_components(driver))
+    return components
+
+
+def _dense_uncoupled_components(driver):
+    w_B_MOA = 2.0 * np.einsum("rbab->ar", driver.v("rbab"))
+    w_B_MOA += driver.V_B_AA[driver.slices["a"], driver.slices["r"]]
+    x_B_MOA = w_B_MOA / (driver.eps("a", dim=2) - driver.eps("r"))
+
+    w_A_MOB = 2.0 * np.einsum("saba->bs", driver.v("saba"))
+    w_A_MOB += driver.V_A_BB[driver.slices["b"], driver.slices["s"]]
+    x_A_MOB = w_A_MOB / (driver.eps("b", dim=2) - driver.eps("s"))
+
+    ind_ab = 2.0 * np.einsum("ar,ar->", x_B_MOA, w_B_MOA)
+    ind_ba = 2.0 * np.einsum("bs,bs->", x_A_MOB, w_A_MOB)
+    exch_ind = _dense_uncoupled_exch_ind_components(driver, x_B_MOA.T, x_A_MOB.T)
+
+    components = {
+        "Ind20,u (A<-B)": float(ind_ab),
+        "Ind20,u (A->B)": float(ind_ba),
+        "Ind20,u": float(ind_ab + ind_ba),
+    }
+    components.update(exch_ind)
+    return components
+
+
+def _dense_uncoupled_exch_ind_components(driver, CPHF_ra, CPHF_sb):
+    vt_abra = driver.vt("abra")
+    vt_abar = driver.vt("abar")
+
+    ExchInd20_ab = np.einsum("ra,abbr->", CPHF_ra, driver.vt("abbr"))
+    ExchInd20_ab += 2 * np.einsum("rA,Ab,abar->", CPHF_ra, driver.s("ab"), vt_abar)
+    ExchInd20_ab += 2 * np.einsum("ra,Ab,abrA->", CPHF_ra, driver.s("ab"), vt_abra)
+    ExchInd20_ab -= np.einsum("rA,Ab,abra->", CPHF_ra, driver.s("ab"), vt_abra)
+
+    vt_abbb = driver.vt("abbb")
+    vt_abab = driver.vt("abab")
+    ExchInd20_ab -= np.einsum("ra,Ab,abAr->", CPHF_ra, driver.s("ab"), vt_abar)
+    ExchInd20_ab += 2 * np.einsum("ra,Br,abBb->", CPHF_ra, driver.s("br"), vt_abbb)
+    ExchInd20_ab -= np.einsum("ra,Br,abbB->", CPHF_ra, driver.s("br"), vt_abbb)
+    ExchInd20_ab -= 2 * np.einsum(
+        "rA,Ab,Br,abaB->", CPHF_ra, driver.s("ab"), driver.s("br"), vt_abab
+    )
+
+    vt_abrb = driver.vt("abrb")
+    ExchInd20_ab -= 2 * np.einsum(
+        "ra,Ab,BA,abrB->", CPHF_ra, driver.s("ab"), driver.s("ba"), vt_abrb
+    )
+    ExchInd20_ab -= 2 * np.einsum(
+        "ra,AB,Br,abAb->", CPHF_ra, driver.s("ab"), driver.s("br"), vt_abab
+    )
+    ExchInd20_ab -= 2 * np.einsum(
+        "rA,AB,Ba,abrb->", CPHF_ra, driver.s("ab"), driver.s("ba"), vt_abrb
+    )
+
+    ExchInd20_ab += np.einsum(
+        "ra,Ab,Br,abAB->", CPHF_ra, driver.s("ab"), driver.s("br"), vt_abab
+    )
+    ExchInd20_ab += np.einsum(
+        "rA,Ab,Ba,abrB->", CPHF_ra, driver.s("ab"), driver.s("ba"), vt_abrb
+    )
+    ExchInd20_ab *= -2
+
+    vt_absb = driver.vt("absb")
+    vt_abbs = driver.vt("abbs")
+    ExchInd20_ba = np.einsum("sb,absa->", CPHF_sb, driver.vt("absa"))
+    ExchInd20_ba += 2 * np.einsum("sB,Ba,absb->", CPHF_sb, driver.s("ba"), vt_absb)
+    ExchInd20_ba += 2 * np.einsum("sb,Ba,abBs->", CPHF_sb, driver.s("ba"), vt_abbs)
+    ExchInd20_ba -= np.einsum("sB,Ba,abbs->", CPHF_sb, driver.s("ba"), vt_abbs)
+
+    vt_abaa = driver.vt("abaa")
+    ExchInd20_ba -= np.einsum("sb,Ba,absB->", CPHF_sb, driver.s("ba"), vt_absb)
+    ExchInd20_ba += 2 * np.einsum("sb,As,abaA->", CPHF_sb, driver.s("as"), vt_abaa)
+    ExchInd20_ba -= np.einsum("sb,As,abAa->", CPHF_sb, driver.s("as"), vt_abaa)
+    ExchInd20_ba -= 2 * np.einsum(
+        "sB,Ba,As,abAb->", CPHF_sb, driver.s("ba"), driver.s("as"), vt_abab
+    )
+
+    vt_abas = driver.vt("abas")
+    ExchInd20_ba -= 2 * np.einsum(
+        "sb,Ba,AB,abAs->", CPHF_sb, driver.s("ba"), driver.s("ab"), vt_abas
+    )
+    ExchInd20_ba -= 2 * np.einsum(
+        "sb,BA,As,abaB->", CPHF_sb, driver.s("ba"), driver.s("as"), vt_abab
+    )
+    ExchInd20_ba -= 2 * np.einsum(
+        "sB,BA,Ab,abas->", CPHF_sb, driver.s("ba"), driver.s("ab"), vt_abas
+    )
+
+    ExchInd20_ba += np.einsum(
+        "sb,Ba,As,abAB->", CPHF_sb, driver.s("ba"), driver.s("as"), vt_abab
+    )
+    ExchInd20_ba += np.einsum(
+        "sB,Ba,Ab,abAs->", CPHF_sb, driver.s("ba"), driver.s("ab"), vt_abas
+    )
+    ExchInd20_ba *= -2
+
+    return {
+        "Exch-Ind20,u (A<-B)": float(ExchInd20_ab),
+        "Exch-Ind20,u (A->B)": float(ExchInd20_ba),
+        "Exch-Ind20,u": float(ExchInd20_ab + ExchInd20_ba),
     }
 
 
@@ -140,24 +251,11 @@ def _shared_dse_operator(driver):
     return d_ao_A
 
 
-def _apply_cavity_one_body_terms(cache, driver, d_ao):
-    if not driver.include_cavity_terms:
-        return
-
-    V_A_cavity = -float(driver.d_exp_el_A) * d_ao
-    V_B_cavity = -float(driver.d_exp_el_B) * d_ao
-    cache["V_A"].axpy(1.0, psi4.core.Matrix.from_array(np.ascontiguousarray(V_A_cavity)))
-    cache["V_B"].axpy(1.0, psi4.core.Matrix.from_array(np.ascontiguousarray(V_B_cavity)))
-    cache["nuclear_repulsion_energy"] = float(
-        driver.nuc_rep + driver.d_exp_el_A * driver.d_exp_el_B
-    )
-
-
 def _compute_jk_components(driver):
     wfn_A = driver.monomer_A.wfn
     wfn_B = driver.monomer_B.wfn
     native_jk = _build_native_jk(wfn_A)
-    dse_jk = DSEJK(d_ao=_shared_dse_operator(driver))
+    dse_jk = DSEJK(d_ao=_shared_dse_operator(driver), enabled=driver.include_cavity_terms)
     pf_jk = PauliFierzJK(native_jk, dse_jk=dse_jk)
 
     cache = qed_sapt_jk.build_sapt_jk_cache(
@@ -165,8 +263,11 @@ def _compute_jk_components(driver):
         wfn_B,
         pf_jk,
         do_print=False,
+        d_exp_el_A=driver.d_exp_el_A,
+        d_exp_el_B=driver.d_exp_el_B,
+        include_cavity_terms=driver.include_cavity_terms,
+        nuclear_repulsion_energy=driver.nuc_rep,
     )
-    _apply_cavity_one_body_terms(cache, driver, dse_jk.d_ao)
 
     elst = qed_sapt_jk.electrostatics(cache, do_print=False)
     exch = qed_sapt_jk.exchange(cache, do_print=False)
@@ -179,6 +280,13 @@ def _compute_jk_components(driver):
         "Exchange": float(exch["Exch10(S^2)"]),
         "Induction": float(ind["Ind20,r"]),
         "Exchange-Induction": float(ind["Exch-Ind20,r"]),
+        "Ind20,u (A<-B)": float(ind["Ind20,u (A<-B)"]),
+        "Ind20,u (A->B)": float(ind["Ind20,u (A->B)"]),
+        "Ind20,u": float(ind["Ind20,u"]),
+        "Exch-Ind20,u (A<-B)": float(ind["Exch-Ind20,u (A<-B)"]),
+        "Exch-Ind20,u (A->B)": float(ind["Exch-Ind20,u (A->B)"]),
+        "Exch-Ind20,u": float(ind["Exch-Ind20,u"]),
+        "Exchange S^inf": float(exch["Exch10"]),
     }
 
     # Dispersion terms are not implemented in the local JK helper path. Carry
@@ -255,6 +363,18 @@ def _print_case(result):
         dense = result.dense_components[name]
         jk = result.jk_components[name]
         print(f"{name:<25} {dense:16.10f} {jk:18.10f} {jk - dense:14.6e}")
+
+    print()
+    print("Uncoupled induction diagnostics")
+    print(f"{'Component':<25} {'Dense / Eh':>16} {'JK / Eh':>18} {'Delta / Eh':>14}")
+    print("-" * 78)
+    for name in UNCOUPLED_COMPONENT_ORDER:
+        dense = result.dense_components[name]
+        jk = result.jk_components[name]
+        print(f"{name:<25} {dense:16.10f} {jk:18.10f} {jk - dense:14.6e}")
+
+    print()
+    print(f"Exch10 S^inf (JK only): {result.jk_components['Exchange S^inf']: .10f} Eh")
 
     exind_delta = (
         result.jk_components["Exchange-Induction"]

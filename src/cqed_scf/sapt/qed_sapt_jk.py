@@ -43,7 +43,79 @@ def _matrix_jk(cache, jk=None):
     return cache.get("jk", jk)
 
 
-def build_sapt_jk_cache(wfn_A, wfn_B, jk, do_print=True, dse_jk=None, dse_cphf_A=None, dse_cphf_B=None):
+def _dse_cavity_terms(
+    shape,
+    *,
+    dse_jk=None,
+    d_ao=None,
+    d_ao_A=None,
+    d_ao_B=None,
+    d_exp_el_A=None,
+    d_exp_el_B=None,
+    include_cavity_terms=True,
+):
+    """Return coherent-state one-electron and scalar DSE cache terms."""
+
+    zero = np.zeros(shape)
+    V_A_cavity = core.Matrix.from_array(zero)
+    V_B_cavity = core.Matrix.from_array(zero)
+    dse_constant = 0.0
+
+    if not include_cavity_terms:
+        return V_A_cavity, V_B_cavity, dse_constant
+
+    if d_ao is None and dse_jk is not None:
+        d_ao = dse_jk.d_ao
+    if d_ao_A is None:
+        d_ao_A = d_ao
+    if d_ao_B is None:
+        d_ao_B = d_ao
+
+    missing = (
+        d_ao_A is None
+        or d_ao_B is None
+        or d_exp_el_A is None
+        or d_exp_el_B is None
+    )
+    if missing:
+        return V_A_cavity, V_B_cavity, dse_constant
+
+    d_ao_A = np.asarray(d_ao_A, dtype=float)
+    d_ao_B = np.asarray(d_ao_B, dtype=float)
+    if d_ao_A.shape != shape or d_ao_B.shape != shape:
+        raise ValueError(
+            "DSE dipole matrices must match the shared AO shape; "
+            f"got {d_ao_A.shape} and {d_ao_B.shape}, expected {shape}."
+        )
+
+    # From reference implementation: potential from monomer A carries -<d_A>_el d_B,
+    # and potential from monomer B carries -<d_B>_el d_A.
+    V_A_cavity = core.Matrix.from_array(
+        np.ascontiguousarray(-float(d_exp_el_A) * d_ao_B)
+    )
+    V_B_cavity = core.Matrix.from_array(
+        np.ascontiguousarray(-float(d_exp_el_B) * d_ao_A)
+    )
+    dse_constant = float(d_exp_el_A) * float(d_exp_el_B)
+    return V_A_cavity, V_B_cavity, dse_constant
+
+
+def build_sapt_jk_cache(
+    wfn_A,
+    wfn_B,
+    jk,
+    do_print=True,
+    dse_jk=None,
+    dse_cphf_A=None,
+    dse_cphf_B=None,
+    d_ao=None,
+    d_ao_A=None,
+    d_ao_B=None,
+    d_exp_el_A=None,
+    d_exp_el_B=None,
+    include_cavity_terms=True,
+    nuclear_repulsion_energy=None,
+):
     """
     Constructs the DCBS cache data required to compute ELST/EXCH/IND
     """
@@ -53,11 +125,23 @@ def build_sapt_jk_cache(wfn_A, wfn_B, jk, do_print=True, dse_jk=None, dse_cphf_A
     dse_jk_eff = jk_eff.dse_jk if isinstance(jk_eff, PauliFierzJK) else dse_jk
     jk_eff.print_header()
 
+    # empty dictionary
     cache = {}
+    # add wfn_A
     cache["wfn_A"] = wfn_A
+    # add wfn_B
     cache["wfn_B"] = wfn_B
+
+    # Effective JK interface used by the SAPT routines:
+    # ordinary ERI J/K plus DSE J/K when dse_jk is present.
     cache["jk"] = jk_eff
+
+    # Underlying native psi4.core.JK object:
+    # ordinary electron-repulsion-integral J/K only.
     cache["native_jk"] = _native_jk(jk_eff)
+
+    # Standalone DSEJK object:
+    # provides only the DSE J/K contribution.
     cache["dse_jk"] = dse_jk_eff
 
     # First grab the orbitals
@@ -68,20 +152,24 @@ def build_sapt_jk_cache(wfn_A, wfn_B, jk, do_print=True, dse_jk=None, dse_cphf_A
     cache["Cvir_B"] = wfn_B.Ca_subset("AO", "VIR")
 
     if dse_jk_eff is not None and dse_jk_eff.is_active():
+        # hand only the DSE part of J/K to the DSECPHF objects, which are used to compute the DSE response contributions.
         if dse_cphf_A is None:
             dse_cphf_A = DSECPHF(dse_jk=dse_jk_eff, Cocc=cache["Cocc_A"], Cvir=cache["Cvir_A"])
         if dse_cphf_B is None:
             dse_cphf_B = DSECPHF(dse_jk=dse_jk_eff, Cocc=cache["Cocc_B"], Cvir=cache["Cvir_B"])
+
+    # add instances of DSECPHF to the cache for later use in computing the DSE response contributions to induction.
     cache["dse_cphf_A"] = dse_cphf_A
     cache["dse_cphf_B"] = dse_cphf_B
 
+    # add orbital energies to cache
     cache["eps_occ_A"] = wfn_A.epsilon_a_subset("AO", "OCC")
     cache["eps_vir_A"] = wfn_A.epsilon_a_subset("AO", "VIR")
 
     cache["eps_occ_B"] = wfn_B.epsilon_a_subset("AO", "OCC")
     cache["eps_vir_B"] = wfn_B.epsilon_a_subset("AO", "VIR")
 
-    # Build the densities as HF takes an extra "step"
+    # Build the densities from monomer orbitals
     cache["D_A"] = core.doublet(cache["Cocc_A"], cache["Cocc_A"], False, True)
     cache["D_B"] = core.doublet(cache["Cocc_B"], cache["Cocc_B"], False, True)
 
@@ -90,12 +178,35 @@ def build_sapt_jk_cache(wfn_A, wfn_B, jk, do_print=True, dse_jk=None, dse_cphf_A
 
     # Potential ints
     mints = core.MintsHelper(wfn_A.basisset())
-    cache["V_A"] = mints.ao_potential()
-    # cache["V_A"].axpy(1.0, wfn_A.Va())
 
+    # this is the standard one-electron potential for monomer A
+    cache["V_A_standard"] = mints.ao_potential().clone()
+
+    # this is the standard one-electron potential for monomer B
     mints = core.MintsHelper(wfn_B.basisset())
-    cache["V_B"] = mints.ao_potential()
-    # cache["V_B"].axpy(1.0, wfn_B.Va())
+    cache["V_B_standard"] = mints.ao_potential().clone()
+
+    # capture the cavity contributions to the one-electron potentials and the DSE constant
+    cache["V_A_cavity"], cache["V_B_cavity"], cache["dse_constant"] = _dse_cavity_terms(
+        cache["V_A_standard"].shape,
+        dse_jk=dse_jk_eff,
+        d_ao=d_ao,
+        d_ao_A=d_ao_A,
+        d_ao_B=d_ao_B,
+        d_exp_el_A=d_exp_el_A,
+        d_exp_el_B=d_exp_el_B,
+        include_cavity_terms=include_cavity_terms,
+    )
+
+    # Add the cavity contributions to the standard one-electron potentials to form the total one-electron potentials for each monomer.
+    cache["V_A"] = cache["V_A_standard"].clone()
+
+    # Note the negative sign on the cavity term is handled by _dse_cavity_terms, which returns -<d>_el d for each monomer.
+    cache["V_A"].axpy(1.0, cache["V_A_cavity"])
+
+    # repeat for monomer B
+    cache["V_B"] = cache["V_B_standard"].clone()
+    cache["V_B"].axpy(1.0, cache["V_B_cavity"])
 
     # Anything else we might need
     cache["S"] = wfn_A.S().clone()
@@ -133,7 +244,17 @@ def build_sapt_jk_cache(wfn_A, wfn_B, jk, do_print=True, dse_jk=None, dse_cphf_A
     monB_nr = wfn_B.molecule().nuclear_repulsion_energy()
     dimer_nr = wfn_A.molecule().extract_subsets([1, 2]).nuclear_repulsion_energy()
 
-    cache["nuclear_repulsion_energy"] = dimer_nr - monA_nr - monB_nr
+    if nuclear_repulsion_energy is None:
+        nuclear_repulsion_energy = dimer_nr - monA_nr - monB_nr
+
+    # capture the nuclear repulsion energy in the cache for later use in computing the electrostatics.
+
+    # this is the standard nuclear repulsion energy for the dimer, without any DSE contributions.
+    cache["nuclear_repulsion_energy_standard"] = float(nuclear_repulsion_energy)
+    # this is the total nuclear repulsion energy for the dimer, including the DSE constant contribution.
+    cache["nuclear_repulsion_energy"] = (
+        cache["nuclear_repulsion_energy_standard"] + cache["dse_constant"]
+    )
 
     return cache
 
