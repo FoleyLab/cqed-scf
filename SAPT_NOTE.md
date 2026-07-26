@@ -153,7 +153,14 @@ cd /Users/jfoley19/Code/cqed-scf
 /Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/water_methylamine/water_methylamine_qed_sapt_dense_vs_jk.py
 ```
 
-Final dense-versus-JK values for the default cavity case:
+Historical note: the following "Final dense-versus-JK" table was final for the
+coherent-state one-electron/scalar DSE patch only. It predates the later
+coupled-response fix documented in the next section, so the coupled
+`remaining discrepancy` rows below are intentionally preserved as pre-fix
+evidence rather than the current status.
+
+Final dense-versus-JK values for the default cavity case before the
+coupled-response matrix-free standard-action fix:
 
 | Component | Dense / Eh | JK or mixed / Eh | Delta / Eh | Status |
 |---|---:|---:|---:|---|
@@ -211,3 +218,141 @@ Dispersion and exchange-dispersion are still carried from the dense reference in
 The most important algebraic choices to review are the monomer-label mapping in the one-electron DSE terms, the use of electronic rather than total dipole expectations in `V_A_cavity`, `V_B_cavity`, and `dse_constant`, the placement of the scalar only in the interaction-level nuclear term, and the decision to leave the matrix-free `DSEJK` two-electron path unchanged.
 
 Also review that `DSEJK` is disabled when `include_cavity_terms=False`, and that the dense-vs-JK comparison uses `Exch10(S^2)` rather than the JK helper's S^inf-style `Exch10` for the dense exchange convention.
+
+## 2026-07-26 coupled-response CPHF matrix-free standard action
+
+### Problem summary
+
+The remaining coupled induction and exchange-induction discrepancies were not
+caused by the coherent-state DSE implementation. Diagnostic comparison of the
+explicit dense response matrix against the matrix-free Hessian action showed
+that the cavity contribution, `DSECPHF.hx_array()`, reproduced the dense DSE
+Hessian to numerical roundoff. The remaining discrepancy originated entirely
+from the ordinary, lambda-zero Psi4 `wfn.cphf_Hx()` action when used with
+cavity-relaxed monomer references.
+
+To isolate the source of the error, the response implementation was decomposed
+into independent standard and cavity Hessian actions. The dense
+occupied-virtual Hessian from `QEDSAPT0Driver.chf()` was compared against
+matrix-free Hessian-vector products using deterministic test amplitudes. These
+tests demonstrated:
+
+- the DSE Hessian action is numerically identical to the dense cavity Hessian;
+- the ordinary Psi4 `cphf_Hx()` action is not identical to the dense standard
+  Hessian in the cavity-relaxed reference;
+- therefore the coupled-response discrepancy was unrelated to the
+  coherent-state fluctuation operator itself.
+
+### Implementation
+
+The SAPT-JK response solver now evaluates the standard electronic response
+using an explicit matrix-free Coulomb/exchange Hessian constructed from the
+cached occupied and virtual orbitals together with the orbital-energy
+denominators. This implementation reproduces the dense standard Hessian action
+while avoiding construction of the four-index response matrix.
+
+The dense driver now also exposes diagnostic helpers for the occupied-virtual
+RHS, explicit dense response matrix, and dense Hessian action. The JK induction
+path accepts an optional diagnostics dictionary that exposes:
+
+- `w_B_MOA` and `w_A_MOB`;
+- uncoupled and coupled response amplitudes;
+- `EX_A` and `EX_B`;
+- ordinary Psi4 `cphf_Hx`, matrix-free standard, DSE-only, and combined
+  Hessian actions;
+- final absolute and relative CPHF residual norms.
+
+### Sign convention
+
+An important sign convention was clarified. The dense implementation solves
+
+```text
+A_dense t = -w
+```
+
+whereas `solvers.cg_solver` solves
+
+```text
+H x = rhs
+```
+
+Consequently, the matrix-free operator supplied to the iterative solver must
+represent
+
+```text
+H = -A_dense_standard - A_dense_cavity
+```
+
+which is implemented internally as
+
+```text
+H = matrix_free_standard - dse
+```
+
+because the DSE Hessian routine returns the dense cavity Hessian action, i.e.
+the opposite sign from the solver's combined operator convention.
+
+### Operator diagnostics
+
+Default finite-cavity water-methylamine operator comparisons showed:
+
+| Direction | Matrix-free standard + dense standard | Psi4 `cphf_Hx` + dense standard | DSE - dense cavity | Total + dense total |
+|---|---:|---:|---:|---:|
+| A<-B max/Frobenius | `6.51e-11 / 1.06e-09` | `8.07e-02 / 5.91e-01` | `2.65e-16 / 1.03e-15` | `6.51e-11 / 1.06e-09` |
+| A->B max/Frobenius | `5.10e-11 / 1.03e-09` | `9.21e-02 / 8.09e-01` | `7.44e-16 / 4.87e-15` | `5.10e-11 / 1.03e-09` |
+
+Direct reconstructed-matrix solves agree with the dense amplitudes, and the
+Psi4 CG amplitudes agree with the reconstructed matrix solutions. Final
+relative residual norms were approximately `4.8e-9` for both response
+directions.
+
+### Final resolved numerical status
+
+With this change, the coupled-response implementation reproduces the dense
+reference to numerical precision.
+
+Default water-methylamine finite-cavity differences are:
+
+| Component | Delta / Eh |
+|---|---:|
+| `Ind20,r` | `4.8e-14` |
+| `Exch-Ind20,r` | `-1.14e-12` |
+| Total SAPT difference | `3.34e-12` |
+
+Directional coupled-response differences are:
+
+| Component | Delta / Eh |
+|---|---:|
+| `Ind20,r (A<-B)` | `4.87e-14` |
+| `Ind20,r (A->B)` | `-6.96e-16` |
+| `Exch-Ind20,r (A<-B)` | `-7.13e-14` |
+| `Exch-Ind20,r (A->B)` | `-1.06e-12` |
+
+The zero-coupling calculation remains at roundoff agreement, and the
+nonzero-reference/no-explicit-cavity stress case is also resolved:
+`Ind20,r = 1.52e-13 Eh`, `Exch-Ind20,r = -6.65e-13 Eh`, and total
+`= 3.97e-12 Eh`.
+
+These residuals are consistent with floating-point roundoff and confirm that
+the dense and matrix-free implementations are mathematically equivalent for
+both the standard electronic response and the coherent-state DSE response.
+
+### Commands and tests
+
+Commands run after the fix:
+
+```bash
+cd /Users/jfoley19/Code/cqed-scf
+/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/water_methylamine/water_methylamine_qed_sapt_dense_vs_jk.py
+/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/water_methylamine/water_methylamine_qed_sapt_dense_vs_jk.py --lambda-vector 0 0 0
+/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/water_methylamine/water_methylamine_qed_sapt_dense_vs_jk.py --no-cavity-terms
+/Users/jfoley19/miniforge3/envs/p4dev/bin/python -m pytest tests/test_dse_jk_scaffold.py
+/Users/jfoley19/miniforge3/envs/p4dev/bin/python -m pytest tests/test_qedsapt0_driver.py
+/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/water_methylamine/water_methylamine_qed_sapt_jk.py
+```
+
+Results:
+
+- `tests/test_dse_jk_scaffold.py`: `10 passed in 2.01s`;
+- `tests/test_qedsapt0_driver.py`: `11 passed in 35.14s`;
+- companion JK example total delta: `-7.385354e-11 Eh`.
