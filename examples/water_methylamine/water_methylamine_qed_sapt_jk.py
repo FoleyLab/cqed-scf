@@ -138,7 +138,7 @@ def _compute_jk_components(driver):
 
     return {
         "Electrostatics": elst["Elst10,r"],
-        "Exchange": exch["Exch10"],
+        "Exchange": exch["Exch10(S^2)"],
         "Induction": ind["Ind20,r"],
         "Exchange-Induction": ind["Exch-Ind20,r"],
     }

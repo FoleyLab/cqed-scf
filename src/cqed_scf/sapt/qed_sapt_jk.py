@@ -647,7 +647,7 @@ def _sapt_cpscf_solve(cache, jk, rhsA, rhsB, maxiter, conv, sapt_jk_B=None):
             xA = cache["wfn_A"].cphf_Hx([x_vec[0]])[0]
             dse_cphf_A = cache.get("dse_cphf_A", None)
             if dse_cphf_A is not None and dse_cphf_A.is_active():
-                xA.axpy(1.0, dse_cphf_A.hx_matrix(x_vec[0]))
+                xA.axpy(-1.0, dse_cphf_A.hx_matrix(x_vec[0]))
         else:
             xA = False
 
@@ -655,7 +655,7 @@ def _sapt_cpscf_solve(cache, jk, rhsA, rhsB, maxiter, conv, sapt_jk_B=None):
             xB = cache["wfn_B"].cphf_Hx([x_vec[1]])[0]
             dse_cphf_B = cache.get("dse_cphf_B", None)
             if dse_cphf_B is not None and dse_cphf_B.is_active():
-                xB.axpy(1.0, dse_cphf_B.hx_matrix(x_vec[1]))
+                xB.axpy(-1.0, dse_cphf_B.hx_matrix(x_vec[1]))
         else:
             xB = False
 
