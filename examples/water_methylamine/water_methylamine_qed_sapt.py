@@ -1,8 +1,7 @@
 import numpy as np
 import psi4
 
-from cqed_scf import CQEDConfig
-from cqed_scf.sapt import QEDSAPT0Driver
+from cqed_scf import CQEDCalculator, CQEDConfig
 
 psi4.core.be_quiet()  # Suppress Psi4 output for cleaner test output
 import time
@@ -48,28 +47,27 @@ no_reorient
 
 
 dimer_geometry = psi4.geometry(dimer)
-sapt_driver = QEDSAPT0Driver(
-    dimer_geometry=dimer_geometry,
-    config=config,
+calc = CQEDCalculator(config=config)
+start = time.time()
+components = calc.sapt0_components(
+    dimer_geometry,
     integral_backend="full_eri",
     include_cavity_terms=True,
 )
-start = time.time()
-SAPT0_Energy = sapt_driver.run()
 end = time.time()
 print(f"QED-SAPT0 evaluation took {end - start:.2f} seconds.")
 
 # Define a width for the labels to ensure perfect alignment
 w = 22
 
-print(f"{'Electrostatics:':<{w}} {sapt_driver.Eelst100:15.10f} Hartree")
-print(f"{'Exchange:':<{w}} {sapt_driver.Eexch100:15.10f} Hartree")
-print(f"{'Dispersion:':<{w}} {sapt_driver.Edisp200:15.10f} Hartree")
-print(f"{'Exchange-Dispersion:':<{w}} {sapt_driver.Eexchdisp200:15.10f} Hartree")
-print(f"{'Induction:':<{w}} {sapt_driver.Eind200:15.10f} Hartree")
-print(f"{'Exchange-Induction:':<{w}} {sapt_driver.Eexchind200:15.10f} Hartree")
+print(f"{'Electrostatics:':<{w}} {components.elst10:15.10f} Hartree")
+print(f"{'Exchange:':<{w}} {components.exch10:15.10f} Hartree")
+print(f"{'Dispersion:':<{w}} {components.disp20:15.10f} Hartree")
+print(f"{'Exchange-Dispersion:':<{w}} {components.exch_disp20:15.10f} Hartree")
+print(f"{'Induction:':<{w}} {components.ind20:15.10f} Hartree")
+print(f"{'Exchange-Induction:':<{w}} {components.exch_ind20:15.10f} Hartree")
 print("-" * 50)  # Visual separator for the total
-print(f"{'Total QED-SAPT0 Energy:':<{w}} {SAPT0_Energy:15.10f} Hartree")
+print(f"{'Total QED-SAPT0 Energy:':<{w}} {components.total:15.10f} Hartree")
 
 print()
 

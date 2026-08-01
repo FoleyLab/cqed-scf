@@ -319,11 +319,28 @@ class CQEDCalculator:
         return CQEDTDDFT(config=self.config, scf_results=scf_results, **kwargs)
 
     def sapt0(self, dimer_geometry, **kwargs):
-        """Create a future QED-SAPT0 driver for a dimer calculation."""
+        """Create a QED-SAPT0 driver for a dimer calculation.
+
+        This low-level factory is kept for diagnostic and development workflows
+        that need direct access to SAPT0 intermediates.  For ordinary
+        calculations, use :meth:`sapt0_energy` or :meth:`sapt0_components`.
+        """
 
         from .sapt import QEDSAPT0Driver
 
         return QEDSAPT0Driver(dimer_geometry=dimer_geometry, config=self.config, **kwargs)
+
+    def sapt0_energy(self, dimer_geometry, **kwargs):
+        """Compute the total QED-SAPT0 interaction energy for a dimer."""
+
+        driver = self.sapt0(dimer_geometry, **kwargs)
+        return driver.run()
+
+    def sapt0_components(self, dimer_geometry, **kwargs):
+        """Compute QED-SAPT0 component energies for a dimer."""
+
+        driver = self.sapt0(dimer_geometry, **kwargs)
+        return driver.run_components()
     
     def energy_and_projected_gradient(self, geometry, canonical="psi4"):
         """

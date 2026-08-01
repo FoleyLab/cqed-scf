@@ -1013,8 +1013,51 @@ class QEDSAPT0Driver:
 
 
 
-    def run(self) -> QEDSAPT0Results:
-        """Run the future QED-SAPT0 workflow."""
+    def _build_results(self) -> QEDSAPT0Results:
+        """Package computed SAPT0 component attributes into a result object."""
+
+        required = (
+            "Eelst100",
+            "Eexch100",
+            "Edisp200",
+            "Eexchdisp200",
+            "Eind200",
+            "Eexchind200",
+            "E_SAPT0",
+        )
+        missing = [name for name in required if not hasattr(self, name)]
+        if missing:
+            raise RuntimeError(
+                "QED-SAPT0 components are not available yet; call run() first. "
+                f"Missing: {', '.join(missing)}"
+            )
+
+        return QEDSAPT0Results(
+            elst10=float(self.Eelst100),
+            exch10=float(self.Eexch100),
+            disp20=float(self.Edisp200),
+            exch_disp20=float(self.Eexchdisp200),
+            ind20=float(self.Eind200),
+            exch_ind20=float(self.Eexchind200),
+            metadata={
+                **self.metadata,
+                "total": float(self.E_SAPT0),
+            },
+        )
+
+    def results(self) -> QEDSAPT0Results:
+        """Return component results from the most recent QED-SAPT0 run."""
+
+        return self._build_results()
+
+    def run_components(self) -> QEDSAPT0Results:
+        """Run QED-SAPT0 and return named component energies."""
+
+        self.run()
+        return self._build_results()
+
+    def run(self) -> float:
+        """Run QED-SAPT0 and return the total interaction energy."""
 
         monomers = self.prepare_monomers()
         integrals = self.build_integrals()
