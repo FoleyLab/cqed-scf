@@ -35,9 +35,10 @@ pip install -e .
 ```python
 import numpy as np
 
-from cqed_scf import CQEDCalculator
+from cqed_scf import CQEDCalculator, CQEDConfig
 
 geom = """
+0 1
 O  0.000000  0.000000 -0.068516
 H  0.000000 -0.790690  0.543701
 H  0.000000  0.790690  0.543701
@@ -58,17 +59,20 @@ psi4_options = {
 # Run CQED-DFT (lambda = 0.05 along z)
 # ---------------------------------------------------------
 
-lambda_vector = np.array([0, 0, 0.05])
-
-calc = CQEDCalculator(
-    lambda_vector=lambda_vector,
-    psi4_options=psi4_options,
+config = CQEDConfig(
+    lambda_vector=np.array([0.0, 0.0, 0.05]),
     omega=0.0,
-    density_fitting=True,
+    psi4_options=psi4_options,
+    reference="rks",
     functional="PBE0",
+    density_fitting=True,
+    charge=0,
+    multiplicity=1,
+    dispersion_policy="none",
     debug=False,
 )
 
+calc = CQEDCalculator(config=config)
 E, grad, g = calc.energy_and_gradient(geom)
 ```
 
@@ -117,6 +121,28 @@ components = calc.sapt0_components(dimer_geometry)
 print(f"Total QED-SAPT0 energy: {total:.12f} Eh")
 print(components.summary())
 ```
+
+## Parameter ownership
+
+- Put standard Psi4 electronic-structure settings in `psi4_options`: basis set,
+  SCF type, convergence thresholds, and DFT grid settings.
+- Put CQED package settings in `CQEDConfig`: `lambda_vector`, `omega`,
+  reference, functional, density-fitting flag, charge, multiplicity,
+  dispersion policy, and debug flag.
+- Include charge and multiplicity in geometry strings too. This keeps examples
+  unambiguous when they are run directly with Psi4.
+- Public SAPT0 examples use component names `elst10`, `exch10`, `disp20`,
+  `exch_disp20`, `ind20`, `exch_ind20`, and `total`.
+
+## Future TO-DOs
+
+- Mark or reorganize older scaffold-style examples that intentionally use
+  lower-level interfaces such as `QEDSAPT0Driver`, direct SAPT intermediates, or
+  SAPT JK helpers. These should remain available for development, but they can
+  be labeled more clearly.
+- Revisit `QEDSAPT0Results` serialization. Its `total` property is computed
+  from components; if future workflows need serialized totals, consider adding a
+  dedicated `total_energy` field or removing redundant total metadata.
 
 ## Notes
 

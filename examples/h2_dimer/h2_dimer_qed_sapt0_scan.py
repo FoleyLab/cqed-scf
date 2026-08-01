@@ -44,8 +44,8 @@ COMPONENTS = (
     ("exch10", "Exchange"),
     ("disp20", "Dispersion"),
     ("exch_disp20", "Exchange-Dispersion"),
-    ("ind20r", "Induction"),
-    ("exch_ind20r", "Exchange-Induction"),
+    ("ind20", "Induction"),
+    ("exch_ind20", "Exchange-Induction"),
     ("total", "Total QED-SAPT0"),
 )
 
@@ -100,8 +100,8 @@ def run_qed_sapt0_at_distance(R: float, config: CQEDConfig) -> dict[str, float]:
         "exch10_hartree": components.exch10,
         "disp20_hartree": components.disp20,
         "exch_disp20_hartree": components.exch_disp20,
-        "ind20r_hartree": components.ind20,
-        "exch_ind20r_hartree": components.exch_ind20,
+        "ind20_hartree": components.ind20,
+        "exch_ind20_hartree": components.exch_ind20,
         "total_hartree": components.total,
     }
 
