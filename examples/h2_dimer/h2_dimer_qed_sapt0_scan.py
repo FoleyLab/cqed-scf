@@ -21,8 +21,7 @@ from pathlib import Path
 import numpy as np
 import psi4
 
-from cqed_scf import CQEDConfig
-from cqed_scf.sapt import QEDSAPT0Driver
+from cqed_scf import CQEDCalculator, CQEDConfig
 
 
 HARTREE_TO_KCAL_MOL = 627.5094740631
@@ -45,8 +44,8 @@ COMPONENTS = (
     ("exch10", "Exchange"),
     ("disp20", "Dispersion"),
     ("exch_disp20", "Exchange-Dispersion"),
-    ("ind20r", "Induction"),
-    ("exch_ind20r", "Exchange-Induction"),
+    ("ind20", "Induction"),
+    ("exch_ind20", "Exchange-Induction"),
     ("total", "Total QED-SAPT0"),
 )
 
@@ -88,23 +87,22 @@ def run_qed_sapt0_at_distance(R: float, config: CQEDConfig) -> dict[str, float]:
     psi4.core.clean_options()
 
     dimer_geometry = psi4.geometry(make_h2_dimer_geometry(R))
-    driver = QEDSAPT0Driver(
-        dimer_geometry=dimer_geometry,
-        config=config,
+    calc = CQEDCalculator(config=config)
+    components = calc.sapt0_components(
+        dimer_geometry,
         integral_backend="full_eri",
         include_cavity_terms=True,
     )
-    total = driver.run()
 
     return {
         "distance_angstrom": R,
-        "elst10_hartree": driver.Eelst100,
-        "exch10_hartree": driver.Eexch100,
-        "disp20_hartree": driver.Edisp200,
-        "exch_disp20_hartree": driver.Eexchdisp200,
-        "ind20r_hartree": driver.Eind200,
-        "exch_ind20r_hartree": driver.Eexchind200,
-        "total_hartree": total,
+        "elst10_hartree": components.elst10,
+        "exch10_hartree": components.exch10,
+        "disp20_hartree": components.disp20,
+        "exch_disp20_hartree": components.exch_disp20,
+        "ind20_hartree": components.ind20,
+        "exch_ind20_hartree": components.exch_ind20,
+        "total_hartree": components.total,
     }
 
 

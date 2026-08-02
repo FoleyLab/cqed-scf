@@ -168,6 +168,9 @@ class QEDSAPT0Driver:
         self.eps_A = self.monomer_A.eps
         self.eps_B = self.monomer_B.eps
 
+        self.eps_canonical_A = self.monomer_A.eps_canonical
+        self.eps_canonical_B = self.monomer_B.eps_canonical
+
         self.E_nuc_A = self.monomer_A.nuc_rep
         self.E_nuc_B = self.monomer_B.nuc_rep
         self.nuc_rep = self.E_nuc_dimer - self.E_nuc_A - self.E_nuc_B
@@ -423,6 +426,24 @@ class QEDSAPT0Driver:
         else:
             psi4.core.clean()
             raise Exception("eps: string %s does not have valid monomer label" % string)
+        
+    def eps_canonical(self, string, dim=1):
+        if len(string) != 1:
+            psi4.core.clean()
+            raise Exception("eps: string %s does not have length 1" % string)
+        
+        shape = (-1,) + tuple([1] * (dim - 1))
+
+        if (string=='i') or (string=='a') or (string=='r'):
+            return self.eps_canonical_A[self.slices[string]].reshape(shape)
+        
+        elif (string=='j') or (string=='b') or (string=='s'):
+            return self.eps_canonical_B[self.slices[string]].reshape(shape)
+        
+        else:
+            psi4.core.clean()
+            raise Exception("eps: string %s does not have valid monomer label" % string)
+
     
 
     def potential(self, string, side, context: str = "total"):
@@ -700,6 +721,102 @@ class QEDSAPT0Driver:
         else:
             return t
 
+    def diagnostic_chf_rhs(self, monomer, context: str = "total"):
+        """Return the dense CPHF RHS in the occupied-virtual convention.
+
+        ``monomer`` follows :meth:`chf`: ``"B"`` means monomer A responds to
+        the field from B and the returned shape is ``(nocc_A, nvir_A)``;
+        ``"A"`` means monomer B responds to the field from A.
+        """
+        self._validate_operator_context(context)
+        if monomer not in ['A', 'B']:
+            psi4.core.clean()
+            raise Exception("diagnostic_chf_rhs: monomer %s is not A or B" % monomer)
+
+        if monomer == 'A':
+            w_n = 2 * oe.contract('saba->bs', self.v('saba', context=context), optimize="optimal")
+            w_n += self.potential("bs", "A", context=context)
+        else:
+            w_n = 2 * oe.contract('rbab->ar', self.v('rbab', context=context), optimize="optimal")
+            w_n += self.potential("ar", "B", context=context)
+
+        return np.ascontiguousarray(w_n)
+
+    def diagnostic_chf_matrix(
+        self,
+        monomer,
+        context: str = "total",
+        include_orbital_diagonal: bool = True,
+    ):
+        """Return the dense occupied-virtual CPHF matrix used by :meth:`chf`.
+
+        The matrix is returned in the dense solver's flattened ``(occ, vir)``
+        ordering.  With ``include_orbital_diagonal=False`` only the two-electron
+        response block for the selected operator context is returned.
+        """
+        context = self._validate_operator_context(context)
+        if monomer not in ['A', 'B']:
+            psi4.core.clean()
+            raise Exception("diagnostic_chf_matrix: monomer %s is not A or B" % monomer)
+
+        if monomer == 'A':
+            eps_ov = (self.eps('b', dim=2) - self.eps('s'))
+            v_term1 = 'sbbs'
+            v_term2 = 'sbsb'
+            no, nv = self.ndocc_B, self.nvirt_B
+        else:
+            eps_ov = (self.eps('a', dim=2) - self.eps('r'))
+            v_term1 = 'raar'
+            v_term2 = 'rara'
+            no, nv = self.ndocc_A, self.nvirt_A
+
+        voov = self.v(v_term1, context=context)
+        v_vOov = 2 * voov - self.v(v_term2, context=context).swapaxes(2, 3)
+        v_ooaa = voov.swapaxes(1, 3)
+        v_vVoO = 2 * v_ooaa - v_ooaa.swapaxes(2, 3)
+        A_ovOV = oe.contract(
+            'vOoV->ovOV',
+            v_vOov + v_vVoO.swapaxes(1, 3),
+            optimize="optimal",
+        )
+        A_ovOV = A_ovOV.reshape(no * nv, no * nv).copy(order='C')
+
+        if include_orbital_diagonal:
+            A_ovOV[np.diag_indices_from(A_ovOV)] -= eps_ov.ravel()
+
+        return A_ovOV
+
+    def diagnostic_chf_hessian_action(
+        self,
+        monomer,
+        amplitude,
+        context: str = "total",
+        include_orbital_diagonal: bool = True,
+        psi4_convention: bool = True,
+    ):
+        """Apply the dense CPHF matrix to a trial occupied-virtual amplitude.
+
+        By default this accepts and returns Psi4-style ``(nocc, nvir)`` arrays.
+        Set ``psi4_convention=False`` to use the dense energy-expression
+        convention ``(nvir, nocc)``.
+        """
+        A_ovOV = self.diagnostic_chf_matrix(
+            monomer,
+            context=context,
+            include_orbital_diagonal=include_orbital_diagonal,
+        )
+        trial = np.asarray(amplitude, dtype=float)
+        if psi4_convention:
+            flat = trial.ravel()
+            no, nv = trial.shape
+            action = A_ovOV @ flat
+            return np.ascontiguousarray(action.reshape(no, nv))
+
+        flat = trial.T.ravel()
+        nv, no = trial.shape
+        action = A_ovOV @ flat
+        return np.ascontiguousarray(action.reshape(no, nv).T)
+
     def compute_Elst100(self):
         return 4 * oe.contract('abab->', self.vt('abab'), optimize="optimal")
     
@@ -726,11 +843,16 @@ class QEDSAPT0Driver:
 
         return Exch100
     
-    def compute_Edisp200(self):
+    def compute_Edisp200(self, canonical_denom=False):
 
         v_abrs = self.v('abrs')
         self.v_rsab = self.v('rsab')
-        self.eps_rsab = 1 / (-self.eps('r', dim=4) - self.eps('s', dim=3) + self.eps('a', dim=2) + self.eps('b'))
+
+        if canonical_denom:
+            self.eps_rsab = 1 / (-self.eps_canonical('r', dim=4) - self.eps_canonical('s', dim=3) + self.eps_canonical('a', dim=2) + self.eps_canonical('b'))
+        else:
+            self.eps_rsab = 1 / (-self.eps('r', dim=4) - self.eps('s', dim=3) + self.eps('a', dim=2) + self.eps('b'))
+
         self.t_rsab = oe.contract("rsab,rsab->rsab", self.v_rsab, self.eps_rsab, optimize="optimal")
         Disp200 = 4 * oe.contract('rsab,abrs->', self.t_rsab, v_abrs, optimize="optimal")
         return Disp200
@@ -891,8 +1013,51 @@ class QEDSAPT0Driver:
 
 
 
-    def run(self) -> QEDSAPT0Results:
-        """Run the future QED-SAPT0 workflow."""
+    def _build_results(self) -> QEDSAPT0Results:
+        """Package computed SAPT0 component attributes into a result object."""
+
+        required = (
+            "Eelst100",
+            "Eexch100",
+            "Edisp200",
+            "Eexchdisp200",
+            "Eind200",
+            "Eexchind200",
+            "E_SAPT0",
+        )
+        missing = [name for name in required if not hasattr(self, name)]
+        if missing:
+            raise RuntimeError(
+                "QED-SAPT0 components are not available yet; call run() first. "
+                f"Missing: {', '.join(missing)}"
+            )
+
+        return QEDSAPT0Results(
+            elst10=float(self.Eelst100),
+            exch10=float(self.Eexch100),
+            disp20=float(self.Edisp200),
+            exch_disp20=float(self.Eexchdisp200),
+            ind20=float(self.Eind200),
+            exch_ind20=float(self.Eexchind200),
+            metadata={
+                **self.metadata,
+                "total": float(self.E_SAPT0),
+            },
+        )
+
+    def results(self) -> QEDSAPT0Results:
+        """Return component results from the most recent QED-SAPT0 run."""
+
+        return self._build_results()
+
+    def run_components(self) -> QEDSAPT0Results:
+        """Run QED-SAPT0 and return named component energies."""
+
+        self.run()
+        return self._build_results()
+
+    def run(self) -> float:
+        """Run QED-SAPT0 and return the total interaction energy."""
 
         monomers = self.prepare_monomers()
         integrals = self.build_integrals()

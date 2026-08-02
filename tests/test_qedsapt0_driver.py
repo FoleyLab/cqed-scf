@@ -3,7 +3,7 @@ import pytest
 import psi4
 import warnings
 
-from cqed_scf import CQEDConfig
+from cqed_scf import CQEDCalculator, CQEDConfig
 from cqed_scf.sapt import QEDSAPT0Driver, SAPTMonomer
 
 
@@ -112,7 +112,7 @@ def test_qedsapt0_driver_auto_extract_he_dimer_v_arbs():
         actual_sbr = driver.s("br")
         actual_Eelst100 = driver.compute_Elst100()
         actual_Eexch100 = driver.compute_Exch100()
-        actual_Edisp200 = driver.compute_Edisp200()
+        actual_Edisp200 = driver.compute_Edisp200(canonical_denom=True)
         actual_Eexchdisp200 = driver.compute_Eexchdisp200()
         actual_Eind200 = driver.compute_Eind200()
         actual_EexchInd200 = driver.compute_Eexchind200()
@@ -241,6 +241,75 @@ def test_qedsapt0_driver_lambda_zero_cavity_on_matches_cavity_off():
         np.testing.assert_allclose(cavity_on.V_B, cavity_off.V_B, atol=1e-12, rtol=1e-12)
         np.testing.assert_allclose(cavity_on.vt_nuc_rep, cavity_off.vt_nuc_rep, atol=1e-12, rtol=1e-12)
         np.testing.assert_allclose(cavity_on.E_SAPT0, cavity_off.E_SAPT0, atol=1e-12, rtol=1e-12)
+    finally:
+        psi4.core.clean()
+
+
+def test_cqed_calculator_sapt0_facade_matches_direct_driver():
+    psi4.core.clean()
+    try:
+        dimer_geometry = psi4.geometry(_HE_DIMER)
+        config = _he_sapt_config()
+
+        direct_driver = QEDSAPT0Driver(
+            dimer_geometry=dimer_geometry,
+            config=config,
+            integral_backend="full_eri",
+            include_cavity_terms=True,
+        )
+        expected_total = direct_driver.run()
+
+        calc = CQEDCalculator(config=config)
+        factory_driver = calc.sapt0(
+            dimer_geometry,
+            integral_backend="full_eri",
+            include_cavity_terms=True,
+        )
+        assert isinstance(factory_driver, QEDSAPT0Driver)
+
+        total = calc.sapt0_energy(
+            dimer_geometry,
+            integral_backend="full_eri",
+            include_cavity_terms=True,
+        )
+        components = calc.sapt0_components(
+            dimer_geometry,
+            integral_backend="full_eri",
+            include_cavity_terms=True,
+        )
+
+        assert total == pytest.approx(expected_total, abs=1e-12, rel=0.0)
+        assert components.total == pytest.approx(expected_total, abs=1e-12, rel=0.0)
+        assert components.elst10 == pytest.approx(
+            direct_driver.Eelst100,
+            abs=1e-12,
+            rel=0.0,
+        )
+        assert components.exch10 == pytest.approx(
+            direct_driver.Eexch100,
+            abs=1e-12,
+            rel=0.0,
+        )
+        assert components.disp20 == pytest.approx(
+            direct_driver.Edisp200,
+            abs=1e-12,
+            rel=0.0,
+        )
+        assert components.exch_disp20 == pytest.approx(
+            direct_driver.Eexchdisp200,
+            abs=1e-12,
+            rel=0.0,
+        )
+        assert components.ind20 == pytest.approx(
+            direct_driver.Eind200,
+            abs=1e-12,
+            rel=0.0,
+        )
+        assert components.exch_ind20 == pytest.approx(
+            direct_driver.Eexchind200,
+            abs=1e-12,
+            rel=0.0,
+        )
     finally:
         psi4.core.clean()
 

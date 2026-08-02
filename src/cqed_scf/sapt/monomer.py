@@ -40,6 +40,10 @@ class SAPTMonomer:
     @property
     def eps(self):
         return self.scf_results.get("orbital_energies")
+    
+    @property
+    def eps_canonical(self):
+        return self.scf_results.get("canonical_orbital_energies")
 
     @property
     def D(self):
