@@ -1,3 +1,5 @@
+import time
+
 import psi4
 import numpy as np
 import opt_einsum as oe
@@ -115,15 +117,7 @@ class CQEDSCF:
     # -------------------------
 
     def run(self):
-        output.echo("Starting CQED-SCF calculation...")
-        output.echo(f"Method: {self.method.upper()}")
-        if self.functional is not None:
-            output.echo(f"Functional: {self.functional}")
-        if self.density_fitting:
-            output.echo("Using density fitting through Psi4 JK.")
-        else:
-            output.echo("Using conventional JK through Psi4 JK.")
-
+        output.banner("CQED-SCF Calculation")
         self._prepare_options()
 
         self.mol = psi4.geometry(self.geometry)
@@ -139,6 +133,8 @@ class CQEDSCF:
         self.mints = psi4.core.MintsHelper(self.wfn.basisset())
         self.nbf = self.wfn.nmo()
         self.ndocc = self.wfn.nalpha()
+
+        self._print_calculation_metadata()
 
         # closed-shell only
         if self.wfn.nalpha() != self.wfn.nbeta():
@@ -205,7 +201,13 @@ class CQEDSCF:
         e_conv = self.psi4_options.get("e_convergence", 1.0e-10)
         d_conv = self.psi4_options.get("d_convergence", 1.0e-8)
 
+        iterations = []
+        components = None
+        converged = False
+
         for it in range(1, 501):
+            t_iter = time.perf_counter()
+
             # JK from Psi4
             J, K, wK = self._build_JK(Cocc)
 
@@ -249,6 +251,12 @@ class CQEDSCF:
                     E_J = 2.0 * oe.contract("pq,pq->", J, D, optimize="optimal")
                     E_K = -oe.contract("pq,pq->", K, D, optimize="optimal")
                     E_N = -oe.contract("pq,pq->", N, D, optimize="optimal")
+                    components = {
+                        "E_H": E_H,
+                        "E_J": E_J,
+                        "E_K": -self.x_alpha * E_K,
+                        "E_N": -E_N,
+                    }
             else:
 
                 E = (
@@ -260,39 +268,32 @@ class CQEDSCF:
                 )
                 # if debug, compute components of energy separately for more insight
                 if self.debug:
-                    E_H = 2.0 * oe.contract("pq,pq->", H, D)
-                    E_J = 2.0 * oe.contract("pq,pq->", J, D)
-                    E_N = oe.contract("pq,pq->", N, D)
+                    E_H = 2.0 * oe.contract("pq,pq->", H, D, optimize="optimal")
+                    E_J = 2.0 * oe.contract("pq,pq->", J, D, optimize="optimal")
+                    E_N = oe.contract("pq,pq->", N, D, optimize="optimal")
+                    components = {
+                        "E_H": E_H,
+                        "E_J": E_J,
+                        "E_Exc": Exc,
+                        "E_N": -E_N,
+                    }
                 if K is not None:
                     E -= self.x_alpha * oe.contract("pq,pq->", K, D)
                     if self.debug:
-                        E_K = oe.contract("pq,pq->", K, D)
+                        components["E_K"] = -self.x_alpha * oe.contract("pq,pq->", K, D)
 
                 if wK is not None:
                     beta = 1.0 - self.x_alpha
                     E -= beta * oe.contract("pq,pq->", wK, D)
                     if self.debug:
-                        E_wK = oe.contract("pq,pq->", wK, D)
+                        components["E_wK"] = -beta * oe.contract("pq,pq->", wK, D)
 
-            if self.debug:
-                output.echo(
-                    f"CQED Iter {it:3d}: "
-                    f"E = {E:18.10f}  "
-                    f"dE = {E - Eold: .8e}  "
-                    f"dRMS = {dRMS: .8e}"
-                )
-                # print energy components
-                output.echo(f"  E_H = {E_H:18.10f}")
-                if self.is_dft:
-                    output.echo(f"  E_Exc = {Exc:18.10f}")
-                output.echo(f"  E_J = {E_J:18.10f}")
-                if K is not None:
-                    output.echo(f"  E_K = {-self.x_alpha * E_K:18.10f}")
-                if wK is not None:
-                    output.echo(f"  E_wK = {-beta * E_wK:18.10f}")
-                output.echo(f"  E_N = {-E_N:18.10f}") 
+            dE = E - Eold
+            dt_iter = time.perf_counter() - t_iter
+            converged = abs(dE) < e_conv and dRMS < d_conv
+            iterations.append((it, E, dE, dRMS, dt_iter, converged))
 
-            if abs(E - Eold) < e_conv and dRMS < d_conv:
+            if converged:
                 break
             Eold = E
 
@@ -309,6 +310,8 @@ class CQEDSCF:
         else:
             raise RuntimeError("Maximum number of SCF cycles exceeded.")
 
+        self._print_scf_iterations(iterations, components)
+
         self.D_prev = D.copy()
 
         mu_el = np.array(
@@ -324,7 +327,9 @@ class CQEDSCF:
 
         # update wavefunction with final CQED-SCF state for use in gradients and future SAPT0 integrals
         self.wfn = self._update_wfn_with_cqed(self.wfn, C, D, eps)
-        
+
+        self._print_final_energy(E, len(iterations))
+
         results = dict(
             energy_scf=E,
             energy_psi4=E_psi4,
@@ -361,6 +366,80 @@ class CQEDSCF:
     # -------------------------
     # internal helpers
     # -------------------------
+
+    def _print_calculation_metadata(self):
+        """Emit the CQED-SCF header metadata block at normal verbosity."""
+
+        n_elec = self.wfn.nalpha() + self.wfn.nbeta()
+        lambda_str = "(" + ", ".join(f"{x:.6f}" for x in self.lambda_vector) + ")"
+        basis_name = self.wfn.basisset().name()
+
+        def _row(label, value):
+            output.echo(f"  {label:<22}= {value}")
+
+        _row("Method", self.method.upper())
+        _row("Basis", basis_name)
+        _row("Charge", str(self.mol.molecular_charge()))
+        _row("Multiplicity", str(self.mol.multiplicity()))
+        _row("Number of electrons", str(n_elec))
+        _row("Orbitals (AO / MO)", f"{self.mints.nbf()} / {self.nbf}")
+
+        output.echo()
+        output.echo("  Cavity parameters")
+        output.echo("  " + "-" * 17)
+        _row("lambda", lambda_str)
+        _row("omega", f"{self.omega:.6f} Eh")
+        _row("Density fitting", str(self.density_fitting))
+
+    def _print_scf_iterations(self, iterations, components=None):
+        """Emit the SCF iteration table and (debug-only) energy components."""
+
+        output.banner("SCF Iterations")
+        headers = ["Iter", "Energy (Eh)", "dE (Eh)", "dRMS (a.u.)", "Time (s)"]
+        widths = [6, 20, 16, 16, 8]
+        rows = []
+        for it, E, dE, dRMS, dt_iter, done in iterations:
+            time_cell = f"{dt_iter:.3f}"
+            if done:
+                time_cell += "*"
+            rows.append(
+                [
+                    str(it),
+                    f"{E:16.12f}",
+                    f"{dE:14.6e}",
+                    f"{dRMS:14.6e}",
+                    time_cell,
+                ]
+            )
+        output.table(headers, rows, widths)
+
+        n_iter = len(iterations)
+        if n_iter and iterations[-1][5]:
+            output.echo(f"  SCF Converged in {n_iter} iterations.")
+        else:
+            raise RuntimeError("Maximum number of SCF cycles exceeded.")
+
+        if self.debug and components is not None:
+            output.banner("Energy Components (CQED-SCF)")
+            detail_rows = [
+                ["E_H", f"{components['E_H']:16.12f}"],
+                ["E_J", f"{components['E_J']:16.12f}"],
+                ["E_N", f"{components['E_N']:16.12f}"],
+            ]
+            if components.get("E_Exc") is not None:
+                detail_rows.insert(1, ["E_Exc", f"{components['E_Exc']:16.12f}"])
+            if components.get("E_K") is not None:
+                detail_rows.insert(2, ["E_K", f"{components['E_K']:16.12f}"])
+            if components.get("E_wK") is not None:
+                detail_rows.insert(3, ["E_wK", f"{components['E_wK']:16.12f}"])
+            output.table(["Component", "Energy (Eh)"], detail_rows, [12, 18])
+
+    def _print_final_energy(self, E, n_iter):
+        """Emit the Psi4-``@``-convention final CQED-SCF results."""
+
+        output.banner(f"CQED-{self.method.upper()} Total Energy")
+        output.property_("CQED-SCF Total Energy", E, "Eh")
+        output.echo(f"@ {'SCF Iterations':<46s} {n_iter:d}")
 
     def _prepare_options(self):
         opts = dict(self.psi4_options)

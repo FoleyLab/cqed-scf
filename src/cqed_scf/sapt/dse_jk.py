@@ -208,9 +208,9 @@ class PauliFierzJK:
 
     def print_header(self):
         self.eri_jk.print_header()
-        if self.dse_jk is not None and not output.is_quiet():
+        if self.dse_jk is not None:
             state = "active" if self.dse_jk.is_active() else "inactive"
-            core.print_out(f"  Pauli-Fierz/DSE JK adapter enabled ({state}).\n")
+            output.echo(f"  Pauli-Fierz/DSE JK adapter enabled ({state}).")
 
     def native_jk(self):
         """Return the bare Psi4 JK object for code that requires C++ JK."""

@@ -153,3 +153,19 @@ def test_quiet_orthogonal_to_debug():
     quiet_false_config = config.copy_with(quiet=False)
     assert quiet_false_config.debug is True
     assert quiet_false_config.quiet is False
+
+
+def test_sapt_component_emits_eh_property(capsys):
+    _reset_verbosity()
+    output.sapt_component("Elst10, r", -0.5)
+    out = capsys.readouterr().out
+    assert "@ Elst10, r" in out
+    assert "-0.500000000000" in out
+    assert "Eh" in out
+
+
+def test_sapt_component_suppressed_when_quiet(capsys):
+    _reset_verbosity()
+    output.set_quiet(True)
+    output.sapt_component("Elst10, r", -0.5)
+    assert capsys.readouterr().out == ""

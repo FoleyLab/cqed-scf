@@ -189,8 +189,9 @@ class CQEDCalculator:
             return scf.run()
 
         scf = self._make_restricted_scf(geometry)
-        output.echo("\nRunning CQED-SCF energy calculation...\n")
-        output.echo(f"Functional: {self.config.base_scf_functional}")
+        output.banner("CQED-SCF Energy Calculation")
+        if self.config.base_scf_functional is not None:
+            output.echo(f"  Functional = {self.config.base_scf_functional}")
         return scf.run()
 
     def _compute_dispersion_energy(self, geometry, energy_no_disp):
@@ -243,14 +244,17 @@ class CQEDCalculator:
 
             if self.config.apply_post_scf_dispersion:
                 energy_disp = self._compute_dispersion_energy(geometry, energy_psi4_base)
-                output.echo(f"Dispersion correction energy: {energy_disp:.12f} Eh")
-                output.echo(
-                    f"Total energy (CQED + dispersion): {energy_qed + energy_disp:.12f} Eh"
-                )
             else:
                 energy_disp = 0.0
 
             energy_total = energy_qed + energy_disp
+
+            output.banner("CQED-SCF Energy")
+            energies = [("Energy (CQED-SCF)", energy_qed, "Eh")]
+            if self.config.apply_post_scf_dispersion:
+                energies.append(("Energy (Dispersion, D4)", energy_disp, "Eh"))
+            energies.append(("Energy (Total)", energy_total, "Eh"))
+            output.energies(energies)
 
             if self.config.debug:
                 output.echo(f"E_QED  = {energy_qed: .12f}")
@@ -293,22 +297,26 @@ class CQEDCalculator:
                     energy_psi4_base,
                     canonical_grad,
                 )
-                output.echo(f"Dispersion correction energy: {energy_disp:.12f} Eh")
-                output.echo(
-                    f"Total energy (CQED + dispersion): {energy_qed + energy_disp:.12f} Eh"
-                )
-                output.echo(
-                    "Dispersion correction gradient norm: {:.6e} Eh/Bohr".format(
-                        np.linalg.norm(grad_disp)
-                    )
-                )
             else:
-                output.echo("No dispersion correction applied.")
                 energy_disp = 0.0
                 grad_disp = np.zeros_like(grad_qed)
 
             energy_total = energy_qed + energy_disp
             grad_total = grad_qed + grad_disp
+
+            output.banner("CQED-SCF Energy")
+            eg = [("E (CQED-SCF)", energy_qed, "Eh")]
+            if self.config.apply_post_scf_dispersion:
+                eg.append(("E (Dispersion)", energy_disp, "Eh"))
+            eg.append(("E (Total)", energy_total, "Eh"))
+            output.energies(eg)
+
+            output.banner("CQED Gradient")
+            gprops = [("|g (Total)|", np.linalg.norm(grad_total), "Eh/Bohr")]
+            if self.config.apply_post_scf_dispersion:
+                gprops.insert(0, ("|g (Dispersion)|", np.linalg.norm(grad_disp), "Eh/Bohr"))
+            for label, value, unit in gprops:
+                output.property_(label, value, unit, fmt="14.6e")
 
             g = (self.config.omega / 2) ** 0.5 * data["d_exp"]
 
@@ -317,6 +325,11 @@ class CQEDCalculator:
                 output.echo(f"E_disp     = {energy_disp: .12f}")
                 output.echo(f"E_total    = {energy_total: .12f}")
                 output.echo(f"|grad_disp|= {np.linalg.norm(grad_disp): .6e}")
+
+            psi4.core.set_variable("CURRENT ENERGY", energy_total)
+            psi4.core.set_array_variable(
+                "CURRENT GRADIENT", psi4.core.Matrix.from_array(np.asarray(grad_total))
+            )
 
             psi4.core.clean()
             psi4.core.clean_options()
@@ -353,13 +366,15 @@ class CQEDCalculator:
         """Compute the total QED-SAPT0 interaction energy for a dimer."""
 
         driver = self.sapt0(dimer_geometry, **kwargs)
-        return driver.run()
+        with output.quiet_context(self.config.quiet):
+            return driver.run()
 
     def sapt0_components(self, dimer_geometry, **kwargs):
         """Compute QED-SAPT0 component energies for a dimer."""
 
         driver = self.sapt0(dimer_geometry, **kwargs)
-        return driver.run_components()
+        with output.quiet_context(self.config.quiet):
+            return driver.run_components()
     
     def energy_and_projected_gradient(self, geometry, canonical="psi4"):
         """

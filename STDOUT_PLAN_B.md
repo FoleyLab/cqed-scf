@@ -1,5 +1,11 @@
 # STDOUT_PLAN_B — Tentative content/format migration for scf, calculator, SAPT
 
+You are working in `cqed-scf`, location: `/Users/jfoley19/Code/cqed-scf`
+
+A conda environment for this project is `/Users/jfoley19/miniforge3/envs/p4dev`
+
+Git branch: `main`.
+
 This is the **second stage**, to be written only after Stage A
 (STDOUT_PLAN_A.md) is implemented and reviewed. Stage A establishes the
 shared `output.py` writing layer and the `quiet` flag. Stage B redesigns

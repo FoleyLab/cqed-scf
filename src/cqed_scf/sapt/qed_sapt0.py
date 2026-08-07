@@ -138,8 +138,8 @@ class QEDSAPT0Driver:
         self.E_nuc_dimer = self.dimer_geometry.nuclear_repulsion_energy()
         if self.config.debug:
             output.echo("Dimer nuclear dipole moment")
-            output.echo(self.dimer_mu_nuc)
-            output.echo(f"Dimer nuclear repulsion energy {self.E_nuc_dimer}")
+            output.echo(f"  {self.dimer_mu_nuc[0]:16.10f} {self.dimer_mu_nuc[1]:16.10f} {self.dimer_mu_nuc[2]:16.10f}")
+            output.echo(f"Dimer nuclear repulsion energy {self.E_nuc_dimer:16.12f}")
 
     def _populate_monomer_attributes(self) -> None:
         """Cache monomer reference data used by the SAPT component formulas."""
@@ -589,17 +589,17 @@ class QEDSAPT0Driver:
         return {"abab": elst100}
 
     def _print_scalar_diagnostics(self, scalars):
-        def _print_value(label, value):
+        def _row(label, value):
             if isinstance(value, (bool, str)):
-                output.echo(f"{label:<32} {value}")
-            else:
-                output.echo(f"{label:<32} {float(value):18.10e}")
+                return [label, str(value)]
+            return [label, f"{float(value):18.10e}"]
 
         output.echo("QED-SAPT0 cavity diagnostics")
         output.echo()
         output.echo("Scalar dipole checks")
         output.echo("--------------------")
-        for key, label in (
+
+        scalar_keys = (
             ("d_exp_A", "d_exp_A"),
             ("d_exp_el_A", "d_exp_el_A"),
             ("d_nuc_A", "d_nuc_A"),
@@ -611,8 +611,12 @@ class QEDSAPT0Driver:
             ("d_exp_A_times_d_exp_B", "d_exp_A * d_exp_B"),
             ("d_exp_el_A_times_d_exp_el_B", "d_exp_el_A * d_exp_el_B"),
             ("d_nuc_A_times_d_nuc_B", "d_nuc_A * d_nuc_B"),
-        ):
-            _print_value(label, scalars[key])
+        )
+        output.table(
+            ["Label", "Value"],
+            [_row(key, scalars[key]) for key, label in scalar_keys],
+            [36, 22],
+        )
 
         norm_keys = (
             ("I_dimer_cavity_norm", "||I_dimer_cavity||"),
@@ -624,9 +628,15 @@ class QEDSAPT0Driver:
             output.echo()
             output.echo("Operator norms")
             output.echo("--------------")
-            for key, label in norm_keys:
-                if key in scalars:
-                    _print_value(label, scalars[key])
+            output.table(
+                ["Label", "Value"],
+                [
+                    _row(label, scalars[key])
+                    for key, label in norm_keys
+                    if key in scalars
+                ],
+                [36, 22],
+            )
 
     def _print_vt_diagnostics(self, vt_summary):
         vt_abab = vt_summary["abab"]
@@ -636,25 +646,25 @@ class QEDSAPT0Driver:
             f"Component: {vt_abab['label']}, tensor: vt(\"abab\"), "
             f"prefactor: {vt_abab['prefactor']:.1f}"
         )
-        output.echo(f"{'context':<10} {'piece':<14} {'value / Eh':>18}")
-        output.echo("-" * 44)
+
+        vt_rows = []
         for context in ("standard", "cavity", "total"):
             for piece in ("eri", "potential_A", "potential_B", "constant", "total"):
-                output.echo(f"{context:<10} {piece:<14} {vt_abab[context][piece]:18.10f}")
+                vt_rows.append(
+                    [context, piece, f"{vt_abab[context][piece]:18.10f}"]
+                )
+        output.table(["context", "piece", "value / Eh"], vt_rows, [10, 14, 22])
 
         output.echo()
         output.echo("Checks")
         output.echo("------")
         checks = vt_abab["checks"]
-        output.echo(
-            f"{'standard + cavity - total':<32} "
-            f"{checks['standard_plus_cavity_minus_total']:18.10e}"
-        )
-        output.echo(f"{'abs(cavity total)':<32} {checks['cavity_total_abs']:18.10e}")
-        output.echo(
-            f"{'compute_Elst100 - diagnostic':<32} "
-            f"{checks['compute_Elst100_minus_diagnostic_total']:18.10e}"
-        )
+        check_rows = [
+            ["standard + cavity - total", f"{checks['standard_plus_cavity_minus_total']:18.10e}"],
+            ["abs(cavity total)", f"{checks['cavity_total_abs']:18.10e}"],
+            ["compute_Elst100 - diagnostic", f"{checks['compute_Elst100_minus_diagnostic_total']:18.10e}"],
+        ]
+        output.table(["Check", "Value"], check_rows, [32, 22])
 
     def diagnostic_summary(self, print_output: Optional[bool] = None):
         print_output = self.config.debug if print_output is None else print_output
@@ -1071,4 +1081,17 @@ class QEDSAPT0Driver:
         self.Eexchind200 = self.compute_Eexchind200()
         
         self.E_SAPT0 = self.Eelst100 + self.Eexch100 + self.Edisp200 + self.Eexchdisp200 + self.Eind200 + self.Eexchind200
+
+        from .qed_sapt_jk import print_sapt_summary
+        print_sapt_summary(
+            [
+                ("Electrostatics", float(self.Eelst100)),
+                ("Exchange", float(self.Eexch100)),
+                ("Induction", float(self.Eind200)),
+                ("Exchange-Induction", float(self.Eexchind200)),
+                ("Dispersion", float(self.Edisp200)),
+                ("Exchange-Dispersion", float(self.Eexchdisp200)),
+            ],
+            total=float(self.E_SAPT0),
+        )
         return self.E_SAPT0

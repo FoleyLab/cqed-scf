@@ -141,6 +141,12 @@ def energies(entries: Iterable[Sequence]) -> None:
     return None
 
 
+def sapt_component(label: str, value: float, fmt: str = "18.12f") -> None:
+    """Emit a SAPT component energy as a Psi4-``@`` property line in Eh."""
+
+    return property_(label, value, "Eh", fmt)
+
+
 # -------------------------
 # Psi4 engine output suppression
 # -------------------------

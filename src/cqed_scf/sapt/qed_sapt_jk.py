@@ -17,7 +17,6 @@ from psi4 import core
 
 from psi4.driver.p4util import solvers
 from psi4.driver.p4util.exceptions import *
-from psi4.driver.procrouting.sapt.sapt_util import print_sapt_var
 
 from .. import output
 from .dse_jk import DSEJK, PauliFierzJK, DSECPHF
@@ -28,6 +27,46 @@ def _native_jk(jk):
     if hasattr(jk, "native_jk"):
         return jk.native_jk()
     return jk
+
+
+_KCAL_PER_EH = 627.5094740631
+_KJ_PER_EH = 2625.4996394799
+_CM_PER_EH = 219474.63067
+
+
+def print_sapt_summary(components, total=None, do_print=True):
+    """Emit a multi-unit SAPT component summary table at normal verbosity.
+
+    ``components`` is an ordered list of ``(label, value)`` pairs with values
+    in Eh.  Each component is reported in kcal/mol, kJ/mol and cm^-1 following
+    the standard SAPT convention, and the total is emitted both as a table row
+    and as a parseable Psi4 ``@`` property line in Eh.
+    """
+    if not do_print:
+        return None
+
+    output.banner("SAPT0 Interaction Energies")
+
+    header = (
+        "  " + "Component".ljust(24)
+        + f"{'(kcal/mol)':>15}" + f"{'(kJ/mol)':>15}" + f"{'(cm^-1)':>15}"
+    )
+    output.echo(header)
+    output.echo("  " + "-" * (2 + 24 + 45))
+
+    total_val = total if total is not None else sum(v for _, v in components)
+    rows = list(components) + [("Total", total_val)]
+    for label, value in rows:
+        output.echo(
+            "  " + label.ljust(24)
+            + f"{value * _KCAL_PER_EH:15.6f}"
+            + f"{value * _KJ_PER_EH:15.6f}"
+            + f"{value * _CM_PER_EH:15.4f}"
+        )
+
+    output.echo("  " + "-" * (2 + 24 + 45))
+    output.sapt_component("SAPT0 Total", total_val)
+    return None
 
 
 def _effective_jk(jk, dse_jk=None):
@@ -121,10 +160,8 @@ def build_sapt_jk_cache(
     Constructs the DCBS cache data required to compute ELST/EXCH/IND
     """
 
-    do_print = do_print and not output.is_quiet()
-
     if do_print:
-        core.print_out("\n  ==> Preparing SAPT Data Cache <== \n\n")
+        output.banner("Preparing SAPT Data Cache")
     jk_eff = _effective_jk(jk, dse_jk)
     dse_jk_eff = jk_eff.dse_jk if isinstance(jk_eff, PauliFierzJK) else dse_jk
     jk_eff.print_header()
@@ -268,10 +305,8 @@ def electrostatics(cache, do_print=True):
     Computes the E10 electrostatics from a build_sapt_jk_cache datacache.
     """
 
-    do_print = do_print and not output.is_quiet()
-
     if do_print:
-        core.print_out("\n  ==> E10 Electostatics <== \n\n")
+        output.banner("E10 Electrostatics")
 
     # ELST
     Elst10 = 4.0 * cache["D_B"].vector_dot(cache["J_A"])
@@ -280,8 +315,11 @@ def electrostatics(cache, do_print=True):
     Elst10 += cache["nuclear_repulsion_energy"]
 
     if do_print:
-        core.print_out(print_sapt_var("Elst10,r ", Elst10, short=True))
-        core.print_out("\n")
+        output.sapt_component("Elst10, r", Elst10)
+        output.sapt_component(
+            "Nuclear repulsion", cache["nuclear_repulsion_energy"]
+        )
+        output.echo()
 
     return {"Elst10,r": Elst10}
 
@@ -291,10 +329,8 @@ def exchange(cache, jk=None, do_print=True):
     Computes the E10 exchange (S^2 and S^inf) from a build_sapt_jk_cache datacache.
     """
 
-    do_print = do_print and not output.is_quiet()
-
     if do_print:
-        core.print_out("\n  ==> E10 Exchange <== \n\n")
+        output.banner("E10 Exchange")
     jk = _matrix_jk(cache, jk)
 
     # Build potenitals
@@ -371,8 +407,7 @@ def exchange(cache, jk=None, do_print=True):
     Exch_s2 -= 2.0 * Kij.vector_dot(tmp)
 
     if do_print:
-        core.print_out(print_sapt_var("Exch10(S^2) ", Exch_s2, short=True))
-        core.print_out("\n")
+        output.sapt_component("Exch10 (S^2)", Exch_s2)
 
     # Start Sinf
     Exch10 = 0.0
@@ -387,8 +422,7 @@ def exchange(cache, jk=None, do_print=True):
 
     if do_print:
         core.set_variable("Exch10", Exch10)
-        core.print_out(print_sapt_var("Exch10", Exch10, short=True))
-        core.print_out("\n")
+        output.sapt_component("Exch10", Exch10)
 
     return {"Exch10(S^2)": Exch_s2, "Exch10": Exch10}
 
@@ -408,10 +442,8 @@ def induction(
     Compute Ind20 and Exch-Ind20 quantities from a SAPT cache and JK object.
     """
 
-    do_print = do_print and not output.is_quiet()
-
     if do_print:
-        core.print_out("\n  ==> E20 Induction <== \n\n")
+        output.banner("E20 Induction")
     jk = _matrix_jk(cache, jk)
 
     # Build Induction and Exchange-Induction potentials
@@ -513,7 +545,8 @@ def induction(
         diagnostics["EX_B"] = EX_B.np.copy()
 
     # Do uncoupled
-    core.print_out("   => Uncoupled Induction <= \n\n")
+    if do_print:
+        output.echo("\n  => Uncoupled Induction <=")
     unc_x_B_MOA = w_B_MOA.clone()
     unc_x_B_MOA.np[:] /= (cache["eps_occ_A"].np.reshape(-1, 1) - cache["eps_vir_A"].np)
     unc_x_A_MOB = w_A_MOB.clone()
@@ -544,9 +577,7 @@ def induction(
 
     if do_print:
         for name in plist:
-            # core.set_variable(name, ret[name])
-            core.print_out(print_sapt_var(name, ret[name], short=True))
-            core.print_out("\n")
+            output.sapt_component(name, ret[name])
 
     # Exch-Ind without S^2
     if Sinf:
@@ -683,14 +714,12 @@ def induction(
 
         if do_print:
             for name in plist[3:]:
-                name = name + ' (S^inf)'
-
-                core.print_out(print_sapt_var(name, ret[name], short=True))
-                core.print_out("\n")
+                output.sapt_component(name + " (S^inf)", ret[name + " (S^inf)"])
 
     # Do coupled
     if do_response:
-        core.print_out("\n   => Coupled Induction <= \n\n")
+        if do_print:
+            output.echo("\n  => Coupled Induction <=")
 
         cphf_r_convergence = core.get_option("SAPT", "CPHF_R_CONVERGENCE")
 
@@ -724,13 +753,8 @@ def induction(
         ret["Exch-Ind20,r"] = indexch_ba + indexch_ab
 
         if do_print:
-            core.print_out("\n")
             for name in plist:
-                name = name.replace(",u", ",r")
-
-                # core.set_variable(name, ret[name])
-                core.print_out(print_sapt_var(name, ret[name], short=True))
-                core.print_out("\n")
+                output.sapt_component(name.replace(",u", ",r"), ret[name.replace(",u", ",r")])
 
         # Exch-Ind without S^2
         if Sinf:
@@ -766,10 +790,10 @@ def induction(
 
             if do_print:
                 for name in plist[3:]:
-                    name = name.replace(",u", ",r") + ' (S^inf)'
-
-                    core.print_out(print_sapt_var(name, ret[name], short=True))
-                    core.print_out("\n")
+                    output.sapt_component(
+                        name.replace(",u", ",r") + " (S^inf)",
+                        ret[name.replace(",u", ",r") + " (S^inf)"],
+                    )
 
     return ret
 
@@ -969,17 +993,17 @@ def _sapt_cpscf_solve(
     active_print = not output.is_quiet()
     sep_size = 51
     if active_print:
-        core.print_out("   " + ("-" * sep_size) + "\n")
-        core.print_out("   " + "SAPT Coupled Induction Solver".center(sep_size) + "\n")
-        core.print_out("   " + ("-" * sep_size) + "\n")
-        core.print_out("    Maxiter             = %11d\n" % maxiter)
-        core.print_out("    Convergence         = %11.3E\n" % conv)
-        core.print_out("   " + ("-" * sep_size) + "\n")
+        output.echo("   " + ("-" * sep_size))
+        output.echo("   " + "SAPT Coupled Induction Solver".center(sep_size))
+        output.echo("   " + ("-" * sep_size))
+        output.echo("    Maxiter             = %11d" % maxiter)
+        output.echo("    Convergence         = %11.3E" % conv)
+        output.echo("   " + ("-" * sep_size))
 
     tstart = time.time()
     if active_print:
-        core.print_out("     %4s %12s     %12s     %9s\n" % ("Iter", "(A<-B)", "(B->A)", "Time [s]"))
-        core.print_out("   " + ("-" * sep_size) + "\n")
+        output.echo("     %4s %12s     %12s     %9s" % ("Iter", "(A<-B)", "(B->A)", "Time [s]"))
+        output.echo("   " + ("-" * sep_size))
 
     start_resid = [rhsA.sum_of_squares(), rhsB.sum_of_squares()]
 
@@ -1005,7 +1029,7 @@ def _sapt_cpscf_solve(
             cB = " "
 
         if active_print:
-            core.print_out("    %5s %15.6e%1s %15.6e%1s %9d\n" % (niter, valA, cA, valB, cB, time.time() - tstart))
+            output.echo("    %5s %15.6e%1s %15.6e%1s %9d" % (niter, valA, cA, valB, cB, time.time() - tstart))
         return [valA, valB]
 
     # Compute the solver
@@ -1017,7 +1041,7 @@ def _sapt_cpscf_solve(
                                     printlvl=0,
                                     printer=pfunc)
     if active_print:
-        core.print_out("   " + ("-" * sep_size) + "\n")
+        output.echo("   " + ("-" * sep_size))
 
     if diagnostics is not None:
         diagnostics["cphf_residual_norms"] = {
