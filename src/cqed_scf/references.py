@@ -75,6 +75,7 @@ class CQEDConfig:
     multiplicity: int = 1
     dispersion_policy: str = "post_scf"
     debug: bool = False
+    quiet: bool = False
 
     def __post_init__(self) -> None:
         self.lambda_vector = self._coerce_lambda_vector(self.lambda_vector)
@@ -101,8 +102,9 @@ class CQEDConfig:
         density_fitting: bool = False,
         functional: Optional[str] = None,
         reference: Optional[str] = None,
-        dispersion_policy: str = "post_scf",
+dispersion_policy: str = "post_scf",
         debug: bool = False,
+        quiet: bool = False,
     ) -> "CQEDConfig":
         """Build a config from the historical calculator keyword arguments."""
 
@@ -117,6 +119,7 @@ class CQEDConfig:
             multiplicity=multiplicity,
             dispersion_policy=dispersion_policy,
             debug=debug,
+            quiet=quiet,
         )
 
     @staticmethod

@@ -1,6 +1,7 @@
 import psi4
 import numpy as np
 from typing import Any, Mapping, Optional
+from . import output
 from .scf import CQEDSCF
 from .gradients import CQEDGradient
 from .drivers import project_cartesian_gradient_remove_translation_rotation
@@ -26,6 +27,7 @@ class CQEDCalculator:
         density_fitting: bool = False,
         functional: Optional[str] = None,
         debug: bool = False,
+        quiet: bool = False,
         reference: Optional[str] = None,
         dispersion_policy: str = "post_scf",
         config: Optional[CQEDConfig] = None,
@@ -55,6 +57,7 @@ class CQEDCalculator:
                 reference=reference,
                 dispersion_policy=dispersion_policy,
                 debug=debug,
+                quiet=quiet,
             )
 
         self.geometry = None
@@ -124,6 +127,15 @@ class CQEDCalculator:
         self._refresh_compatibility_attrs()
 
     @property
+    def quiet(self):
+        return self.config.quiet
+
+    @quiet.setter
+    def quiet(self, value):
+        self.config = self.config.copy_with(quiet=bool(value))
+        self._refresh_compatibility_attrs()
+
+    @property
     def charge(self):
         return self.config.charge
 
@@ -163,6 +175,7 @@ class CQEDCalculator:
             method=self.config.scf_method,
             functional=self.config.base_scf_functional,
             debug=self.config.debug,
+            quiet=self.config.quiet,
         )
 
     def _make_unrestricted_scf(self, geometry):
@@ -176,8 +189,8 @@ class CQEDCalculator:
             return scf.run()
 
         scf = self._make_restricted_scf(geometry)
-        print("\nRunning CQED-SCF energy calculation...\n")
-        print(f"Functional: {self.config.base_scf_functional}")
+        output.echo("\nRunning CQED-SCF energy calculation...\n")
+        output.echo(f"Functional: {self.config.base_scf_functional}")
         return scf.run()
 
     def _compute_dispersion_energy(self, geometry, energy_no_disp):
@@ -224,22 +237,25 @@ class CQEDCalculator:
     def energy(self, geometry):
         self.geometry = geometry
 
-        energy_qed, results = self._run_scf(geometry)
-        energy_psi4_base = results["energy_psi4"]
+        with output.quiet_context(self.config.quiet):
+            energy_qed, results = self._run_scf(geometry)
+            energy_psi4_base = results["energy_psi4"]
 
-        if self.config.apply_post_scf_dispersion:
-            energy_disp = self._compute_dispersion_energy(geometry, energy_psi4_base)
-            print(f"Dispersion correction energy: {energy_disp:.12f} Eh")
-            print(f"Total energy (CQED + dispersion): {energy_qed + energy_disp:.12f} Eh")
-        else:
-            energy_disp = 0.0
+            if self.config.apply_post_scf_dispersion:
+                energy_disp = self._compute_dispersion_energy(geometry, energy_psi4_base)
+                output.echo(f"Dispersion correction energy: {energy_disp:.12f} Eh")
+                output.echo(
+                    f"Total energy (CQED + dispersion): {energy_qed + energy_disp:.12f} Eh"
+                )
+            else:
+                energy_disp = 0.0
 
-        energy_total = energy_qed + energy_disp
+            energy_total = energy_qed + energy_disp
 
-        if self.config.debug:
-            print(f"E_QED  = {energy_qed: .12f}")
-            print(f"E_disp = {energy_disp: .12f}")
-            print(f"E_tot  = {energy_total: .12f}")
+            if self.config.debug:
+                output.echo(f"E_QED  = {energy_qed: .12f}")
+                output.echo(f"E_disp = {energy_disp: .12f}")
+                output.echo(f"E_tot  = {energy_total: .12f}")
 
         return energy_total
 
@@ -249,58 +265,61 @@ class CQEDCalculator:
 
         self.geometry = geometry
 
-        energy_qed, data = self._run_scf(geometry)
-        energy_psi4_base = data["energy_psi4"]
+        with output.quiet_context(self.config.quiet):
+            energy_qed, data = self._run_scf(geometry)
+            energy_psi4_base = data["energy_psi4"]
 
-        if self.config.is_unrestricted:
-            from .ugradients import CQEDUGradient
+            if self.config.is_unrestricted:
+                from .ugradients import CQEDUGradient
 
-            grad_engine = CQEDUGradient(self.config)
-            grad_engine.compute(data)
+                grad_engine = CQEDUGradient(self.config)
+                grad_engine.compute(data)
 
-        from .gradients import CQEDGradient
+            from .gradients import CQEDGradient
 
-        grad_engine = CQEDGradient(
-            self.config.lambda_vector,
-            canonical=canonical,
-            debug=self.config.debug,
-        )
-
-        grad_results = grad_engine.compute(data)
-        canonical_grad = grad_results["canonical_grad"]
-        grad_qed = grad_results["total_grad"]
-
-        if self.config.apply_post_scf_dispersion:
-            energy_disp, grad_disp = self._compute_dispersion_gradient(
-                geometry,
-                energy_psi4_base,
-                canonical_grad,
+            grad_engine = CQEDGradient(
+                self.config.lambda_vector,
+                canonical=canonical,
+                debug=self.config.debug,
             )
-            print(f"Dispersion correction energy: {energy_disp:.12f} Eh")
-            print(f"Total energy (CQED + dispersion): {energy_qed + energy_disp:.12f} Eh")
-            print(
-                "Dispersion correction gradient norm: {:.6e} Eh/Bohr".format(
-                    np.linalg.norm(grad_disp)
+
+            grad_results = grad_engine.compute(data)
+            canonical_grad = grad_results["canonical_grad"]
+            grad_qed = grad_results["total_grad"]
+
+            if self.config.apply_post_scf_dispersion:
+                energy_disp, grad_disp = self._compute_dispersion_gradient(
+                    geometry,
+                    energy_psi4_base,
+                    canonical_grad,
                 )
-            )
-        else:
-            print("No dispersion correction applied.")
-            energy_disp = 0.0
-            grad_disp = np.zeros_like(grad_qed)
+                output.echo(f"Dispersion correction energy: {energy_disp:.12f} Eh")
+                output.echo(
+                    f"Total energy (CQED + dispersion): {energy_qed + energy_disp:.12f} Eh"
+                )
+                output.echo(
+                    "Dispersion correction gradient norm: {:.6e} Eh/Bohr".format(
+                        np.linalg.norm(grad_disp)
+                    )
+                )
+            else:
+                output.echo("No dispersion correction applied.")
+                energy_disp = 0.0
+                grad_disp = np.zeros_like(grad_qed)
 
-        energy_total = energy_qed + energy_disp
-        grad_total = grad_qed + grad_disp
+            energy_total = energy_qed + energy_disp
+            grad_total = grad_qed + grad_disp
 
-        g = (self.config.omega / 2) ** 0.5 * data["d_exp"]
+            g = (self.config.omega / 2) ** 0.5 * data["d_exp"]
 
-        if self.config.debug:
-            print(f"E_QED      = {energy_qed: .12f}")
-            print(f"E_disp     = {energy_disp: .12f}")
-            print(f"E_total    = {energy_total: .12f}")
-            print(f"|grad_disp|= {np.linalg.norm(grad_disp): .6e}")
+            if self.config.debug:
+                output.echo(f"E_QED      = {energy_qed: .12f}")
+                output.echo(f"E_disp     = {energy_disp: .12f}")
+                output.echo(f"E_total    = {energy_total: .12f}")
+                output.echo(f"|grad_disp|= {np.linalg.norm(grad_disp): .6e}")
 
-        psi4.core.clean()
-        psi4.core.clean_options()
+            psi4.core.clean()
+            psi4.core.clean_options()
 
         return energy_total, grad_total, g
 
@@ -353,19 +372,20 @@ class CQEDCalculator:
         """
 
         # get masses in atomic units and coordinates in bohr
-        mol = psi4.geometry(geometry)
-        coords_bohr = mol.geometry().to_array()
-        masses = np.array([mol.mass(i) for i in range(mol.natom())]) * AMU_TO_AU
+        with output.quiet_context(self.config.quiet):
+            mol = psi4.geometry(geometry)
+            coords_bohr = mol.geometry().to_array()
+            masses = np.array([mol.mass(i) for i in range(mol.natom())]) * AMU_TO_AU
 
-        # get energy and full gradient at current geometry
-        E, grad, g = self.energy_and_gradient(geometry, canonical)
+            # get energy and full gradient at current geometry
+            E, grad, g = self.energy_and_gradient(geometry, canonical)
 
-        grad_proj = project_cartesian_gradient_remove_translation_rotation(
-            coords_bohr,
-            grad,
-            masses,
-            return_diagnostics=False,
-        )
+            grad_proj = project_cartesian_gradient_remove_translation_rotation(
+                coords_bohr,
+                grad,
+                masses,
+                return_diagnostics=False,
+            )
         
         return E, grad_proj, g
 

@@ -50,6 +50,7 @@ config = CQEDConfig(
     multiplicity=1,
     dispersion_policy="none",
     debug=False,
+    quiet=True,  # SILENT: suppress all stdout (CQED-SCF + Psi4 engine output)
 )
 
 

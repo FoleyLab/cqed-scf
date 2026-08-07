@@ -19,6 +19,7 @@ from psi4.driver.p4util import solvers
 from psi4.driver.p4util.exceptions import *
 from psi4.driver.procrouting.sapt.sapt_util import print_sapt_var
 
+from .. import output
 from .dse_jk import DSEJK, PauliFierzJK, DSECPHF
 
 
@@ -120,7 +121,10 @@ def build_sapt_jk_cache(
     Constructs the DCBS cache data required to compute ELST/EXCH/IND
     """
 
-    core.print_out("\n  ==> Preparing SAPT Data Cache <== \n\n")
+    do_print = do_print and not output.is_quiet()
+
+    if do_print:
+        core.print_out("\n  ==> Preparing SAPT Data Cache <== \n\n")
     jk_eff = _effective_jk(jk, dse_jk)
     dse_jk_eff = jk_eff.dse_jk if isinstance(jk_eff, PauliFierzJK) else dse_jk
     jk_eff.print_header()
@@ -264,6 +268,8 @@ def electrostatics(cache, do_print=True):
     Computes the E10 electrostatics from a build_sapt_jk_cache datacache.
     """
 
+    do_print = do_print and not output.is_quiet()
+
     if do_print:
         core.print_out("\n  ==> E10 Electostatics <== \n\n")
 
@@ -284,6 +290,8 @@ def exchange(cache, jk=None, do_print=True):
     """
     Computes the E10 exchange (S^2 and S^inf) from a build_sapt_jk_cache datacache.
     """
+
+    do_print = do_print and not output.is_quiet()
 
     if do_print:
         core.print_out("\n  ==> E10 Exchange <== \n\n")
@@ -399,6 +407,8 @@ def induction(
     """
     Compute Ind20 and Exch-Ind20 quantities from a SAPT cache and JK object.
     """
+
+    do_print = do_print and not output.is_quiet()
 
     if do_print:
         core.print_out("\n  ==> E20 Induction <== \n\n")
@@ -956,17 +966,20 @@ def _sapt_cpscf_solve(
         return [xA, xB]
 
     # Manipulate the printing
+    active_print = not output.is_quiet()
     sep_size = 51
-    core.print_out("   " + ("-" * sep_size) + "\n")
-    core.print_out("   " + "SAPT Coupled Induction Solver".center(sep_size) + "\n")
-    core.print_out("   " + ("-" * sep_size) + "\n")
-    core.print_out("    Maxiter             = %11d\n" % maxiter)
-    core.print_out("    Convergence         = %11.3E\n" % conv)
-    core.print_out("   " + ("-" * sep_size) + "\n")
+    if active_print:
+        core.print_out("   " + ("-" * sep_size) + "\n")
+        core.print_out("   " + "SAPT Coupled Induction Solver".center(sep_size) + "\n")
+        core.print_out("   " + ("-" * sep_size) + "\n")
+        core.print_out("    Maxiter             = %11d\n" % maxiter)
+        core.print_out("    Convergence         = %11.3E\n" % conv)
+        core.print_out("   " + ("-" * sep_size) + "\n")
 
     tstart = time.time()
-    core.print_out("     %4s %12s     %12s     %9s\n" % ("Iter", "(A<-B)", "(B->A)", "Time [s]"))
-    core.print_out("   " + ("-" * sep_size) + "\n")
+    if active_print:
+        core.print_out("     %4s %12s     %12s     %9s\n" % ("Iter", "(A<-B)", "(B->A)", "Time [s]"))
+        core.print_out("   " + ("-" * sep_size) + "\n")
 
     start_resid = [rhsA.sum_of_squares(), rhsB.sum_of_squares()]
 
@@ -991,7 +1004,8 @@ def _sapt_cpscf_solve(
         else:
             cB = " "
 
-        core.print_out("    %5s %15.6e%1s %15.6e%1s %9d\n" % (niter, valA, cA, valB, cB, time.time() - tstart))
+        if active_print:
+            core.print_out("    %5s %15.6e%1s %15.6e%1s %9d\n" % (niter, valA, cA, valB, cB, time.time() - tstart))
         return [valA, valB]
 
     # Compute the solver
@@ -1002,7 +1016,8 @@ def _sapt_cpscf_solve(
                                     rcond=conv,
                                     printlvl=0,
                                     printer=pfunc)
-    core.print_out("   " + ("-" * sep_size) + "\n")
+    if active_print:
+        core.print_out("   " + ("-" * sep_size) + "\n")
 
     if diagnostics is not None:
         diagnostics["cphf_residual_norms"] = {

@@ -50,6 +50,7 @@ config = CQEDConfig(
     multiplicity=1,
     dispersion_policy="none",
     debug=False,
+    quiet=False,  # NORMAL: gradient-path prints aren't routed via output yet (Stage B)
 )
 
 

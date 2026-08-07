@@ -9,6 +9,7 @@ import opt_einsum as oe
 import numpy as np
 
 from ..references import CQEDConfig
+from .. import output
 
 from .monomer import SAPTMonomer
 from .results import QEDSAPT0Results
@@ -136,9 +137,9 @@ class QEDSAPT0Driver:
         )
         self.E_nuc_dimer = self.dimer_geometry.nuclear_repulsion_energy()
         if self.config.debug:
-            print("Dimer nuclear dipole moment")
-            print(self.dimer_mu_nuc)
-            print(f"Dimer nuclear repulsion energy {self.E_nuc_dimer}")
+            output.echo("Dimer nuclear dipole moment")
+            output.echo(self.dimer_mu_nuc)
+            output.echo(f"Dimer nuclear repulsion energy {self.E_nuc_dimer}")
 
     def _populate_monomer_attributes(self) -> None:
         """Cache monomer reference data used by the SAPT component formulas."""
@@ -590,14 +591,14 @@ class QEDSAPT0Driver:
     def _print_scalar_diagnostics(self, scalars):
         def _print_value(label, value):
             if isinstance(value, (bool, str)):
-                print(f"{label:<32} {value}")
+                output.echo(f"{label:<32} {value}")
             else:
-                print(f"{label:<32} {float(value):18.10e}")
+                output.echo(f"{label:<32} {float(value):18.10e}")
 
-        print("QED-SAPT0 cavity diagnostics")
-        print()
-        print("Scalar dipole checks")
-        print("--------------------")
+        output.echo("QED-SAPT0 cavity diagnostics")
+        output.echo()
+        output.echo("Scalar dipole checks")
+        output.echo("--------------------")
         for key, label in (
             ("d_exp_A", "d_exp_A"),
             ("d_exp_el_A", "d_exp_el_A"),
@@ -620,37 +621,37 @@ class QEDSAPT0Driver:
             ("vt_nuc_rep_cavity", "vt_nuc_rep_cavity"),
         )
         if any(key in scalars for key, _ in norm_keys):
-            print()
-            print("Operator norms")
-            print("--------------")
+            output.echo()
+            output.echo("Operator norms")
+            output.echo("--------------")
             for key, label in norm_keys:
                 if key in scalars:
                     _print_value(label, scalars[key])
 
     def _print_vt_diagnostics(self, vt_summary):
         vt_abab = vt_summary["abab"]
-        print()
-        print("QED-SAPT0 operator diagnostics")
-        print(
+        output.echo()
+        output.echo("QED-SAPT0 operator diagnostics")
+        output.echo(
             f"Component: {vt_abab['label']}, tensor: vt(\"abab\"), "
             f"prefactor: {vt_abab['prefactor']:.1f}"
         )
-        print(f"{'context':<10} {'piece':<14} {'value / Eh':>18}")
-        print("-" * 44)
+        output.echo(f"{'context':<10} {'piece':<14} {'value / Eh':>18}")
+        output.echo("-" * 44)
         for context in ("standard", "cavity", "total"):
             for piece in ("eri", "potential_A", "potential_B", "constant", "total"):
-                print(f"{context:<10} {piece:<14} {vt_abab[context][piece]:18.10f}")
+                output.echo(f"{context:<10} {piece:<14} {vt_abab[context][piece]:18.10f}")
 
-        print()
-        print("Checks")
-        print("------")
+        output.echo()
+        output.echo("Checks")
+        output.echo("------")
         checks = vt_abab["checks"]
-        print(
+        output.echo(
             f"{'standard + cavity - total':<32} "
             f"{checks['standard_plus_cavity_minus_total']:18.10e}"
         )
-        print(f"{'abs(cavity total)':<32} {checks['cavity_total_abs']:18.10e}")
-        print(
+        output.echo(f"{'abs(cavity total)':<32} {checks['cavity_total_abs']:18.10e}")
+        output.echo(
             f"{'compute_Elst100 - diagnostic':<32} "
             f"{checks['compute_Elst100_minus_diagnostic_total']:18.10e}"
         )

@@ -1,6 +1,7 @@
 import psi4
 import numpy as np
 import opt_einsum as oe
+from . import output
 #from pkg_resources import parse_version
 
 if True: #parse_version(psi4.__version__) >= parse_version("1.3a1"):
@@ -73,6 +74,7 @@ class CQEDSCF:
         method=None,
         functional=None,
         debug=False,
+        quiet=False,
     ):
         self.geometry = geometry
         self.lambda_vector = np.asarray(lambda_vector, dtype=float)
@@ -81,6 +83,7 @@ class CQEDSCF:
         self.density_fitting = density_fitting
         self.functional = functional
         self.debug = debug
+        self.quiet = quiet
 
         # infer method if not explicitly provided
         if method is None:
@@ -112,14 +115,14 @@ class CQEDSCF:
     # -------------------------
 
     def run(self):
-        print("Starting CQED-SCF calculation...")
-        print(f"Method: {self.method.upper()}")
+        output.echo("Starting CQED-SCF calculation...")
+        output.echo(f"Method: {self.method.upper()}")
         if self.functional is not None:
-            print(f"Functional: {self.functional}")
+            output.echo(f"Functional: {self.functional}")
         if self.density_fitting:
-            print("Using density fitting through Psi4 JK.")
+            output.echo("Using density fitting through Psi4 JK.")
         else:
-            print("Using conventional JK through Psi4 JK.")
+            output.echo("Using conventional JK through Psi4 JK.")
 
         self._prepare_options()
 
@@ -189,10 +192,10 @@ class CQEDSCF:
 
         if self.debug and self.is_dft:
             f = self.Vpot.functional()
-            print("Functional info:")
-            print("  x_alpha =", f.x_alpha())
-            print("  x_beta  =", f.x_beta())
-            print("  x_omega =", f.x_omega())
+            output.echo("Functional info:")
+            output.echo(f"  x_alpha = {f.x_alpha()}")
+            output.echo(f"  x_beta  = {f.x_beta()}")
+            output.echo(f"  x_omega = {f.x_omega()}")
 
 
         diis = DIISSubspace(max_dim=6)
@@ -272,22 +275,22 @@ class CQEDSCF:
                         E_wK = oe.contract("pq,pq->", wK, D)
 
             if self.debug:
-                print(
+                output.echo(
                     f"CQED Iter {it:3d}: "
                     f"E = {E:18.10f}  "
                     f"dE = {E - Eold: .8e}  "
                     f"dRMS = {dRMS: .8e}"
                 )
                 # print energy components
-                print(f"  E_H = {E_H:18.10f}")
+                output.echo(f"  E_H = {E_H:18.10f}")
                 if self.is_dft:
-                    print(f"  E_Exc = {Exc:18.10f}")
-                print(f"  E_J = {E_J:18.10f}")
+                    output.echo(f"  E_Exc = {Exc:18.10f}")
+                output.echo(f"  E_J = {E_J:18.10f}")
                 if K is not None:
-                    print(f"  E_K = {-self.x_alpha * E_K:18.10f}")
+                    output.echo(f"  E_K = {-self.x_alpha * E_K:18.10f}")
                 if wK is not None:
-                    print(f"  E_wK = {-beta * E_wK:18.10f}")
-                print(f"  E_N = {-E_N:18.10f}") 
+                    output.echo(f"  E_wK = {-beta * E_wK:18.10f}")
+                output.echo(f"  E_N = {-E_N:18.10f}") 
 
             if abs(E - Eold) < e_conv and dRMS < d_conv:
                 break

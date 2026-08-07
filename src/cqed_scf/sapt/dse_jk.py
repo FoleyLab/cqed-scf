@@ -4,6 +4,8 @@ import numpy as np
 from psi4 import core
 import opt_einsum as oe
 
+from .. import output
+
 
 def _asarray(matrix):
     """Return a NumPy view/copy for Psi4 matrices and array-like inputs."""
@@ -206,7 +208,7 @@ class PauliFierzJK:
 
     def print_header(self):
         self.eri_jk.print_header()
-        if self.dse_jk is not None:
+        if self.dse_jk is not None and not output.is_quiet():
             state = "active" if self.dse_jk.is_active() else "inactive"
             core.print_out(f"  Pauli-Fierz/DSE JK adapter enabled ({state}).\n")
 

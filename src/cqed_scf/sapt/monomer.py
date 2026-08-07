@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Optional
 
 from ..references import CQEDConfig
+from .. import output
 
 
 @dataclass
@@ -142,8 +143,8 @@ class SAPTMonomer:
         else:
             from ..scf import CQEDSCF
             if monomer_config.debug:
-                print("Running monomer CQED-SCF reference for", label)
-                print("Geometry:", geometry)
+                output.echo(f"Running monomer CQED-SCF reference for {label}")
+                output.echo(f"Geometry: {geometry}")
             scf = CQEDSCF(
                 geometry=geometry,
                 lambda_vector=monomer_config.lambda_vector,
@@ -153,10 +154,11 @@ class SAPTMonomer:
                 method=monomer_config.scf_method,
                 functional=monomer_config.base_scf_functional,
                 debug=monomer_config.debug,
+                quiet=monomer_config.quiet,
             )
             _, scf_results = scf.run()
             if monomer_config.debug:
-                print("Monomer SCF energy:", scf_results.get("energy_scf"))
+                output.echo(f"Monomer SCF energy: {scf_results.get('energy_scf')}")
 
         return cls.from_scf_results(
             label=label,

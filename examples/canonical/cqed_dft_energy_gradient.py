@@ -53,6 +53,10 @@ config = CQEDConfig(
     multiplicity=1,
     dispersion_policy="none",
     debug=False,
+    quiet=False,  # NORMAL: default verbosity.
+    # NOTE: gradient-path prints (CQEDGradient timings/components) are not yet
+    # routed through cqed_scf.output (Stage B), so quiet=True would silence only
+    # the SCF/energy portion. Normal mode is the meaningful setting here today.
 )
 
 

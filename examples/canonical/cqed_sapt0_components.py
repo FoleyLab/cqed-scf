@@ -53,7 +53,8 @@ config = CQEDConfig(
     charge=0,
     multiplicity=1,
     dispersion_policy="none",
-    debug=False,
+    debug=True,   # VERBOSE: add SCF/component detail (debug route via output.echo)
+    quiet=False,  # keep normal verbosity so the verbose detail is emitted
 )
 
 
