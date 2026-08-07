@@ -1,5 +1,11 @@
 # STDOUT_PLAN_A — Shared output layer + quiet flag
 
+You are working in `/Users/jfoley19/Code/cqed-scf`
+
+Conda env: `p4dev` at `/Users/jfoley19/miniforge3/envs/p4dev`
+
+Branch: `main`
+
 This is the **first stage** of a multi-stage effort to make CQED-SCF stdout
 printing more consistent with standard quantum chemistry packages (Psi4,
 Gaussian, NWChem). Stage A establishes the *infrastructure* only: a single
