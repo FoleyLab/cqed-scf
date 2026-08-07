@@ -1,5 +1,9 @@
 # STDOUT_PLAN_A — Shared output layer + quiet flag
 
+> **Status: IMPLEMENTED and reviewed on `main`.** This document is the
+> historical specification for Stage A. Everything it describes is live; see
+> STDOUT_PLAN_B.md for the implementation summary and Stage B plans.
+
 You are working in `/Users/jfoley19/Code/cqed-scf`
 
 Conda env: `p4dev` at `/Users/jfoley19/miniforge3/envs/p4dev`
