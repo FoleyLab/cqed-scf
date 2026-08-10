@@ -169,21 +169,45 @@ class CQEDGradient:
             )
         )
 
-        grad = np.zeros((natom, 3))
-        for A in range(natom):
-            for cart in range(3):
-                i = 3 * A + cart
-                grad[A, cart] -= 0.5 * lam[0] ** 2 * multipole[i, 3]
-                grad[A, cart] -= 0.5 * lam[1] ** 2 * multipole[i, 6]
-                grad[A, cart] -= 0.5 * lam[2] ** 2 * multipole[i, 8]
-                grad[A, cart] -= lam[0] * lam[1] * multipole[i, 4]
-                grad[A, cart] -= lam[0] * lam[2] * multipole[i, 5]
-                grad[A, cart] -= lam[1] * lam[2] * multipole[i, 7]
+        #=========================
+        # Quadrupole contribution to the gradient the way it makes sense to me (i.e., the way I derived it). 
+        #=========================
+        #grad = np.zeros((natom, 3))
+        #for A in range(natom):
+        #    for cart in range(3):
+        #        i = 3 * A + cart
+        #        grad[A, cart] -= 0.5 * lam[0] ** 2 * multipole[i, 3]
+        #        grad[A, cart] -= 0.5 * lam[1] ** 2 * multipole[i, 6]
+        #        grad[A, cart] -= 0.5 * lam[2] ** 2 * multipole[i, 8]
+        #        grad[A, cart] -= lam[0] * lam[1] * multipole[i, 4]
+        #        grad[A, cart] -= lam[0] * lam[2] * multipole[i, 5]
+        #        grad[A, cart] -= lam[1] * lam[2] * multipole[i, 7]
 
+        #if self.debug:
+        #    print("\nQuadrupole gradient:\n", grad)
+
+
+        #==========================
+        # Quadrupole contribution to the gradient the way GPT 5.5 says is equivalent
+        #==========================
+
+        # define coefficient vector
+        lx, ly, lz = lam
+        coeffs = np.array([
+            -0.5 * lx**2, -lx * ly, -lx * lz,
+            -0.5 * ly**2, -ly * lz,
+            -0.5 * lz**2
+        ])
+
+        dse_grad = multipole[:, 3:9] @ coeffs
+        dse_grad = dse_grad.reshape((natom, 3))
         if self.debug:
             print("\nQuadrupole gradient:\n", grad)
 
-        return grad
+        # you can build both ways and test if you don't believe... regressions still pass with this change, so I think it's fine.
+        #assert np.allclose(grad, dse_grad, atol=1e-10), "Quadrupole gradient mismatch!"
+
+        return dse_grad
 
     def _dipole_dipole_gradient(self, scf):
         D = scf["density"]
