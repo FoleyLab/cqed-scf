@@ -202,7 +202,7 @@ class CQEDGradient:
         dse_grad = multipole[:, 3:9] @ coeffs
         dse_grad = dse_grad.reshape((natom, 3))
         if self.debug:
-            print("\nQuadrupole gradient:\n", grad)
+            print("\nQuadrupole gradient:\n", dse_grad)
 
         # you can build both ways and test if you don't believe... regressions still pass with this change, so I think it's fine.
         #assert np.allclose(grad, dse_grad, atol=1e-10), "Quadrupole gradient mismatch!"
