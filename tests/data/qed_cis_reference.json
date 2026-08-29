@@ -1,0 +1,59 @@
+{
+  "_comment": [
+    "Reference data for CQED response theory; Tier 0 of docs/development/QED_RESPONSE_PLAN.md.",
+    "All entries are (CQED-HF orbitals, coherent-state basis).",
+    "Provenance is recorded per entry: 'measured' values are transcribed from a tested",
+    "upstream suite; 'derived' values are computed here and are themselves under test.",
+    "NOTE: no trustworthy canonical-HF-orbital reference values exist upstream --",
+    "qed-ci's test_mghp_qed_cis_with_cavity_canonical_mo is an anti-test with its",
+    "asserts stripped.  Truncated CI is not orbital invariant; see plan section 0.5."
+  ],
+  "mghp_ccpvdz_2.2A": {
+    "geometry": "\nMg\nH 1 2.2\nsymmetry c1\n1 1\n",
+    "psi4_options": {
+      "basis": "cc-pVDZ",
+      "scf_type": "pk",
+      "e_convergence": 1e-10,
+      "d_convergence": 1e-10
+    },
+    "cases": {
+      "no_cavity": {
+        "omega": 0.0,
+        "lambda_vector": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "qed_ci_totals": {
+          "ground": -199.8639591041915,
+          "first_singlet": -199.6901102832973
+        },
+        "_provenance": "measured: qed-ci test_mghp_qed_cis_no_cavity, roots 0 and 4",
+        "excitation_energy_first_singlet": 0.1738488208942215
+      },
+      "cavity": {
+        "omega_ev": 4.75,
+        "lambda_vector": [
+          0.0,
+          0.0,
+          0.0125
+        ],
+        "qed_ci_totals": {
+          "ground": -199.86358254419457,
+          "lower_polariton": -199.69776087489558,
+          "upper_polariton": -199.68066502792058
+        },
+        "_provenance": "measured: qed-ci test_mghp_qed_cis_with_cavity, roots 0, 2, 5",
+        "helper_eigenvalue_1": 0.165570838,
+        "_helper_provenance": "measured: CS_CQED_CIS.py CASE 2 compare_values to 8 digits. This is E_LP - E_CQED_RHF, NOT an excitation energy.",
+        "cqed_rhf_energy": -199.8633317128956,
+        "_cqed_rhf_provenance": "DERIVED and under test: qed_ci lower_polariton minus helper_eigenvalue_1.",
+        "ground_relaxation_below_cqed_rhf": -0.00025083129898462175,
+        "excitation_energy_lp": 0.16582166929899245,
+        "excitation_energy_up": 0.18291751627398867,
+        "rabi_splitting": 0.01709584697499622,
+        "_excitation_provenance": "DERIVED: qed_ci total minus qed_ci ground; the true omega_k = E_k - E_0."
+      }
+    }
+  }
+}
