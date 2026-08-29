@@ -3,6 +3,20 @@
 Target module: `src/cqed_scf/response.py` (+ a new `src/cqed_scf/davidson.py`)
 Oracle: `RESPONSE_REFERENCE/CS_CQED_CIS.py` + `helper_CS_CQED_CIS.py` (QED-CIS-1, MgH+/cc-pVDZ)
 
+## Status
+
+| tier | state |
+|---|---|
+| 0 — oracle harness and SCF hygiene | **complete**, all tests green |
+| 1 — dense QED-CIS-1 in the new layout | **complete**, all tests green |
+| 2 — matrix-free sigma + Davidson | next |
+| 3 — QED-CIS-N, TDA-DFT, density fitting | not started |
+| 4 — QED-TDHF / QED-LR-TDDFT | deferred, out of current scope |
+| 5 — integration, API, docs | not started |
+
+Tier 0 also turned up a live defect in QED-SAPT0 unrelated to response theory;
+see `docs/development/psi4_array_aliasing.md`.
+
 ---
 
 ## 0. What the source inspection established
@@ -279,7 +293,7 @@ loop to fill it, and an `O(n_ov³)` full diagonalization.
 
 ## 3. Tiers
 
-### Tier 0 — Oracle harness and SCF hygiene *(no new physics)*
+### Tier 0 — Oracle harness and SCF hygiene *(no new physics)* — COMPLETE
 
 **Deliverables**
 - `tests/data/qed_cis_reference.json` — **two oracles, not one.**
@@ -313,7 +327,7 @@ regressions still pass.
 
 ---
 
-### Tier 1 — Dense QED-CIS-1 in the new layout *(correctness anchor)*
+### Tier 1 — Dense QED-CIS-1 in the new layout *(correctness anchor)* — COMPLETE
 
 **Deliverables**
 - `QEDCIS` in `response.py`: `build_dense_hamiltonian()` + `numpy.linalg.eigh`.
@@ -349,8 +363,25 @@ against. All sign and factor conventions get nailed here, once.
 - `ω = 0, λ = 0` → exactly canonical CIS.
 - `ignore_dse_terms` and `ignore_coupling` switches reproduce the corresponding `qed-ci` limits.
 
-**Exit criterion** — bit-comparable to the oracle; the dense builder becomes `_reference_hamiltonian`
-for later tiers, marked as O(N⁴)-memory and test-only.
+**Exit criterion** — MET. `test_full_spectrum_matches_cs_cqed_cis_oracle` and
+`test_totals_match_qed_ci` both pass on MgH+/cc-pVDZ, so the layout is confirmed against both
+oracles on real integrals. `QEDCIS.build_dense_hamiltonian()` is now the internal oracle for
+Tier 2's sigma column test.
+
+The synthetic layout tests (`tests/test_qed_cis_layout.py`) go further than the spectrum: they
+show `P H_ours Pᵀ = H_reference` **elementwise** to 4e-16 under the explicit index map, which pins
+every sign, factor and ladder coefficient rather than only the eigenvalues. They need no SCF and
+run in ~0.1 s.
+
+**Two traps worth carrying into Tier 2:**
+
+1. **Never deduplicate a spectrum to remove basis replication.** `np.unique` cannot tell a photon
+   copy from a physically degenerate root; on MgH+ it silently ate a Π pair and shifted every later
+   root up by one. At `ω = 0` the photon copies are exact, so `spectrum[::2]` halves every
+   multiplicity uniformly and preserves the physics — with an assertion that the pairing really is
+   exact before slicing. Davidson root-following in Tier 2 faces the same hazard.
+2. **`save_jk: True` belongs in the shared psi4 options** — the oracle's own `options_dict` carries
+   it, and `tdscf_excitations` reads the JK object off the wavefunction.
 
 ---
 

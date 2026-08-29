@@ -14,7 +14,8 @@
       "basis": "cc-pVDZ",
       "scf_type": "pk",
       "e_convergence": 1e-10,
-      "d_convergence": 1e-10
+      "d_convergence": 1e-10,
+      "save_jk": true
     },
     "cases": {
       "no_cavity": {
@@ -54,6 +55,7 @@
         "rabi_splitting": 0.01709584697499622,
         "_excitation_provenance": "DERIVED: qed_ci total minus qed_ci ground; the true omega_k = E_k - E_0."
       }
-    }
+    },
+    "_psi4_options_note": "save_jk mirrors RESPONSE_REFERENCE/CS_CQED_CIS.py's options_dict and is required by psi4's tdscf_excitations, which reads the JK object off the wfn."
   }
 }
