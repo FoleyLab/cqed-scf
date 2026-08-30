@@ -10,9 +10,9 @@ Oracle: `RESPONSE_REFERENCE/CS_CQED_CIS.py` + `helper_CS_CQED_CIS.py` (QED-CIS-1
 | 0 — oracle harness and SCF hygiene | **complete**, all tests green |
 | 1 — dense QED-CIS-1 in the new layout | **complete**, all tests green |
 | 2 — matrix-free sigma + Davidson | **complete**, all tests green |
-| 3 — QED-CIS-N, TDA-DFT, density fitting | next (`N_ph` already general) |
+| 3 — QED-CIS-N, TDA-DFT, density fitting | **complete**, all tests green |
 | 4 — QED-TDHF / QED-LR-TDDFT | deferred, out of current scope |
-| 5 — integration, API, docs | not started |
+| 5 — integration, API, docs | next |
 
 Tier 0 also turned up a live defect in QED-SAPT0 unrelated to response theory;
 see `docs/development/psi4_array_aliasing.md`.
@@ -432,7 +432,7 @@ build is infeasible (e.g. water dimer / aug-cc-pVDZ, 5 roots).
 
 ---
 
-### Tier 3 — Generalization
+### Tier 3 — Generalization — COMPLETE
 
 - **3.1 QED-CIS-N** — arbitrary `N_ph`. Essentially free given the layout; the work is the
   convergence study (roots vs `N_ph`) and documenting when `N_ph = 1` is sufficient.
@@ -441,6 +441,24 @@ build is infeasible (e.g. water dimer / aug-cc-pVDZ, 5 roots).
   Range-separated: add the `wK` term following `scf.py`'s existing pattern.
 - **3.3 Density fitting** — automatic through `psi4.core.JK` when `scf_type = df`. The DSE terms
   are already factorized and DF-free. Test against `tests/test_df_water_regression.py` conventions.
+
+**Exit criterion** — MET. `tests/test_qed_cis_tier3.py` is green: the KS route agrees with the
+JK route on a Hartree-Fock reference, PBE and B3LYP reproduce `psi4 tdscf_excitations(tda=True)`
+at λ=0, the ground state converges variationally in `N_ph`, and density fitting reproduces
+conventional integrals.
+
+**Two things found here:**
+
+1. **Psi4's `_combine_A` returns −A·X and its caller negates it.** Transcribing that method
+   verbatim — including its own docstring, which reads `A X = [(εa − εi) + 2J − K] X` — gives a
+   global sign error on the two-electron block. A function's docstring describes its meaning, not
+   necessarily its return value. The HF cross-check caught it in one run precisely because it
+   involves no functional: when it and the DFT tests failed *together*, the XC kernel was
+   exonerated and only the combination was suspect.
+2. **The `O(N⁴)` MO transformation was running on every path.** `build_orbital_blocks` computed
+   `mints.mo_eri` unconditionally, which defeated the point of Tier 2. It is now lazy — materialized
+   only for the explicit builder and the dense engine — with a test asserting the Davidson path
+   leaves it unbuilt.
 
 ---
 

@@ -554,6 +554,43 @@ a \emph{single} $J/K$ evaluation, so one eigensolver iteration costs one pass
 over the integrals irrespective of the number of trial vectors or the value of
 $\nph$.
 
+\paragraph{Explicit integrals are never formed.} Eq.~\eqref{eq:erisigma} needs
+only $J$ and $K$ in the AO basis, so the $O(N^4)$ molecular-orbital
+transformation is not required on the iterative path. It is performed lazily,
+and only for the explicit-Hamiltonian builder used as a test oracle.
+
+\subsection{Kohn--Sham references}
+\label{sec:ks}
+
+For a Kohn--Sham reference the two-electron block additionally carries the
+exchange--correlation kernel, which --- unlike $J$ and $K$ --- has no
+molecular-orbital integral form. Rather than reconstruct its factors, the
+implementation calls the routine that Psi4's own TDA engine uses,
+\begin{center}
+\texttt{wfn.twoel\_Hx\_full(vectors, False, "SO", singlet)},
+\end{center}
+and combines the result exactly as Psi4 does: the returned $J$-like quantity
+already contains the XC kernel, and the $K$-like quantity already contains the
+hybrid exchange fraction and any range-separated contribution. Inheriting the
+convention is safer than reproducing it, because the factors then track whatever
+functional is in use.
+
+\paragraph{A sign trap.} Psi4's \texttt{\_combine\_A} returns $-\bm{A}\bm{X}$;
+its caller negates the result. Transcribing \texttt{\_combine\_A} alone --- even
+verbatim, and even though its own docstring reads
+$\bm{A}\bm{X} = [(\varepsilon_a - \varepsilon_i) + 2J - K]\bm{X}$ --- yields a
+global sign error on the two-electron block. It is worth having a test that
+compares the Kohn--Sham route against the plain $J/K$ route on a Hartree--Fock
+reference, where the two must agree exactly: that comparison isolates the
+combination and its sign from the XC kernel itself.
+
+\paragraph{Consequence for the explicit build.} Because no molecular-orbital
+form exists, the $\nov \times \nov$ two-electron block of a Kohn--Sham
+calculation is assembled by applying the action to unit vectors --- one batched
+pass. The resulting transpose convention should be pinned with a deliberately
+\emph{non-symmetric} probe; a symmetric one cannot distinguish $\bm{M}$ from
+$\bm{M}^{\mathsf{T}}$ and would pass with the convention inverted.
+
 \subsection{Cost}
 
 \begin{table}[h]

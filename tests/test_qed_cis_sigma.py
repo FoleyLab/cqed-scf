@@ -206,3 +206,111 @@ def test_results_carry_polaritonic_character():
 def test_unknown_solver_is_rejected():
     with pytest.raises(ValueError, match="dense.*davidson|davidson"):
         _build().kernel(solver="lanczos")
+
+
+# ---------------------------------------------------------------------------
+# Tier 3: the Kohn-Sham column-build path
+#
+# A KS reference has no explicit MO-integral form for its two-electron block --
+# the XC kernel is not an integral -- so the block is assembled by applying the
+# integral engine to unit vectors.  These tests exercise that plumbing with a
+# mock engine, so they cover the transpose convention and the interaction with
+# lazy MO integrals without needing Psi4 or a quadrature grid.
+# ---------------------------------------------------------------------------
+
+
+class _MockKernelEngine:
+    """Stands in for Psi4HxERIEngine: an action with no explicit integral form."""
+
+    requires_column_build = True
+
+    def __init__(self, matrix):
+        self.matrix = np.asarray(matrix)
+        self.n_builds = 0
+
+    def ov_sigma(self, X):
+        self.n_builds += 1
+        X = np.asarray(X)
+        flat = X.reshape(-1, self.matrix.shape[0])
+        return (flat @ self.matrix.T).reshape(X.shape)
+
+    def ov_diagonal(self):
+        return None
+
+
+def _build_ks(matrix, n_photon=1, no=3, nv=4, seed=11):
+    rng = np.random.default_rng(seed)
+    nmo = no + nv
+    d = rng.normal(size=(nmo, nmo)) * 0.05
+    d = 0.5 * (d + d.T)
+    eps = np.sort(rng.normal(size=nmo))
+
+    cis = QEDCIS(n_photon=n_photon)
+    cis.ndocc, cis.nvirt, cis.nmo, cis.n_ov = no, nv, nmo, no * nv
+    cis.omega, cis.scf_energy = 0.1745, 0.0
+    cis.F_oo, cis.F_vv = np.diag(eps[:no]), np.diag(eps[no:])
+    cis.F_ov = np.zeros((no, nv))
+    cis.d_oo, cis.d_ov, cis.d_vv = d[:no, :no], d[:no, no:], d[no:, no:]
+    cis.is_ks = True
+    cis._eri_engine = _MockKernelEngine(matrix)
+    cis._prepared = True
+    return cis
+
+
+def test_column_build_recovers_the_two_electron_block_not_its_transpose():
+    """Pinned with a deliberately NON-symmetric probe.
+
+    A symmetric probe cannot distinguish M from M^T, so it would pass even with
+    the transpose convention inverted -- and the error would only surface later
+    as an asymmetric Hamiltonian on a real KS run.
+    """
+
+    nov = 3 * 4
+    rng = np.random.default_rng(11)
+    matrix = rng.normal(size=(nov, nov))
+
+    recovered = _build_ks(matrix)._two_electron_block()
+
+    np.testing.assert_allclose(recovered, matrix, atol=1e-13)
+    assert not np.allclose(recovered, matrix.T)  # the probe really is asymmetric
+
+
+def test_ks_path_sigma_reproduces_the_dense_hamiltonian():
+    nov = 3 * 4
+    rng = np.random.default_rng(11)
+    matrix = rng.normal(size=(nov, nov))
+    matrix = 0.5 * (matrix + matrix.T)
+
+    cis = _build_ks(matrix)
+    np.testing.assert_allclose(
+        _implied_matrix(cis), cis.build_dense_hamiltonian(), atol=1e-12
+    )
+
+
+def test_ks_path_davidson_matches_dense():
+    nov = 3 * 4
+    rng = np.random.default_rng(11)
+    matrix = rng.normal(size=(nov, nov))
+    matrix = 0.5 * (matrix + matrix.T)
+
+    cis = _build_ks(matrix)
+    dense = cis.kernel(solver="dense")
+    davidson = cis.kernel(nroots=5, solver="davidson", tol=1e-10)
+
+    assert davidson.davidson.converged
+    np.testing.assert_allclose(davidson.eigenvalues, dense.eigenvalues[:5], atol=1e-9)
+
+
+def test_ks_path_never_materialises_mo_integrals():
+    """The O(N^4) transformation must stay unbuilt on the matrix-free path."""
+
+    nov = 3 * 4
+    rng = np.random.default_rng(11)
+    matrix = rng.normal(size=(nov, nov))
+    matrix = 0.5 * (matrix + matrix.T)
+
+    cis = _build_ks(matrix)
+    cis.kernel(nroots=4, solver="davidson", tol=1e-10)
+    cis.build_dense_hamiltonian()
+
+    assert cis.ovov is None and cis.oovv is None

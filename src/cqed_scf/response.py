@@ -217,6 +217,13 @@ class QEDCIS(CQEDResponse):
         # which is the only basis wired up so far.
         self.reference_shift = 0.0
 
+        # Set here as well as in build_orbital_blocks so that a driver
+        # constructed with orbital blocks assigned by hand (as the synthetic
+        # tests do, bypassing build_orbital_blocks) is fully formed.
+        self.is_ks = False
+        self.ovov = None
+        self.oovv = None
+
         self._prepared = False
 
     # -------------------------
@@ -261,14 +268,18 @@ class QEDCIS(CQEDResponse):
         self.d_ov = d_mo[:no, no:]
         self.d_vv = d_mo[no:, no:]
 
-        # ERIs over the CQED orbitals, via Psi4's transformation
-        mints = res["mints"]
-        Co = psi4.core.Matrix.from_array(np.ascontiguousarray(self.C[:, :no]))
-        Cv = psi4.core.Matrix.from_array(np.ascontiguousarray(self.C[:, no:]))
-        self.ovov = np.asarray(mints.mo_eri(Co, Cv, Co, Cv))  # (ia|jb)
-        self.oovv = np.asarray(mints.mo_eri(Co, Co, Cv, Cv))  # (ij|ab)
+        # Explicit MO ERIs are deferred: the transformation is O(N^4) and the
+        # matrix-free path never needs it.  _ensure_mo_eri() materialises them
+        # for the dense builder and the dense integral engine.
+        self.ovov = None
+        self.oovv = None
+
+        # Kohn-Sham references route the two-electron action through Psi4 so
+        # that the XC kernel and hybrid scaling follow Psi4's own convention.
+        self.is_ks = res.get("functional") is not None
 
         # cartesian electronic dipole in the MO basis, for transition properties
+        mints = res["mints"]
         self.mu_mo = np.array(
             [self.C.T @ np.asarray(component) @ self.C for component in mints.ao_dipole()]
         )
@@ -278,6 +289,46 @@ class QEDCIS(CQEDResponse):
     # -------------------------
     # the two unique blocks
     # -------------------------
+
+    def _ensure_mo_eri(self) -> None:
+        """Materialise (ia|jb) and (ij|ab) on first use.
+
+        Only the explicit-Hamiltonian path and DenseERIEngine need these; the
+        Davidson path goes through J/K builds and never forms them.
+        """
+
+        if self.ovov is not None and self.oovv is not None:
+            return
+
+        import psi4
+
+        no = self.ndocc
+        mints = self.scf_results["mints"]
+        Co = psi4.core.Matrix.from_array(np.ascontiguousarray(self.C[:, :no]))
+        Cv = psi4.core.Matrix.from_array(np.ascontiguousarray(self.C[:, no:]))
+        self.ovov = np.asarray(mints.mo_eri(Co, Cv, Co, Cv))  # (ia|jb)
+        self.oovv = np.asarray(mints.mo_eri(Co, Co, Cv, Cv))  # (ij|ab)
+
+    def _two_electron_block(self) -> np.ndarray:
+        """The (n_ov x n_ov) two-electron block of A.
+
+        For Hartree-Fock this is 2(ia|jb) - (ij|ab) from explicit integrals.
+        For Kohn-Sham it also carries the XC kernel and the hybrid exchange
+        scaling, neither of which is available as a simple MO integral, so it is
+        assembled by applying the integral engine to unit vectors -- one batched
+        pass, and exactly the action the Davidson path uses.
+        """
+
+        if not self.is_ks:
+            # An explicit MO-integral form always exists for a non-KS reference,
+            # and using it avoids constructing an integral engine at all -- which
+            # keeps the dense path importable without Psi4 for synthetic tests.
+            self._ensure_mo_eri()
+            block = 2.0 * self.ovov - self.oovv.transpose(0, 2, 1, 3)
+            return block.reshape(self.n_ov, self.n_ov)
+
+        identity = np.eye(self.n_ov).reshape(self.n_ov, self.ndocc, self.nvirt)
+        return self.eri_engine.ov_sigma(identity).reshape(self.n_ov, self.n_ov).T
 
     def build_electronic_block(self) -> np.ndarray:
         """A_el, the photon-independent electronic block, shape (n_ov, n_ov)."""
@@ -291,14 +342,11 @@ class QEDCIS(CQEDResponse):
         A = oe.contract("ab,ij->iajb", self.F_vv, eye_o, optimize="optimal")
         A -= oe.contract("ij,ab->iajb", self.F_oo, eye_v, optimize="optimal")
 
-        A += 2.0 * self.ovov
-        A -= self.oovv.transpose(0, 2, 1, 3)
-
         # dipole self-energy: rank-one direct term minus a separable exchange term
         A += 2.0 * oe.contract("ia,jb->iajb", self.d_ov, self.d_ov, optimize="optimal")
         A -= oe.contract("ij,ab->iajb", self.d_oo, self.d_vv, optimize="optimal")
 
-        return A.reshape(self.n_ov, self.n_ov)
+        return A.reshape(self.n_ov, self.n_ov) + self._two_electron_block()
 
     def build_coupling_block(self) -> np.ndarray:
         """G, the photon-independent bilinear coupling, shape (n_ov, n_ov).
@@ -521,8 +569,20 @@ class QEDCIS(CQEDResponse):
         if engine is None:
             if not self._prepared:
                 self.build_orbital_blocks()
-            if self.integral_backend == "dense_eri":
+            backend = self.integral_backend
+            if backend in ("full_eri", "df", None):
+                # auto: Kohn-Sham needs the XC kernel, which only Psi4 supplies
+                backend = "psi4_hx" if self.is_ks else "jk"
+
+            if backend == "dense_eri":
+                self._ensure_mo_eri()
                 engine = DenseERIEngine(self.ovov, self.oovv)
+            elif backend == "psi4_hx":
+                engine = Psi4HxERIEngine(
+                    self.scf_results["wfn"],
+                    self.C[:, : self.ndocc],
+                    self.C[:, self.ndocc :],
+                )
             else:
                 engine = JKERIEngine(
                     self._build_generalized_jk(),
@@ -739,3 +799,100 @@ class JKERIEngine:
 
     def ov_diagonal(self):
         return None  # not available without a transformation; not needed
+
+
+class Psi4HxERIEngine:
+    """Two-electron action through Psi4's own TDA machinery.
+
+    Required for Kohn-Sham references, where the two-electron block carries an
+    exchange-correlation kernel that is not expressible as MO integrals.  Rather
+    than reconstruct the factors, this calls the same routine Psi4's own TDSCF
+    engine uses and combines the pieces the same way
+    (``psi4/driver/procrouting/response/scf_products.py::_combine_A``):
+
+        A X = F X + C_o^T ( 2 J_like - K_like ) C_v
+
+    with ``J_like`` returned by ``twoel_Hx_full`` already carrying the XC kernel
+    (for a KS reference) and ``K_like`` already carrying the hybrid exchange
+    fraction and any range-separated contribution.  Inheriting that convention
+    is safer than reproducing it: the factors live in Psi4 and follow whatever
+    functional is in play.  The one-electron (Fock) part is *not* taken from
+    Psi4's ``onel_Hx`` -- this class supplies only the two-electron action,
+    because QEDCIS needs the general non-canonical Fock form.
+
+    Note that ``twoel_Hx_full`` builds its response density from the
+    wavefunction's own orbitals.  ``CQEDSCF`` writes the converged CQED orbitals
+    into the wavefunction, so this is consistent for the CQED-orbital path; a
+    canonical-HF-orbital run would need the wavefunction's coefficients reset
+    first, and is not supported through this engine.
+    """
+
+    requires_column_build = True  # no cheap explicit-integral form exists
+
+    def __init__(self, wfn, Co, Cv, singlet: bool = True):
+        self.wfn = wfn
+        self.Co = np.ascontiguousarray(Co)
+        self.Cv = np.ascontiguousarray(Cv)
+        self.singlet = bool(singlet)
+        self.n_builds = 0
+
+        # Mirror Psi4's TDRSCFEngine.__init__.  An RHF wavefunction may not
+        # expose a functional in every Psi4 version, in which case the
+        # Hartree-Fock answer (full exchange, Coulomb present) is correct.
+        try:
+            functional = wfn.functional()
+            self.needs_K_like = functional.is_x_hybrid() or functional.is_x_lrc()
+            self.needs_J_like = self.singlet or functional.needs_xc()
+        except (AttributeError, RuntimeError):
+            self.needs_K_like = True
+            self.needs_J_like = True
+
+    def ov_sigma(self, X):
+        import psi4
+
+        X = np.asarray(X)
+        vectors = [
+            psi4.core.Matrix.from_array(np.ascontiguousarray(amplitude))
+            for amplitude in X
+        ]
+
+        if hasattr(self.wfn, "twoel_Hx_full"):
+            twoel = self.wfn.twoel_Hx_full(vectors, False, "SO", self.singlet)
+        elif hasattr(self.wfn, "twoel_Hx"):
+            if not self.singlet:
+                raise NotImplementedError(
+                    "this Psi4 build exposes only twoel_Hx, which cannot select "
+                    "the triplet two-electron combination"
+                )
+            twoel = self.wfn.twoel_Hx(vectors, False, "SO")
+        else:
+            raise RuntimeError(
+                "the Psi4 wavefunction exposes neither twoel_Hx_full nor "
+                "twoel_Hx; a Kohn-Sham QED-CIS reference cannot be built"
+            )
+        self.n_builds += 1
+
+        if self.needs_K_like:
+            J_like, K_like = twoel[0::2], twoel[1::2]
+        else:
+            J_like, K_like = twoel, None
+
+        out = np.empty_like(X)
+        for index in range(X.shape[0]):
+            G = np.zeros((self.Co.shape[0], self.Co.shape[0]))
+            if self.needs_J_like:
+                G += 2.0 * np.asarray(J_like[index])
+            if K_like is not None:
+                G -= np.asarray(K_like[index])
+            # Overall sign: Psi4's _combine_A returns -A X, and its caller
+            # (TDRSCFEngine.compute_products) negates the result afterwards --
+            #     AX_new = self._combine_A(Fx, Jx, Kx)
+            #     for Ax in AX_new:
+            #         self.vector_scale(-1.0, Ax)
+            # Transcribing _combine_A alone therefore gives the wrong sign.  Do
+            # not "simplify" this negation away.
+            out[index] = -(self.Co.T @ G @ self.Cv)
+        return out
+
+    def ov_diagonal(self):
+        return None
