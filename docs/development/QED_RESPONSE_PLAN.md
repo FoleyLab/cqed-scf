@@ -9,8 +9,8 @@ Oracle: `RESPONSE_REFERENCE/CS_CQED_CIS.py` + `helper_CS_CQED_CIS.py` (QED-CIS-1
 |---|---|
 | 0 — oracle harness and SCF hygiene | **complete**, all tests green |
 | 1 — dense QED-CIS-1 in the new layout | **complete**, all tests green |
-| 2 — matrix-free sigma + Davidson | next |
-| 3 — QED-CIS-N, TDA-DFT, density fitting | not started |
+| 2 — matrix-free sigma + Davidson | **complete**, all tests green |
+| 3 — QED-CIS-N, TDA-DFT, density fitting | next (`N_ph` already general) |
 | 4 — QED-TDHF / QED-LR-TDDFT | deferred, out of current scope |
 | 5 — integration, API, docs | not started |
 
@@ -270,19 +270,27 @@ off-diagonal forms follow from it, and both reduce to the reference's `Hep` at `
 σ.c[n]   += −√((n+1)ω)·⟨d_ov, X.t[n+1]⟩
 ```
 
-**Cost claim.** One Davidson iteration = `(N_ph+1) × ` one JK build. Everything cavity-specific is
-`O(N³)` or cheaper. Compare the reference: `O((2 n_ov)²)` complex storage, an `O(n_ov²)` Python
-loop to fill it, and an `O(n_ov³)` full diagonalization.
+**Cost claim.** *Measured, and better than this plan originally budgeted.* Queueing every trial
+vector and every photon block into a single `jk.compute()` makes one Davidson iteration cost
+**one JK pass**, not `(N_ph+1)` of them — `tests/test_qed_cis_sigma.py` asserts
+`n_builds == n_iterations`. The DSE needs no JK call at all. Everything cavity-specific is `O(N³)`
+or cheaper. Compare the reference: `O((2 n_ov)²)` complex storage, an `O(n_ov²)` Python loop to
+fill it, and an `O(n_ov³)` full diagonalization.
 
 ### Davidson design notes
 
 - **Hermitian only**, as requested — symmetric Davidson-Liu, block, real arithmetic.
 - **Preconditioner**: `H_diag[n, ia] = (ε_a − ε_i) + nω + 2d_ia² − d_ii d_vv[a,a]`;
   `H_diag[n, 0] = nω`.
-- **Guess must include photonic seeds.** Take the union of (k lowest electronic diagonals per
-  photon block) and (all `|Φ_0, n⟩` for `n ≥ 1`). Without the latter, roots with dominant photon
-  character are missed or converge glacially — this is the single most common failure mode in
-  polaritonic Davidson implementations.
+- **Photonic seeds in the guess — cheap insurance, not a proven necessity.** Take the union of
+  (k lowest electronic diagonals per photon block) and (all `|Φ_0, n⟩`). *Corrected after
+  testing*: an earlier draft of this plan asserted that omitting them is "the single most common
+  failure mode in polaritonic Davidson implementations." That claim is not supported by anything
+  measured here. A case was constructed specifically to break it — an 86 %-photon root ranking
+  32nd of 66 by diagonal, outside the guess, with an engine supplying no two-electron diagonal
+  (the production JK situation) — and Davidson recovered it anyway, in 30 iterations versus 29
+  with the seed. The seeds cost `N_ph + 1` vectors and are kept as insurance; the strong claim is
+  withdrawn pending evidence.
 - **Degeneracy**: at `λ = 0` every root is `(N_ph+1)`-fold degenerate. Use a block size at least
   as large as the expected degeneracy, double Gram-Schmidt, and a tight linear-dependence drop
   threshold (~1e-6).
@@ -382,10 +390,22 @@ run in ~0.1 s.
    exact before slicing. Davidson root-following in Tier 2 faces the same hazard.
 2. **`save_jk: True` belongs in the shared psi4 options** — the oracle's own `options_dict` carries
    it, and `tdscf_excitations` reads the JK object off the wavefunction.
+0. **Energies and intensities deserve different tolerances.** Excitation energies are
+   eigenvalues (well conditioned); intensities depend on eigenvectors, whose components are ill
+   conditioned near degeneracies (~1/gap). Against psi4 on MgH+ the energies agree to <1e-7 Eh
+   while manifold-summed oscillator strengths agree to ~2.4e-6 absolute — a few ppm. Tolerances
+   of 1e-7 and 1e-5 respectively are the honest pairing.
+3. **Under exact degeneracy, per-root intensities are not well defined.** `eigh` returns an
+   arbitrary orthogonal mixture within a degenerate manifold, and oscillator strength
+   redistributes among its members; at `λ = 0, ω = 0` even the *ground* state is an arbitrary mix
+   of `|Φ_0,0⟩` and `|Φ_0,1⟩`, and since the dipole is photon-diagonal one member of a pair can
+   carry all the intensity and its partner none. Energies survive `[::2]`; intensities do not.
+   Compare **manifold sums**, which are basis independent. This is separate from trap 1 and bit
+   the oscillator-strength test even after trap 1 was fixed.
 
 ---
 
-### Tier 2 — Matrix-free sigma + Davidson *(the performance tier)*
+### Tier 2 — Matrix-free sigma + Davidson *(the performance tier)* — COMPLETE
 
 **Deliverables**
 - `QEDCISSigma`: JK-backed ERI action + analytic MO-block DSE action + coupling action, per §2.
