@@ -413,3 +413,54 @@ def test_zero_coupling_total_intensity_is_conserved(field_free_run):
     )
     assert np.all(grouped >= -1e-12)
     assert grouped[0] > 0.1  # the bright sigma state keeps its intensity
+
+
+@pytest.mark.slow
+def test_polariton_identification_by_photonic_reference_weight(cavity_run):
+    """The LP/UP pair must be found by weight on |Phi_0,1>, not by photon number.
+
+    Pinned against the independent qed-ci totals, so this catches a
+    misidentification rather than merely an internally-consistent one.
+    """
+
+    _, _, dense = cavity_run
+    lower, upper = dense.polariton_indices()
+    totals = dense.total_energies
+
+    assert totals[lower] == pytest.approx(
+        CAVITY["qed_ci_totals"]["lower_polariton"], abs=1e-6
+    )
+    assert totals[upper] == pytest.approx(
+        CAVITY["qed_ci_totals"]["upper_polariton"], abs=1e-6
+    )
+
+    # a genuine pair shares the one-photon reference character between them
+    shared = dense.reference_weights[[lower, upper], 1].sum()
+    assert 0.85 < shared < 1.15, f"photonic weight is not shared: {shared:.4f}"
+
+
+@pytest.mark.slow
+def test_total_photon_number_misidentifies_the_polaritons(cavity_run):
+    """Documents why polariton_indices exists.
+
+    Selecting the two roots with the largest <b+b> picks up a photon-dressed
+    state |Phi_i^a,1> -- near (bare transition + omega), photon number close to
+    one, mixing with nothing -- and drops the true lower polariton.  If this
+    test ever starts failing, the naive heuristic has become safe on this system
+    and the warning in polariton_indices' docstring should be revisited.
+    """
+
+    _, _, dense = cavity_run
+
+    correct = dense.polariton_indices()
+    excited = np.where(dense.excitation_energies > 1e-8)[0]
+    naive = sorted(excited[np.argsort(dense.photon_numbers[excited])[-2:]].tolist())
+
+    assert naive != correct
+
+    # specifically: the naive choice misses the lower polariton
+    lower = correct[0]
+    assert lower not in naive
+    assert dense.total_energies[lower] == pytest.approx(
+        CAVITY["qed_ci_totals"]["lower_polariton"], abs=1e-6
+    )

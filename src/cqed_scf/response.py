@@ -187,6 +187,35 @@ class QEDCISResults:
 
         return self.scf_energy + self.eigenvalues
 
+    def polariton_indices(self, count: int = 2, photon_state: int = 1):
+        """Roots carrying |Phi_0, n> character, ordered by energy.
+
+        A polariton is the mixture of the *bare photon* |Phi_0, n> with an
+        electronic excitation |Phi_i^a, 0>, so the quantity that identifies one
+        is the weight on the photonic reference state.
+
+        Do NOT select on ``photon_numbers`` instead.  That is
+        ``sum_n n w_n``, which counts every amplitude in the n-photon block --
+        including |Phi_i^a, n>, an electronic excitation *carrying* a photon.
+        Such a photon-dressed state has photon number near 1 while mixing with
+        nothing, and will outrank a genuine polariton.  On MgH+ at resonance it
+        does exactly that: the dressed state at (bare transition + omega) has
+        <b+b> = 0.91 and displaces the lower polariton at 0.48.
+
+        Returns
+        -------
+        list[int]
+            ``count`` root indices, sorted by increasing energy.  For a single
+            bright transition the default of two gives the LP/UP pair, whose
+            photonic reference weights should sum to close to one.
+        """
+
+        weights = self.reference_weights[:, photon_state]
+        count = min(int(count), weights.size)
+        selected = np.argsort(weights)[::-1][:count]
+        return sorted((int(index) for index in selected),
+                      key=lambda index: self.eigenvalues[index])
+
 
 class QEDCIS(CQEDResponse):
     """Dense QED-CIS-N in the photon-major basis.
@@ -896,3 +925,52 @@ class Psi4HxERIEngine:
 
     def ov_diagonal(self):
         return None
+
+
+def print_qed_cis_results(results: QEDCISResults, n_print: Optional[int] = None,
+                          title: str = "QED-CIS Excited States") -> None:
+    """Emit a results table through the package output layer.
+
+    Photon number is the column that makes the table interpretable: it is what
+    separates a polariton from a dark state, and a pair of polaritons formed
+    from one electronic transition should share the photon between them.
+    """
+
+    from . import output
+    from .utils import HARTREE_TO_EV
+
+    output.banner(title)
+    output.echo(f"  Reference energy   = {results.scf_energy:18.12f} Eh")
+    output.echo(f"  Ground state       = {results.total_energies[0]:18.12f} Eh")
+    output.echo(
+        f"  Ground relaxation  = {results.eigenvalues[0]:18.12f} Eh "
+        "(below the SCF reference)"
+    )
+    output.echo(f"  Photon frequency   = {results.omega:18.12f} Eh")
+    output.echo(f"  Fock states        = 0 .. {results.n_photon}")
+    output.echo()
+
+    count = results.eigenvalues.size if n_print is None else min(n_print, results.eigenvalues.size)
+    strengths = results.oscillator_strengths
+
+    headers = ["Root", "E (Eh)", "w (Eh)", "w (eV)", "<b+b>", "f (osc)"]
+    widths = [6, 20, 14, 12, 10, 12]
+    rows = []
+    for root in range(count):
+        rows.append([
+            str(root),
+            f"{results.total_energies[root]:18.10f}",
+            f"{results.excitation_energies[root]:12.8f}",
+            f"{results.excitation_energies[root] * HARTREE_TO_EV:10.5f}",
+            f"{results.photon_numbers[root]:8.4f}",
+            "n/a" if strengths is None else f"{strengths[root]:10.6f}",
+        ])
+    output.table(headers, rows, widths)
+
+    if results.davidson is not None:
+        davidson = results.davidson
+        output.echo(
+            f"  Davidson: {davidson.n_iterations} iterations, "
+            f"{davidson.n_matvec} sigma builds, "
+            f"max residual {np.max(davidson.residual_norms):.3e}"
+        )

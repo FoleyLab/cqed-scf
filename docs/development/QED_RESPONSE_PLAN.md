@@ -12,7 +12,7 @@ Oracle: `RESPONSE_REFERENCE/CS_CQED_CIS.py` + `helper_CS_CQED_CIS.py` (QED-CIS-1
 | 2 — matrix-free sigma + Davidson | **complete**, all tests green |
 | 3 — QED-CIS-N, TDA-DFT, density fitting | **complete**, all tests green |
 | 4 — QED-TDHF / QED-LR-TDDFT | deferred, out of current scope |
-| 5 — integration, API, docs | next |
+| 5 — integration, API, docs | **complete**, pending test run |
 
 Tier 0 also turned up a live defect in QED-SAPT0 unrelated to response theory;
 see `docs/development/psi4_array_aliasing.md`.
@@ -496,7 +496,7 @@ tdscf_excitations(tda=False)`; Thomas-Reiche-Kuhn / oscillator-strength sum rule
 
 ---
 
-### Tier 5 — Integration, API, docs
+### Tier 5 — Integration, API, docs — COMPLETE
 
 - `CQEDCalculator.cis(geometry, nroots=..., n_photon=...)` and `.tddft(...)`, replacing the current
   placeholder factories; result dataclasses; `__init__.py` exports.
@@ -512,6 +512,29 @@ tdscf_excitations(tda=False)`; Thomas-Reiche-Kuhn / oscillator-strength sum rule
 - Deferred: triplets (they decouple from the bilinear term since `d_ia^T = 0`, but the `Ĝ` block
   still acts — worth a short note), complex ω / lossy cavities (explicitly out of scope per the
   Hermitian-only requirement; keep the solver interface non-Hermitian-ready but do not implement).
+
+**Delivered**
+
+- `CQEDCalculator.cis(geometry, nroots=, n_photon=, solver=)` → `QEDCISResults`, running the
+  reference unless `scf_results=` is supplied.
+- `CQEDCalculator.tddft(...)` — the same computation named for a Kohn-Sham reference, which it
+  requires. `tda=False` raises `NotImplementedError` pointing at Tier 4 rather than silently
+  doing something else.
+- `CQEDCalculator.response(...)` — returns an unsolved `QEDCIS` driver for callers wanting the
+  Hamiltonian or the sigma action.
+- `print_qed_cis_results` — an `output.py`-styled table carrying the photon number per root,
+  which is what makes the list assignable.
+- `__init__.py` exports `QEDCIS`, `QEDCISResults`, `print_qed_cis_results`, `davidson_solve`;
+  `HARTREE_TO_EV` added to `utils.py`.
+- `examples/qed_cis/` — `mghp_polaritons.py` (LP/UP against the qed-ci reference),
+  `mghp_rabi_scan.py` (splitting vs coupling), `water_qed_tda_dft.py` (the KS path), and a README
+  documenting the two traps: eigenvalues are not excitation energies, and roots must not be
+  tracked by index across a scan.
+- `tests/test_calculator_response_api.py`.
+
+**Still open from the original Tier 5 list:** promoting `sapt/dse_jk.py` to a shared module now
+that two consumers exist, and `docs/development/qed_response_design.md` — largely superseded by
+`docs/qed_cis_formalism.tex`.
 
 ---
 
