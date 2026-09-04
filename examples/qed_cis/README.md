@@ -6,7 +6,7 @@ Polaritonic excited states from the `cqed_scf` response module.
 |---|---|
 | `mghp_polaritons.py` | LP/UP splitting of MgH+ in a resonant cavity, checked against the independent `qed-ci` determinant-basis reference |
 | `mghp_rabi_scan.py` | Rabi splitting versus coupling strength; the `split/lambda` column should be roughly constant in the linear regime |
-| `water_qed_tda_dft.py` | the Kohn-Sham path (QED-TDA-DFT) with a B3LYP reference |
+| `water_qed_cis_ks.py` | the Kohn-Sham path: QED-CIS on a QED-Kohn-Sham (B3LYP) reference |
 
 ## API
 
@@ -22,9 +22,13 @@ calc = CQEDCalculator(
 results = calc.cis(geometry, nroots=8, n_photon=1)
 ```
 
-`calc.tddft(...)` is the same computation named for a Kohn-Sham reference, and
-requires one. `calc.response(...)` returns the driver without solving it, for
-access to the Hamiltonian or the sigma action.
+`calc.cis(...)` serves both Hartree-Fock and Kohn-Sham references — construct the
+calculator with `functional=...` for the latter. `calc.response(...)` returns the
+driver without solving it, for access to the Hamiltonian or the sigma action.
+
+There is no `tddft()` entry point: that name is reserved for genuine
+linear-response QED-TDDFT (Yang *et al.*, JCP **155**, 064107 (2021)), which is a
+different theory rather than a variant of this one — see below.
 
 `QEDCISResults` carries `eigenvalues` (relative to the SCF reference),
 `total_energies`, `excitation_energies`, `photon_numbers`, `reference_weights`,
@@ -52,6 +56,28 @@ electronic excitation, so the identifying quantity is the weight on the photonic
 *reference* state, `reference_weights[:, n]` — which is what
 `polariton_indices()` uses. A genuine LP/UP pair shares that weight, so it should
 sum to roughly one across the two.
+
+## This is not QED-TDDFT
+
+With a Kohn-Sham reference this method is **QED-CIS built on QED-Kohn-Sham
+orbitals**, not the Tamm-Dancoff approximation to linear-response QED-TDDFT
+(the TDA-PF model of Yang *et al.*). The two differ in substance, not just in
+approximation level:
+
+| | linear-response QED-TDDFT | this code |
+|---|---|---|
+| photon | coherent-state displacement | Fock states `0..N_ph` |
+| electron–photon ansatz | product | configuration interaction |
+| `\|Phi_i^a, n>=1>` configurations | absent | present |
+| counter-rotating terms | implicit, via the `N` amplitude | explicit matrix elements |
+| ground state | not relaxed | correlated, variational |
+| dipole self-energy | mean-field, rank one | two-electron, `2 d_ia d_jb - d_ij d_ab` |
+| metric | `diag(1,1,-1)` | identity |
+
+They agree on the electronic block `A` and the bilinear coupling `g`, and on
+essentially nothing else. At `lambda = 0` both reduce to ordinary TDA, which is
+why the test suite can anchor against `psi4`'s `tdscf_excitations` there and
+nowhere else.
 
 ## Notes
 

@@ -1,10 +1,18 @@
-"""QED-TDA-DFT: water in a cavity with a B3LYP reference.
+"""QED-CIS on a QED-Kohn-Sham reference: water in a cavity, B3LYP.
 
 Demonstrates the Kohn-Sham path.  The two-electron block carries an
 exchange-correlation kernel, routed through Psi4's own TDA machinery, so the
 same driver serves Hartree-Fock and Kohn-Sham references.
 
-Run:  python examples/qed_cis/water_qed_tda_dft.py
+NOT QED-TDDFT, and not its Tamm-Dancoff approximation.  This is a configuration
+interaction in a composite electron-photon Fock basis: it carries
+|Phi_i^a, n>=1> configurations that the product ansatz of linear-response
+QED-TDDFT cannot represent, treats the dipole self-energy as a genuine
+two-electron operator rather than at mean-field level, and yields a correlated
+ground state rather than excitations from an unrelaxed reference.  See
+docs/qed_cis_formalism.tex, "Relationship to linear-response QED-TDDFT".
+
+Run:  python examples/qed_cis/water_qed_cis_ks.py
 """
 
 import numpy as np
@@ -51,12 +59,14 @@ def build(coupling):
 
 def main():
     print("=" * 78)
-    print("  QED-TDA-DFT: water / B3LYP / 6-31G,  omega = 0.35 Eh")
+    print("  QED-CIS / CQED-RKS(B3LYP) / 6-31G,  omega = 0.35 Eh")
     print("=" * 78)
 
-    # tddft() is cis() with a Kohn-Sham reference, named for what it is
-    field_free = build(0.0).tddft(WATER, nroots=6, print_results=False)
-    coupled = build(0.05).tddft(WATER, nroots=6, n_photon=1)
+    # cis() handles both reference types; the calculator's functional decides.
+    # There is no tddft() entry point -- that name is reserved for the genuine
+    # linear-response theory, which this is not.
+    field_free = build(0.0).cis(WATER, nroots=6, print_results=False)
+    coupled = build(0.05).cis(WATER, nroots=6, n_photon=1)
 
     print("\n  Cavity-induced shifts of the lowest excitations")
     print("  " + "-" * 62)

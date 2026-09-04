@@ -462,39 +462,51 @@ conventional integrals.
 
 ---
 
-### Tier 4 — Full response: QED-TDHF and QED-LR-TDDFT *(DEFERRED — out of current scope)*
+### Tier 4 — Linear-response QED-TDDFT *(DEFERRED — and a separate driver)*
 
-> Parked pending the Shao *et al.* prism equations (*J. Chem. Phys.* **155**, 064107 (2021);
-> gradients in **156**, 124104 (2022)). Recorded here so Tiers 0-3 are built without foreclosing
-> it; **do not start this tier**. The reference implementation is
-> [`cc-ats/qed-tddft`](https://github.com/cc-ats/qed-tddft), whose prism factorizes as
-> cavity model `{PF, RWA, Rabi, JC}` × electronic response `{TDA, RPA}` — i.e. two orthogonal
-> switches on one sigma builder, which is the same architecture Tiers 2-3 already establish.
+> **Revised after reading Yang et al., JCP 155, 064107 (2021).** An earlier draft of this plan
+> assumed the prism could be dropped onto the Tier 2 sigma by "adding B blocks". That is wrong,
+> and the correction matters for scoping.
 
-The excitation manifold gains de-excitation partners: `{a†_a a_i} ⊗ photon` plus `b†`, paired with
-`{a†_i a_a} ⊗ photon` and `b`.
+**The two theories are not related by an approximation.** Their QED-TDDFT follows from a
+time-dependent variational treatment of the *product* wavefunction `|Φ(t)⟩|χ(t)⟩`, where `|χ(t)⟩`
+is a **coherent-state displacement** of the photon (their Appendix B), linearized as
+`C(t) = M e^{-iΩt} + N e^{+iΩt}`. So `M` and `N` are Fourier components of a displacement
+amplitude, not amplitudes on a Fock state. Their Appendix A reaches the same place from a driven
+harmonic-oscillator equation of motion.
 
-```
-[ A   B ] [X]        [ 1   0 ] [X]
-[ B   A ] [Y]  =  ω  [ 0  −1 ] [Y]
-```
+Consequences, all verified against the paper:
 
-**Decisions to settle before coding this tier** (flagged, not pre-empted):
-- Which formulation — Fock-state-extended RPA (photon states as additional excitation operators)
-  vs. the Flick/Rubio QED-TDDFT eigenvalue problem. They differ in how the photon de-excitation
-  sector is treated; the answer determines the `B`-block photon elements.
-- Hermitian reduction: with real orbitals and `A − B` positive definite, solve
-  `(A−B)^½ (A+B) (A−B)^½ Z = ω² Z`. The pure-photon sector contributes `A − B = ω > 0`, so
-  positive-definiteness should survive, but verify it holds with coupling on before relying on it.
+| | TDA-PF (their Eq. 13) | Tiers 0–3 (this code) |
+|---|---|---|
+| photon | coherent-state displacement | Fock states `0..N_ph` |
+| ansatz | product | configuration interaction |
+| `\|Φ_i^a, n≥1⟩` configurations | absent | present |
+| `⟨Φ_0,0\|H\|Φ_i^a,1⟩` | no such element | `−√ω d_ia` |
+| `⟨Φ_i^a,0\|H\|Φ_j^b,1⟩` = `g Ĝ` | absent | present |
+| counter-rotating terms | implicit, via `N` (dropping it *is* their RWA) | explicit |
+| ground state | not relaxed | correlated, variational |
+| DSE | `Δ'_ai,bj = Σ λ_ai λ_bj` — mean-field, rank one | `2 d_ia d_jb − d_ij d_ab`, two-electron |
+| metric | `diag(1,1,−1)`, pseudo-Hermitian | identity |
 
-**Reuse**: the Tier-2 sigma machinery carries over directly; `σ_A` and `σ_B` differ only in the
-JK contraction pattern (`B` uses `2(ia|bj) − (ib|aj)`, i.e. `K` on the transposed density) and the
-corresponding DSE pattern. Both stay `O(N³)` on the cavity side.
+**Scoping consequence.** Implementing the prism faithfully means a **separate driver**, not an
+extension of `QEDCIS`. The assembly and the metric differ. What *does* transfer, already built and
+tested: the electronic block `A`, the bilinear coupling `g = √(ω/2) d_ov`, the direct part of the
+DSE, the JK/`twoel_Hx` integral engines, and the Davidson machinery.
 
-**Tests** — TDA limit (`B = 0`) reproduces Tier-2 exactly; `λ = 0` reproduces `psi4
-tdscf_excitations(tda=False)`; Thomas-Reiche-Kuhn / oscillator-strength sum rule as a physics check.
+**Two implementation notes for whenever this starts.**
 
----
+1. The DSE would need a switch to drop the exchange-like term `−d_ij d_ab`, since their `Δ'` is
+   rank one. Their `Δ'` is *not* obtainable from ours by rescaling.
+2. The Hermitian-only constraint meets the prism unevenly: only TDA-RWA and TDA-JC have identity
+   metric and are standard Hermitian problems. TDA-PF and TDA-Rabi carry `diag(1,1,−1)` and need
+   the RPA-style reduction, contingent on the usual definiteness holding.
+
+**Open question, raised and worth its own thought.** What is the correct `B`-block analogue for a
+*Fock-basis* method like this one — an RPA-like generalization whose de-excitation amplitudes are
+defined over the composite electron–photon basis rather than over a photonic displacement? That is
+a different object from the `B + Δ` block of their Eq. (8), and it is not obviously obtained by
+transcribing theirs. Worth deriving before writing any code.
 
 ### Tier 5 — Integration, API, docs — COMPLETE
 

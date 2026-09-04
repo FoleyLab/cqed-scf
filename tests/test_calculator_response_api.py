@@ -106,40 +106,32 @@ def test_response_returns_an_unsolved_driver():
 
 
 @pytest.mark.slow
-def test_tddft_dispatches_to_the_kohn_sham_path():
-    results = _calculator(functional="B3LYP").tddft(WATER, nroots=4, print_results=False)
+def test_cis_runs_with_a_kohn_sham_reference():
+    results = _calculator(functional="B3LYP").cis(WATER, nroots=4, print_results=False)
 
     assert results.eigenvalues.size == 4
     assert np.all(np.diff(results.eigenvalues) >= -1e-12)
 
 
-@pytest.mark.slow
-def test_tddft_and_cis_agree_for_a_kohn_sham_reference():
-    """tddft() is cis() named for what it is; they must not diverge."""
+def test_tddft_is_reserved_for_linear_response_qed_tddft():
+    """The name must not be attached to this method.
 
-    calculator = _calculator(functional="B3LYP")
-    driver = calculator.response(WATER, n_photon=1)
+    QED-CIS on a QED-Kohn-Sham reference is a Fock-basis CI: it carries
+    |Phi_i^a, n>=1> configurations that a product ansatz cannot represent,
+    treats the DSE as a two-electron operator rather than at mean-field level,
+    and relaxes the ground state.  It is not a Tamm-Dancoff approximation to
+    the linear-response QED-TDDFT of Yang et al.  Reserving the name keeps
+    anyone from citing these numbers as QED-TDDFT.
+    """
 
-    from_cis = calculator.cis(
-        scf_results=driver.scf_results, nroots=4, print_results=False
-    )
-    from_tddft = calculator.tddft(
-        scf_results=driver.scf_results, nroots=4, print_results=False
-    )
-
-    np.testing.assert_allclose(from_tddft.eigenvalues, from_cis.eigenvalues, atol=1e-12)
-
-
-def test_tddft_refuses_non_tda_clearly():
-    """Full linear response is Tier 4; the refusal must say so."""
-
-    with pytest.raises(NotImplementedError, match="non-TDA|Tier 4"):
-        _calculator(functional="B3LYP").tddft(WATER, tda=False)
+    for calculator in (_calculator(), _calculator(functional="B3LYP")):
+        with pytest.raises(NotImplementedError, match="Yang|linear-response"):
+            calculator.tddft(WATER)
 
 
-def test_tddft_requires_a_functional():
-    with pytest.raises(ValueError, match="Kohn-Sham|functional"):
-        _calculator().tddft(WATER)
+def test_tddft_refusal_points_at_the_method_that_does_work():
+    with pytest.raises(NotImplementedError, match="cis\\(\\)"):
+        _calculator(functional="B3LYP").tddft(WATER)
 
 
 def test_cis_requires_a_geometry_or_scf_results():
@@ -153,15 +145,20 @@ def test_results_table_prints_without_error(capsys):
     _calculator(quiet=False).cis(WATER, nroots=3, print_results=True)
 
     printed = capsys.readouterr().out
-    assert "QED-CIS Excited States" in printed
+    assert "QED-CIS Excited States (CQED-RHF reference)" in printed
     assert "<b+b>" in printed
     assert "f (osc)" in printed
 
 
 @pytest.mark.slow
-def test_results_table_names_the_kohn_sham_method(capsys):
+def test_results_table_names_the_reference_not_a_tddft_approximation(capsys):
+    """The banner must not say TDA-DFT -- see the comparison in the .tex."""
+
     _calculator(functional="B3LYP", quiet=False).cis(
         WATER, nroots=3, print_results=True
     )
 
-    assert "QED-TDA-DFT Excited States" in capsys.readouterr().out
+    printed = capsys.readouterr().out
+    assert "QED-CIS Excited States (CQED-RKS reference)" in printed
+    assert "TDA-DFT" not in printed
+    assert "TDDFT" not in printed

@@ -359,9 +359,12 @@ class CQEDCalculator:
         solves the QED-CIS eigenvalue problem in the photon-major basis, with
         ``n_photon + 1`` Fock states.
 
-        Works for both Hartree-Fock and Kohn-Sham references; with a functional
-        this *is* QED-TDA-DFT, and :meth:`tddft` is the same computation under a
-        name that says so.
+        Works for both Hartree-Fock and Kohn-Sham references.  With a functional
+        this is QED-CIS built on QED-Kohn-Sham orbitals -- a configuration
+        interaction in a composite electron-photon Fock basis, *not* a
+        Tamm-Dancoff approximation to linear-response QED-TDDFT.  See
+        :meth:`tddft` and docs/qed_cis_formalism.tex for why the distinction
+        matters.
 
         Parameters
         ----------
@@ -408,41 +411,50 @@ class CQEDCalculator:
             results = driver.kernel(nroots=nroots, solver=solver, tol=tol)
 
             if print_results:
-                title = (
-                    "QED-TDA-DFT Excited States"
-                    if driver.is_ks
-                    else "QED-CIS Excited States"
+                # Name the reference, not a TDDFT approximation.  With a
+                # Kohn-Sham reference this is QED-CIS built on QED-Kohn-Sham
+                # orbitals -- a Fock-basis CI with a correlated ground state --
+                # and NOT the Tamm-Dancoff approximation to linear-response
+                # QED-TDDFT (TDA-PF) of Yang et al., JCP 155, 064107 (2021).
+                # See docs/qed_cis_formalism.tex, "Relationship to
+                # linear-response QED-TDDFT".
+                reference = "CQED-RKS" if driver.is_ks else "CQED-RHF"
+                print_qed_cis_results(
+                    results,
+                    n_print=n_print,
+                    title=f"QED-CIS Excited States ({reference} reference)",
                 )
-                print_qed_cis_results(results, n_print=n_print, title=title)
 
         return results
 
-    def tddft(self, geometry=None, *, tda: bool = True, **kwargs):
-        """Compute QED-TDA-DFT excited states (Kohn-Sham reference).
+    def tddft(self, *args, **kwargs):
+        """Not implemented: linear-response QED-TDDFT.
 
-        This is :meth:`cis` with a Kohn-Sham reference, named for what it is.
-        The full linear-response (RPA) generalisation with de-excitation
-        amplitudes is not implemented -- see Tier 4 of
-        ``docs/development/QED_RESPONSE_PLAN.md``.
+        This name is deliberately reserved for the QED-TDDFT family of Yang
+        et al., JCP 155, 064107 (2021) -- a linear-response theory built on a
+        product ansatz with a coherent-state photon displacement, whose
+        eigenvectors are (X, Y, M, N).
+
+        It is NOT what :meth:`cis` computes with a Kohn-Sham reference.  That is
+        a configuration interaction in a composite electron-photon Fock basis:
+        it contains |Phi_i^a, n>=1> configurations that the product ansatz cannot
+        represent, treats the dipole self-energy as a genuine two-electron
+        operator rather than at mean-field level, and produces a correlated
+        ground state rather than excitations from an unrelaxed reference.
+        Calling that "QED-TDDFT" or "QED-TDA-DFT" would invite exactly the
+        confusion this method exists to prevent.
+
+        See docs/qed_cis_formalism.tex, "Relationship to linear-response
+        QED-TDDFT", for the full comparison.
         """
 
-        if not tda:
-            raise NotImplementedError(
-                "Full QED-LR-TDDFT (non-TDA) is not implemented. The response "
-                "manifold would need de-excitation amplitudes and a paired "
-                "eigenvalue problem; see Tier 4 of "
-                "docs/development/QED_RESPONSE_PLAN.md. Pass tda=True for "
-                "QED-TDA-DFT."
-            )
-
-        if self.config.functional is None:
-            raise ValueError(
-                "tddft() requires a Kohn-Sham reference; construct the "
-                "calculator with functional=... , or call cis() for a "
-                "Hartree-Fock reference."
-            )
-
-        return self.cis(geometry, **kwargs)
+        raise NotImplementedError(
+            "Linear-response QED-TDDFT is not implemented; the name is reserved "
+            "for the formalism of Yang et al., JCP 155, 064107 (2021) (Tier 4 of "
+            "docs/development/QED_RESPONSE_PLAN.md). For QED-CIS on a "
+            "QED-Kohn-Sham reference -- a different theory, not a TDA of it -- "
+            "construct the calculator with functional=... and call cis()."
+        )
 
     def response(self, geometry=None, *, scf_results=None, n_photon: int = 1, **kwargs):
         """Build a QED-CIS driver without solving it.

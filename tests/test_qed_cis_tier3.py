@@ -1,5 +1,12 @@
 """Tier 3: Kohn-Sham references, QED-CIS-N convergence, and density fitting.
 
+Note on naming: QED-CIS on a QED-Kohn-Sham reference is NOT the Tamm-Dancoff
+approximation to linear-response QED-TDDFT (TDA-PF, Yang et al., JCP 155,
+064107 (2021)).  It is a Fock-basis configuration interaction; see
+docs/qed_cis_formalism.tex, "Relationship to linear-response QED-TDDFT".
+The psi4 tdscf comparison below is valid only at lambda = 0, where both
+reduce to ordinary TDA.
+
 The Kohn-Sham two-electron block carries an exchange-correlation kernel that has
 no MO-integral form, so it is routed through Psi4's own ``twoel_Hx_full`` --
 the same routine Psi4's TDSCF engine uses -- and combined the same way:

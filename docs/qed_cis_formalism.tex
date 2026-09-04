@@ -760,15 +760,133 @@ explicit build validates every sign, factor and index at once, and is far more
 diagnostic than comparing converged eigenvalues.
 
 % =============================================================================
+\section{Relationship to linear-response QED-TDDFT}
+\label{sec:vsqedtddft}
+
+The method described here is a \emph{configuration-interaction} theory in a
+composite electron--photon Fock basis. It is not the linear-response
+QED-TDDFT of Yang \emph{et al.}~\cite{Yang2021}, and the two differ by more than
+a choice of approximation. Because a Kohn--Sham reference (Sec.~\ref{sec:ks})
+makes the present method superficially resemble their TDA-PF model, the
+differences are worth setting out explicitly.
+
+\subsection{Their ansatz is a product, and their photon is a displacement}
+
+The QED-TDDFT working equations of Ref.~\cite{Yang2021} follow from a
+time-dependent variational treatment of the \emph{product} wavefunction
+$\ket{\Phi(t)}\ket{\chi(t)}$, in which $\ket{\Phi(t)} = e^{-\hat{A}_e}\ket{\Phi_0}$
+carries orbital rotations only and
+$\ket{\chi(t)} = e^{-\hat{A}_{\mathrm{ph}}}\ket{\chi_0}$ is a \emph{coherent-state
+displacement} of the photon,
+$\hat{A}_{\mathrm{ph}} = \sum_\alpha(-C^*_\alpha \bo_\alpha + C_\alpha \bd_\alpha)$.
+Linearising with $C_\alpha(t) = M_\alpha e^{-i\Omega t} + N_\alpha e^{+i\Omega t}$
+makes $M$ and $N$ the two Fourier components of that displacement amplitude ---
+not amplitudes on a photon-number state. Their Appendix~A reaches the same
+place from the other direction: the photon obeys a driven harmonic-oscillator
+equation of motion, with
+$\delta q_\alpha = \sqrt{\hbar/2\omega_\alpha}\,(M_\alpha + N_\alpha)$.
+
+Their TDA-PF model is therefore
+\begin{equation}
+\begin{bmatrix}
+\bm{A} + \bm{\Delta}' & \hbar\bm{g}^{\dagger} & \hbar\tilde{\bm{g}}^{\dagger} \\
+\hbar\bm{g} & \hbar\omega & 0 \\
+\hbar\tilde{\bm{g}} & 0 & \hbar\omega
+\end{bmatrix}
+\begin{bmatrix} \bm{X} \\ M \\ N \end{bmatrix}
+= \hbar\Omega
+\begin{bmatrix} 1 & 0 & 0 \\ 0 & 1 & 0 \\ 0 & 0 & -1 \end{bmatrix}
+\begin{bmatrix} \bm{X} \\ M \\ N \end{bmatrix},
+\label{eq:tdapf}
+\end{equation}
+over a space of dimension $\nov + 2$: the electronic single excitations plus two
+photonic amplitudes.
+
+\subsection{What follows}
+
+\paragraph{No $\ket{\Phi_i^a, 1}$ configurations.} A product ansatz cannot
+represent ``electron excited \emph{and} photon in $\ket{1}$'' independently of
+$\ket{\Phi_0}\otimes\ket{1}$, so those configurations are absent from
+Eq.~\eqref{eq:tdapf} --- and with them the matrix element
+$\braket{\Phi_0,0|\hat{H}_{\mathrm{PF}}|\Phi_i^a,1}$, which in the present
+method is $-\sqrt{\omega}\,d_{ia}$ (Eq.~\eqref{eq:Grs}), and the entire
+$\braket{\Phi_i^a,0|\hat{H}|\Phi_j^b,1} = g\,G_{ia,jb}$ block carrying the
+excited-state dipole differences $d_{ij}$ and $d_{ab}$.
+
+\paragraph{Counter-rotating terms are still present, differently.} It would be
+wrong to read the above as ``TDA-PF makes the rotating-wave approximation.'' The
+counter-rotating physics enters Eq.~\eqref{eq:tdapf} through the
+$\hbar\tilde{\bm{g}}^{\dagger}$ coupling of $\bm{X}$ to the negative-metric
+amplitude $N$; deleting that coupling is precisely what defines their TDA-RWA
+model. The distinction is between an implicit, RPA-like treatment and an
+explicit configuration.
+
+\paragraph{The ground state.} $\Omega$ in Eq.~\eqref{eq:tdapf} is an excitation
+energy measured from an unrelaxed reference. The present method diagonalises
+$\hat{H}_{\mathrm{PF}}$ over a basis that includes $\ket{\Phi_0,0}$, so its
+lowest root \emph{is} a correlated ground state, relaxed below the mean-field
+reference by the coupling to $\ket{\Phi_i^a,1}$ (Sec.~\ref{sec:zero}).
+
+\paragraph{The dipole self-energy is treated at different levels.} Their
+\begin{equation}
+\Delta'_{ai,bj} = \sum_\alpha \lambda^\alpha_{ai}\,\lambda^\alpha_{bj}
+\end{equation}
+is rank one: it comes from evaluating $\langle(\lam\cdot\Delta\hat{\bm{\mu}})^2\rangle$
+over a single determinant as the square of a one-body expectation value, i.e.\ a
+Hartree-like mean-field DSE. The present method treats the DSE as a genuine
+two-electron operator with the separable kernel of Eq.~\eqref{eq:sepkernel},
+giving both terms of Eq.~\eqref{eq:Delta},
+$2 d_{ia} d_{jb} - d_{ij} d_{ab}$. The exchange-like term has no counterpart in
+$\bm{\Delta}'$ and is not recoverable by rescaling.
+
+\paragraph{Metric.} Eq.~\eqref{eq:tdapf} carries the indefinite metric
+$\mathrm{diag}(1,1,-1)$ and is a pseudo-Hermitian generalised eigenvalue problem;
+only their RWA and Jaynes--Cummings models reduce to a standard Hermitian
+problem. The present method has an identity metric throughout.
+
+\begin{table}[h]
+\centering
+\small
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{@{}lll@{}}
+\toprule
+ & TDA-PF, Ref.~\cite{Yang2021} & this work \\
+\midrule
+photon degree of freedom & coherent-state displacement & Fock states $0..\nph$ \\
+electron--photon ansatz & product & configuration interaction \\
+$\ket{\Phi_i^a, n\ge1}$ configurations & absent & present \\
+counter-rotating terms & implicit, via $N$ & explicit matrix elements \\
+ground state & not relaxed & correlated, variational \\
+DSE & mean-field, rank one & two-electron, Eq.~\eqref{eq:Delta} \\
+metric & $\mathrm{diag}(1,1,-1)$ & identity \\
+photon truncation & one amplitude per mode & arbitrary $\nph$ \\
+\bottomrule
+\end{tabular}
+\caption{The two theories are related in spirit and different in content. The
+electronic block $\bm{A}$ and the bilinear coupling $\bm{g}$ agree between them
+up to spin-adaptation conventions; nothing else does.}
+\end{table}
+
+\noindent
+Neither treatment is a special case of the other, and the naming should reflect
+that: with a Kohn--Sham reference this method is QED-CIS built on QED-Kohn--Sham
+orbitals, not a Tamm--Dancoff approximation to QED-TDDFT.
+
+% =============================================================================
 \section{Not included}
 
 For completeness, the following are deliberately absent and would each require
 new derivation rather than new code paths: triplet excitations; non-Hermitian
 (complex-$\omega$, lossy-cavity) treatments as in Ref.~\cite{McTague2022};
-the full linear-response (RPA/TDHF) generalisation with de-excitation
-amplitudes, for which the prism of approximations of
-Refs.~\cite{Yang2021, Yang2022} is the intended target; and multi-mode
-cavities.
+multi-mode cavities; and the linear-response QED-TDDFT family of
+Refs.~\cite{Yang2021, Yang2022}, which as Sec.~\ref{sec:vsqedtddft} explains is
+a distinct theory rather than an extension of this one.
+
+An open question worth recording: what the correct $\bm{B}$-block analogue is for
+a Fock-basis method of this kind --- that is, an RPA-like generalisation in which
+de-excitation amplitudes are defined over the composite electron--photon basis
+rather than over a photonic displacement. That is not the same object as the
+$\bm{B} + \bm{\Delta}$ block of Eq.~(8) of Ref.~\cite{Yang2021}.
 
 % =============================================================================
 \begin{thebibliography}{9}
