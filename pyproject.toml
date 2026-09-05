@@ -15,7 +15,7 @@ authors = [
 requires-python = ">=3.9"
 
 dependencies = [
-    "numpy",
+    "numpy>=2",
     "opt-einsum",
     # DO NOT list psi4 here unless you *really* want pip to try installing it
 ]

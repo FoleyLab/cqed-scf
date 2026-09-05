@@ -19,6 +19,16 @@ def __getattr__(name):
 
         return CQEDGradient if name == "CQEDGradient" else CQEDRHFGradient
 
+    if name in {"QEDCIS", "QEDCISResults", "print_qed_cis_results"}:
+        from . import response
+
+        return getattr(response, name)
+
+    if name == "davidson_solve":
+        from .davidson import davidson_solve
+
+        return davidson_solve
+
     raise AttributeError(f"module 'cqed_scf' has no attribute {name!r}")
 
 
@@ -32,4 +42,8 @@ __all__ = [
     "CQEDRHFCalculator",
     "QEDSAPT0Driver",
     "QEDSAPT0Results",
+    "QEDCIS",
+    "QEDCISResults",
+    "print_qed_cis_results",
+    "davidson_solve",
 ]

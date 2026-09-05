@@ -719,3 +719,115 @@ def test_qedsapt0_driver_water_methylamine_qed_sapt_example():
         assert driver.E_SAPT0 == pytest.approx(energy, abs=1e-12, rel=0.0)
     finally:
         psi4.core.clean()
+
+
+# ---------------------------------------------------------------------------
+# canonical vs CQED orbital energies in the dispersion denominator
+#
+# compute_Edisp200(canonical_denom=True) selects RHF orbital energies instead of
+# CQED-SCF ones.  Until the scf.py aliasing fix, results["canonical_orbital_energies"]
+# was a NumPy *view* of the Psi4 wavefunction's epsilon_a buffer, which
+# _update_wfn_with_cqed() then overwrote with the CQED orbital energies -- so both
+# branches of that switch divided by identical denominators and returned bitwise
+# identical energies.
+#
+# The pre-existing coverage of canonical_denom=True runs at lambda = 0, where the
+# CQED and canonical orbital energies genuinely coincide, so it cannot see the
+# defect.  These tests exercise the branch at lambda != 0, where it is real.
+# ---------------------------------------------------------------------------
+
+
+def test_canonical_and_cqed_orbital_energies_are_independent_arrays():
+    """Structural guard: the two eps arrays must not be views of one buffer."""
+
+    psi4.core.clean()
+    try:
+        driver = _build_he_vt_driver(lambda_vector=[0.0, 0.0, 0.1])
+
+        for monomer in (driver.monomer_A, driver.monomer_B):
+            eps = monomer.eps
+            eps_canonical = monomer.eps_canonical
+
+            assert eps is not None and eps_canonical is not None
+            assert not np.shares_memory(eps, eps_canonical), (
+                f"{monomer.label}: canonical_orbital_energies aliases "
+                "orbital_energies; the cavity has overwritten the RHF values"
+            )
+            assert np.max(np.abs(eps - eps_canonical)) > 1e-6, (
+                f"{monomer.label}: cavity coupling did not move the orbital "
+                "energies, so this test cannot distinguish the two denominators"
+            )
+    finally:
+        psi4.core.clean()
+
+
+def test_canonical_orbital_energies_are_the_cavity_free_ones():
+    """Independent anchor: eps_canonical(lambda != 0) == eps(lambda = 0).
+
+    At zero coupling CQED-SCF reduces to RHF, so the orbital energies from a
+    lambda = 0 driver are the cavity-free ones by construction.  They must equal
+    what the lambda != 0 driver reports as its *canonical* orbital energies.
+    This pins down that eps_canonical really holds the RHF values rather than
+    some other array that merely happens to differ from eps.
+    """
+
+    psi4.core.clean()
+    try:
+        cavity = _build_he_vt_driver(lambda_vector=[0.0, 0.0, 0.1])
+        cavity_eps_canonical = [
+            np.array(cavity.monomer_A.eps_canonical, copy=True),
+            np.array(cavity.monomer_B.eps_canonical, copy=True),
+        ]
+    finally:
+        psi4.core.clean()
+
+    try:
+        field_free = _build_he_vt_driver(lambda_vector=[0.0, 0.0, 0.0])
+        field_free_eps = [
+            np.array(field_free.monomer_A.eps, copy=True),
+            np.array(field_free.monomer_B.eps, copy=True),
+        ]
+    finally:
+        psi4.core.clean()
+
+    for expected, actual in zip(field_free_eps, cavity_eps_canonical):
+        np.testing.assert_allclose(actual, expected, atol=1e-8)
+
+
+def test_edisp200_denominator_choice_matters_at_finite_coupling():
+    """The regression test for the defect, in the units the user cares about."""
+
+    psi4.core.clean()
+    try:
+        driver = _build_he_vt_driver(lambda_vector=[0.0, 0.0, 0.1])
+
+        disp_cqed = driver.compute_Edisp200(canonical_denom=False)
+        disp_canonical = driver.compute_Edisp200(canonical_denom=True)
+
+        assert np.isfinite(disp_cqed) and np.isfinite(disp_canonical)
+        assert disp_cqed != disp_canonical, (
+            "canonical and CQED denominators gave bitwise identical dispersion "
+            "energies at lambda != 0 -- eps_canonical is aliased to eps"
+        )
+    finally:
+        psi4.core.clean()
+
+
+def test_edisp200_denominator_choice_is_irrelevant_at_zero_coupling():
+    """Control for the test above: at lambda = 0 the two must agree.
+
+    This is what makes the inequality at lambda != 0 meaningful -- it shows the
+    difference is produced by the cavity rather than by nondeterminism in the
+    two code paths.
+    """
+
+    psi4.core.clean()
+    try:
+        driver = _build_he_vt_driver(lambda_vector=[0.0, 0.0, 0.0])
+
+        disp_cqed = driver.compute_Edisp200(canonical_denom=False)
+        disp_canonical = driver.compute_Edisp200(canonical_denom=True)
+
+        assert disp_canonical == pytest.approx(disp_cqed, abs=1e-12, rel=0.0)
+    finally:
+        psi4.core.clean()

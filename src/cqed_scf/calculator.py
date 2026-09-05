@@ -336,19 +336,149 @@ class CQEDCalculator:
 
         return energy_total, grad_total, g
 
-    def response(self, scf_results=None, **kwargs):
-        """Create a future CQED response-theory driver."""
+    # -------------------------
+    # response theory
+    # -------------------------
 
-        from .response import CQEDResponse
+    def cis(
+        self,
+        geometry=None,
+        *,
+        scf_results=None,
+        nroots: int = 5,
+        n_photon: int = 1,
+        solver: str = "davidson",
+        tol: float = 1e-8,
+        print_results: bool = True,
+        n_print=None,
+        **driver_kwargs,
+    ):
+        """Compute QED-CIS polaritonic excited states.
 
-        return CQEDResponse(config=self.config, scf_results=scf_results, **kwargs)
+        Runs the CQED-SCF reference (unless ``scf_results`` is supplied) and then
+        solves the QED-CIS eigenvalue problem in the photon-major basis, with
+        ``n_photon + 1`` Fock states.
 
-    def tddft(self, scf_results=None, **kwargs):
-        """Create a future LR-TDDFT driver."""
+        Works for both Hartree-Fock and Kohn-Sham references.  With a functional
+        this is QED-CIS built on QED-Kohn-Sham orbitals -- a configuration
+        interaction in a composite electron-photon Fock basis, *not* a
+        Tamm-Dancoff approximation to linear-response QED-TDDFT.  See
+        :meth:`tddft` and docs/qed_cis_formalism.tex for why the distinction
+        matters.
 
-        from .response import CQEDTDDFT
+        Parameters
+        ----------
+        geometry
+            Psi4 geometry string.  Optional if ``scf_results`` is given.
+        scf_results
+            A previously computed CQED-SCF result dictionary, to avoid repeating
+            the reference calculation.
+        nroots
+            Number of roots for the iterative solver.  Ignored (all roots are
+            returned) when ``solver="dense"``.
+        n_photon
+            Highest photon-number state retained; ``1`` gives QED-CIS-1.
+        solver
+            ``"davidson"`` (matrix-free, default) or ``"dense"`` (explicit
+            Hamiltonian, for small systems and verification).
 
-        return CQEDTDDFT(config=self.config, scf_results=scf_results, **kwargs)
+        Returns
+        -------
+        QEDCISResults
+            Eigenvalues relative to the SCF reference, excitation energies
+            ``E_k - E_0``, photon numbers, block weights, transition dipoles and
+            oscillator strengths.
+        """
+
+        from .response import QEDCIS, print_qed_cis_results
+
+        if scf_results is None and geometry is None:
+            raise TypeError("cis() requires either a geometry or scf_results")
+
+        if geometry is not None:
+            self.geometry = geometry
+
+        with output.quiet_context(self.config.quiet):
+            if scf_results is None:
+                _, scf_results = self._run_scf(geometry)
+
+            driver = QEDCIS(
+                config=self.config,
+                scf_results=scf_results,
+                n_photon=n_photon,
+                **driver_kwargs,
+            )
+            results = driver.kernel(nroots=nroots, solver=solver, tol=tol)
+
+            if print_results:
+                # Name the reference, not a TDDFT approximation.  With a
+                # Kohn-Sham reference this is QED-CIS built on QED-Kohn-Sham
+                # orbitals -- a Fock-basis CI with a correlated ground state --
+                # and NOT the Tamm-Dancoff approximation to linear-response
+                # QED-TDDFT (TDA-PF) of Yang et al., JCP 155, 064107 (2021).
+                # See docs/qed_cis_formalism.tex, "Relationship to
+                # linear-response QED-TDDFT".
+                reference = "CQED-RKS" if driver.is_ks else "CQED-RHF"
+                print_qed_cis_results(
+                    results,
+                    n_print=n_print,
+                    title=f"QED-CIS Excited States ({reference} reference)",
+                )
+
+        return results
+
+    def tddft(self, *args, **kwargs):
+        """Not implemented: linear-response QED-TDDFT.
+
+        This name is deliberately reserved for the QED-TDDFT family of Yang
+        et al., JCP 155, 064107 (2021) -- a linear-response theory built on a
+        product ansatz with a coherent-state photon displacement, whose
+        eigenvectors are (X, Y, M, N).
+
+        It is NOT what :meth:`cis` computes with a Kohn-Sham reference.  That is
+        a configuration interaction in a composite electron-photon Fock basis:
+        it contains |Phi_i^a, n>=1> configurations that the product ansatz cannot
+        represent, treats the dipole self-energy as a genuine two-electron
+        operator rather than at mean-field level, and produces a correlated
+        ground state rather than excitations from an unrelaxed reference.
+        Calling that "QED-TDDFT" or "QED-TDA-DFT" would invite exactly the
+        confusion this method exists to prevent.
+
+        See docs/qed_cis_formalism.tex, "Relationship to linear-response
+        QED-TDDFT", for the full comparison.
+        """
+
+        raise NotImplementedError(
+            "Linear-response QED-TDDFT is not implemented; the name is reserved "
+            "for the formalism of Yang et al., JCP 155, 064107 (2021) (Tier 4 of "
+            "docs/development/QED_RESPONSE_PLAN.md). For QED-CIS on a "
+            "QED-Kohn-Sham reference -- a different theory, not a TDA of it -- "
+            "construct the calculator with functional=... and call cis()."
+        )
+
+    def response(self, geometry=None, *, scf_results=None, n_photon: int = 1, **kwargs):
+        """Build a QED-CIS driver without solving it.
+
+        The low-level entry point, for callers that want the Hamiltonian, the
+        sigma action, or control over the eigensolver.  Use :meth:`cis` for
+        ordinary calculations.
+        """
+
+        from .response import QEDCIS
+
+        if scf_results is None:
+            if geometry is None:
+                raise TypeError("response() requires either a geometry or scf_results")
+            self.geometry = geometry
+            with output.quiet_context(self.config.quiet):
+                _, scf_results = self._run_scf(geometry)
+
+        return QEDCIS(
+            config=self.config,
+            scf_results=scf_results,
+            n_photon=n_photon,
+            **kwargs,
+        )
 
     def sapt0(self, dimer_geometry, **kwargs):
         """Create a QED-SAPT0 driver for a dimer calculation.

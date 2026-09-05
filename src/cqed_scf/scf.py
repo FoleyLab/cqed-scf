@@ -128,7 +128,11 @@ class CQEDSCF:
 
         # get the canonical orbital energies from the Psi4 reference wavefunction
 
-        eps_canonical = np.asarray(self.wfn.epsilon_a())
+        # NOTE: copy, do not alias.  np.asarray on a Psi4 Vector returns a view
+        # onto its buffer, and _update_wfn_with_cqed() later writes the CQED
+        # orbital energies into that same buffer -- which would silently turn
+        # results["canonical_orbital_energies"] into the CQED ones.
+        eps_canonical = np.array(self.wfn.epsilon_a(), copy=True)
 
         self.mints = psi4.core.MintsHelper(self.wfn.basisset())
         self.nbf = self.wfn.nmo()
@@ -171,7 +175,7 @@ class CQEDSCF:
         Enuc = self.mol.nuclear_repulsion_energy()
 
         # initial guess from Psi4 reference
-        C = np.asarray(self.wfn.Ca())
+        C = np.array(self.wfn.Ca(), copy=True)  # copy: _update_wfn_with_cqed writes to Ca()
         Cocc = C[:, :self.ndocc]
         D = oe.contract("pi,qi->pq", Cocc, Cocc, optimize="optimal")
 
@@ -294,6 +298,18 @@ class CQEDSCF:
             iterations.append((it, E, dE, dRMS, dt_iter, converged))
 
             if converged:
+                # Final canonicalization.  The iteration path below
+                # diagonalizes the DIIS-extrapolated Fock, which is the right
+                # operator to drive convergence but the wrong one to report:
+                # its eigenvectors do not diagonalize the converged Fock
+                # returned as results["F"].  Response theory requires
+                # canonical orbitals (F_ij = delta_ij eps_i, and in particular
+                # F_ia = 0), so the converged, un-extrapolated Fock is
+                # diagonalized once more here to produce the C/eps/D actually
+                # returned.  E is left at the converged value computed from the
+                # density that built this Fock, matching the usual SCF
+                # convention.
+                eps, C, Cocc, D = self._canonicalize(F, A)
                 break
             Eold = E
 
@@ -301,16 +317,24 @@ class CQEDSCF:
                 F = diis.extrapolate()
 
             # diagonalize
-            Fp = A @ F @ A
-            eps, C2 = np.linalg.eigh(Fp)
-            C = A @ C2
-            Cocc = C[:, :self.ndocc]
-            D = oe.contract("pi,qi->pq", Cocc, Cocc, optimize="optimal")
+            eps, C, Cocc, D = self._canonicalize(F, A)
 
         else:
             raise RuntimeError("Maximum number of SCF cycles exceeded.")
 
         self._print_scf_iterations(iterations, components)
+
+        # Canonicality diagnostic.  max|F_ia| is the quantity that must vanish
+        # for the CQED Brillouin condition to hold; response drivers that
+        # assume canonical CQED orbitals should assert on it.
+        F_mo = C.T @ F @ C
+        if self.nbf > self.ndocc:
+            max_fock_ov = float(np.max(np.abs(F_mo[: self.ndocc, self.ndocc :])))
+        else:
+            max_fock_ov = 0.0
+
+        if self.debug:
+            output.echo(f"  max|F_ia| (canonicality)  = {max_fock_ov:.3e}")
 
         self.D_prev = D.copy()
 
@@ -350,6 +374,10 @@ class CQEDSCF:
             d_exp_el=d_exp_el,
             H0=H0,
             F=F,
+            fock_mo=F_mo,
+            max_fock_ov=max_fock_ov,
+            omega=self.omega,
+            lambda_vector=self.lambda_vector.copy(),
             ndocc=self.ndocc,
             nvirt=self.nbf - self.ndocc,
             nmo=self.nbf,
@@ -529,6 +557,21 @@ class CQEDSCF:
         Vxc = np.asarray(Vxc_p4)
 
         return Exc, Vxc
+
+    def _canonicalize(self, F, A):
+        """Diagonalize a Fock matrix in the orthogonal AO basis.
+
+        Returns the orbital energies, full coefficient matrix, occupied block,
+        and the density built from it.  Used both to drive the SCF iteration
+        and to produce the final canonical CQED orbitals.
+        """
+
+        Fp = A @ F @ A
+        eps, C2 = np.linalg.eigh(Fp)
+        C = A @ C2
+        Cocc = C[:, : self.ndocc]
+        D = oe.contract("pi,qi->pq", Cocc, Cocc, optimize="optimal")
+        return eps, C, Cocc, D
 
     def _density_to_Cocc_guess(self, D, A):
         """

@@ -68,7 +68,12 @@ class CQEDGradient:
             D_wfn = np.asarray(wfn.Da())
             assert np.allclose(D_wfn, scf["density"], atol=1e-10)
 
-        return np.asarray(psi4.core.scfgrad(wfn))
+        # Copy, not a view: np.asarray on a Psi4 matrix aliases its buffer
+        # (see docs/development/psi4_array_aliasing.md).  np.array rather than
+        # np.asarray(..., copy=True) because the copy= keyword is NumPy >= 2.0
+        # only -- redundant given the numpy>=2 pin in pyproject.toml, but this
+        # form costs nothing and survives the pin being relaxed.
+        return np.array(psi4.core.scfgrad(wfn), copy=True)
 
     def _canonical_gradient_exact(self, scf):
         D = 2.0 * scf["density"]
