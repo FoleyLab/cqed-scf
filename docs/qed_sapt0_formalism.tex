@@ -1,0 +1,831 @@
+% =============================================================================
+%  QED-SAPT0 in the cqed-scf package: the density-fitted Pauli-Fierz integral
+%
+%  Overleaf-ready: a single self-contained file, no external .bib required.
+%
+%  Companion documents:
+%    docs/qed_cis_formalism.tex                      -- the separable-kernel
+%                                                       observation this note
+%                                                       extends (its Sec. 2.3)
+%    docs/development/QED_SAPT_DISPERSION_PLAN.md    -- implementation plan
+%    docs/development/psi4_array_aliasing.md         -- the aliasing defect note
+%    docs/SAPT_NOTE.md                               -- running development log
+% =============================================================================
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb, mathtools, bm}
+\usepackage{booktabs}
+\usepackage{braket}
+\usepackage{enumitem}
+\usepackage{microtype}
+\usepackage[dvipsnames]{xcolor}
+\usepackage[colorlinks=true, linkcolor=BrickRed, citecolor=BrickRed,
+            urlcolor=NavyBlue]{hyperref}
+
+% ---- macros (kept consistent with qed_cis_formalism.tex) --------------------
+\newcommand{\lam}{\bm{\lambda}}
+\newcommand{\dop}{\hat{d}}                      % lambda . mu_el (one-electron)
+\newcommand{\dexp}{\langle d \rangle}
+\newcommand{\Hpf}{\hat{H}_{\mathrm{PF}}}
+\newcommand{\naux}{N_{\mathrm{aux}}}
+\newcommand{\nbf}{N_{\mathrm{bf}}}
+\DeclareMathOperator{\Tr}{Tr}
+
+\title{\textbf{QED-SAPT0 in \texttt{cqed-scf}}\\[2pt]
+\large The dipole self-energy as a single density-fitting auxiliary function}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-3em}
+
+\begin{abstract}
+\noindent
+This note documents the integral factorization underlying the density-fitted
+QED-SAPT0 backend in \texttt{cqed-scf}. Its companion,
+\texttt{docs/qed\_cis\_formalism.tex}, records the structural observation that
+the two-electron dipole self-energy (DSE) is an electron-repulsion integral
+with a rank-one separable kernel. Read in the language of density fitting, that
+observation says something stronger and considerably more useful: the DSE is
+\emph{exactly one additional auxiliary basis function}. Appending a single row
+to the density-fitting three-index tensor therefore converts every
+standard-SAPT working equation into its Pauli--Fierz counterpart without
+altering a single formula, sign convention, or contraction pattern. We derive
+the result, state the symmetry condition it requires and why that condition
+holds structurally, give the resulting expressions for the second-order
+dispersion and exchange-dispersion terms, and record the numerical evidence.
+The practical consequence is a sharp diagnostic: the cavity contribution
+carries \emph{no} fitting error, so cavity blocks must agree with a dense
+reference to machine precision while standard blocks agree only to
+density-fitting error.
+\end{abstract}
+
+\tableofcontents
+\bigskip
+
+% =============================================================================
+\section{Scope and notation}
+\label{sec:scope}
+
+We treat closed-shell QED-SAPT0 with monomer CQED-SCF references in the
+dimer-centred basis (the ``DCBS'' convention: each monomer is computed with the
+partner's basis functions present as ghosts). Orbital-index conventions follow
+the driver implementation and \texttt{psi4numpy}'s \texttt{helper\_SAPT}:
+
+\begin{center}
+\small
+\begin{tabular}{ll}
+\toprule
+symbol & meaning \\
+\midrule
+$a, a'$ & occupied orbitals of monomer $A$ \\
+$r, r'$ & virtual orbitals of monomer $A$ \\
+$b, b'$ & occupied orbitals of monomer $B$ \\
+$s, s'$ & virtual orbitals of monomer $B$ \\
+$p,q,\mu,\nu$ & atomic-orbital (AO) indices in the shared dimer basis \\
+$P, Q$ & auxiliary (fitting) basis indices \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+$\dop = \lam\cdot\hat{\bm{\mu}}_{\mathrm{el}}$ is the dipole operator projected
+onto the cavity polarization, with AO matrix
+\begin{equation}
+d_{\mu\nu} = \sum_{x \in \{x,y,z\}} \lambda_x \, \mu^{x}_{\mu\nu} .
+\label{eq:dao}
+\end{equation}
+We write $\dexp_X$ for the electronic coherent-state expectation value over
+monomer $X$'s CQED-SCF reference.
+
+% =============================================================================
+\section{The Pauli--Fierz two-electron integral}
+\label{sec:pf}
+
+\subsection{The separable kernel, restated}
+
+The companion document establishes that the two-electron part of the DSE,
+$\tfrac{1}{2}\sum_{i\neq j}\dop(i)\dop(j)$, is a two-electron operator whose
+kernel is the rank-one product
+\begin{equation}
+(pq|rs) \;\longrightarrow\; d_{pq}\, d_{rs} ,
+\label{eq:sepkernel}
+\end{equation}
+so that every Slater--Condon result carries over verbatim under that
+substitution. For the intermolecular SAPT problem the relevant object is the
+$A$--$B$ cross term of the coherent-state fluctuation product, which supplies
+the \emph{Pauli--Fierz} two-electron integral
+\begin{equation}
+(pq|rs)_{\mathrm{PF}} \;=\; (pq|rs) \;+\; d^{A}_{pq}\, d^{B}_{rs} ,
+\label{eq:pfint}
+\end{equation}
+where $d^{A}$ and $d^{B}$ are the dipole-projected AO matrices built in
+monomer $A$'s and monomer $B$'s (ghosted) bases.
+
+\paragraph{Coefficient.} In the coherent-state basis the DSE is
+$\tfrac{1}{2}\bigl(\lam\cdot(\hat{\bm\mu}-\langle\hat{\bm\mu}\rangle)\bigr)^2$,
+so the $A$--$B$ cross term is
+$(\lam\cdot\Delta\bm{\mu}_A)(\lam\cdot\Delta\bm{\mu}_B)$ with coefficient
+unity: the $\tfrac12$ cancels against the cross term appearing twice. This is
+the coefficient in Eq.~\eqref{eq:pfint}.
+
+\paragraph{Why the $\dexp$ shift does not appear here.} Subtracting a constant
+times the identity shifts only \emph{diagonal} matrix elements, so the
+off-diagonal (transition) blocks that enter the dispersion numerator are
+untouched. The shift does matter for the first-order and induction terms, where
+it contributes the one-electron potentials
+$V^{A,\mathrm{cav}} = -\dexp_A\, d^{B}$ and
+$V^{B,\mathrm{cav}} = -\dexp_B\, d^{A}$ and the scalar $\dexp_A \dexp_B$.
+Those are $O(N^2)$ objects handled outside the factorization developed here.
+
+\subsection{The symmetry condition}
+\label{sec:symmetry}
+
+Equation~\eqref{eq:pfint} is written with distinct labels $d^A$ and $d^B$, but
+by Eq.~\eqref{eq:dao} the matrix $d$ depends only on $\lam$ and on the AO
+basis and frame in which the dipole integrals are evaluated --- \emph{not} on
+which monomer's electrons occupy it. In the DCBS convention both monomers are
+computed in the same dimer basis and the same frame, hence
+\begin{equation}
+d^{A}_{\mu\nu} = d^{B}_{\mu\nu} \;\equiv\; d_{\mu\nu} ,
+\qquad d = d^{\mathsf T} .
+\label{eq:dAdB}
+\end{equation}
+This has been verified numerically to be an exact equality (bitwise
+$\max|d^A - d^B| = 0$), both with and without \texttt{no\_com}/%
+\texttt{no\_reorient}. It is asserted in the code rather than assumed: a
+violation would mean the two monomer bases or dipole origins had diverged,
+which invalidates far more than the factorization below.
+
+With Eq.~\eqref{eq:dAdB}, the Pauli--Fierz kernel
+\begin{equation}
+(pq|rs)_{\mathrm{PF}} = (pq|rs) + d_{pq}\, d_{rs}
+\label{eq:pfsym}
+\end{equation}
+is symmetric under $(pq)\leftrightarrow(rs)$ and positive semidefinite in the
+added term --- exactly the structural properties a density-fitting expansion
+possesses.
+
+% =============================================================================
+\section{The DSE as one auxiliary function}
+\label{sec:onerow}
+
+\subsection{Derivation}
+
+Ordinary robust density fitting expands the Coulomb kernel in an auxiliary
+basis of $\naux$ functions,
+\begin{equation}
+(pq|rs) \;\approx\; \sum_{PQ} (pq|P)\,[\bm{J}^{-1}]_{PQ}\,(Q|rs)
+\;=\; \sum_{P=1}^{\naux} B^{P}_{pq}\, B^{P}_{rs} ,
+\qquad
+B^{P}_{pq} \equiv \sum_{Q} [\bm{J}^{-1/2}]_{PQ}\,(Q|pq),
+\label{eq:df}
+\end{equation}
+with metric $J_{PQ} = (P|Q)$. Equation~\eqref{eq:df} is the statement that the
+Coulomb kernel is approximated by a sum of $\naux$ separable rank-one terms.
+
+The DSE kernel of Eq.~\eqref{eq:pfsym} \emph{is} a separable rank-one term, of
+precisely the same algebraic form, with $d$ in place of $B^P$. Therefore
+\begin{equation}
+\boxed{\;
+(pq|rs)_{\mathrm{PF}} \;\approx\; \sum_{P=1}^{\naux+1} \tilde{B}^{P}_{pq}\,\tilde{B}^{P}_{rs},
+\qquad
+\tilde{B}^{P} =
+\begin{cases}
+B^{P}, & P = 1,\dots,\naux \quad\text{(Coulomb, fitted)}\\[3pt]
+d, & P = \naux+1 \quad\text{(DSE, exact)}
+\end{cases}
+\;}
+\label{eq:augmented}
+\end{equation}
+
+\noindent
+\textbf{The dipole self-energy is one extra auxiliary basis function.} No
+approximation has been introduced by the augmentation itself: rows
+$1,\dots,\naux$ carry the usual fitting error, and row $\naux+1$ is exact.
+
+\subsection{Three consequences}
+
+\begin{enumerate}[leftmargin=*, itemsep=4pt]
+
+\item \textbf{Every working equation is unchanged.} Any expression written in
+terms of $B$ becomes its Pauli--Fierz counterpart by substituting $\tilde{B}$
+and extending the auxiliary summation by one. There is no parallel ``cavity''
+code path, no additional sign convention to reconcile, and no new intermediate.
+Given the number of sign-convention traps already documented for this package
+(Psi4's \texttt{Hx}-family routines each combine and sign their results
+differently), eliminating a code path is worth more than the arithmetic it
+saves.
+
+\item \textbf{Operator contexts are slices of the auxiliary index.} The
+partition used throughout the driver,
+\begin{equation}
+\underbrace{P \le \naux}_{\textsf{standard}}, \qquad
+\underbrace{P = \naux+1}_{\textsf{cavity}}, \qquad
+\underbrace{P \le \naux+1}_{\textsf{total}},
+\label{eq:contexts}
+\end{equation}
+is exact and free: \textsf{standard} $+$ \textsf{cavity} $=$ \textsf{total}
+holds to roundoff by construction, not by cancellation of separately computed
+quantities. Disabling the cavity is simply omitting the last row, whereupon the
+\textsf{cavity} slice is empty and contracts to exact zeros with no special
+case.
+
+\item \textbf{The cavity terms carry no fitting error, which is a sharp test.}
+Because row $\naux+1$ is exact, any quantity built purely from the
+\textsf{cavity} context must reproduce a dense reference to \emph{machine
+precision}, while \textsf{standard} quantities agree only to density-fitting
+error. An implementation error in the pairing, transposition, or scaling of the
+DSE row would degrade cavity agreement to fitting-error level --- a five-order-%
+of-magnitude signal. See Sec.~\ref{sec:numerics}.
+
+\end{enumerate}
+
+\subsection{Cost}
+
+The augmentation changes $\naux \to \naux + 1$; every scaling is unchanged.
+The saving relative to the dense four-index formulation is the point. For the
+water/methylamine reference dimer:
+
+\begin{center}
+\small
+\begin{tabular}{lrrrr}
+\toprule
+basis & $\nbf$ & $\naux$ & dense $\nbf^4$ (3 tensors) & DF $\naux\,\nbf^2$ \\
+\midrule
+jun-cc-pVDZ & 89 & 293 & 1.51\,GB & 18\,MB \\
+aug-cc-pVDZ & 132 & 377 & 7.29\,GB & 52\,MB \\
+aug-cc-pVTZ & 299 & 640 & 192\,GB & 458\,MB \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+The dense path stores three $\nbf^4$ tensors (standard, cavity, total). Note
+that the cavity tensor is rank one: materializing $d\otimes d$ spends $\nbf^4$
+doubles to represent $\nbf^2$ numbers. Equation~\eqref{eq:augmented} never
+forms it.
+
+% =============================================================================
+\section{The pair factorization of the SAPT integral blocks}
+\label{sec:pairs}
+
+\subsection{The pairing rule}
+
+SAPT working equations are written in terms of four-index blocks that the
+driver addresses by a four-character string. The internal storage convention is
+\begin{equation}
+\mathcal{I}[p,q,r,s] \;=\; (p\,r\,|\,q\,s)_{\mathrm{PF}}
+\end{equation}
+(chemists' notation with the middle indices transposed), and the block
+$v(\sigma_0\sigma_1\sigma_2\sigma_3)$ is obtained by transforming index $k$ with
+the orbital coefficients of space $\sigma_k$. Inserting
+Eq.~\eqref{eq:augmented} and collecting terms gives the central result of this
+section:
+\begin{equation}
+\boxed{\;
+v(\sigma_0\sigma_1\sigma_2\sigma_3)_{ABCD}
+\;=\; \sum_{P=1}^{\naux+1}
+b^{P}_{(\sigma_0\sigma_2)}[A,C]\;
+b^{P}_{(\sigma_1\sigma_3)}[B,D] \;} ,
+\label{eq:pairfac}
+\end{equation}
+where the \emph{pair block} is the half-transformed three-index tensor
+\begin{equation}
+b^{P}_{(\sigma\tau)}[A,C] \;=\; \sum_{\mu\nu} C^{\sigma}_{\mu A}\,
+\tilde{B}^{P}_{\mu\nu}\, C^{\tau}_{\nu C} .
+\label{eq:pairblock}
+\end{equation}
+
+\noindent
+\textbf{The pairing is positions $(0,2)$ and $(1,3)$}, not $(0,1)$ and $(2,3)$:
+the first pair is the monomer-$A$ pair and the second the monomer-$B$ pair.
+This is the algebraic content of the string convention, and it is what makes a
+\emph{two}-character primitive the natural one --- the same arity as the
+overlap $s(\sigma\tau)$ and one-electron potential blocks the driver already
+exposes. The four-index $v$ is then derived, not primitive.
+
+\paragraph{Cross-monomer pairs are required.} The seventeen strings appearing
+in the driver need ten distinct pairs,
+\[
+aa,\; ab,\; ar,\; as,\; ra,\; ba,\; bb,\; br,\; bs,\; sb ,
+\]
+of which $ab$, $as$, $br$, $sb$, $ba$ and $ra$ mix the two monomers. A design
+that only formed same-monomer pair blocks would not support
+exchange-dispersion.
+
+\paragraph{Storage.} Because all four orbital spaces live in the same dimer AO
+basis, half-transforming $\tilde{B}$ once into the union space
+$C_{\mathrm{all}} = [\,C_a \,|\, C_r \,|\, C_b \,|\, C_s\,]$ makes every pair
+block a \emph{slice} of a single $(\naux+1)\times 2N_{\mathrm{mo}} \times
+2N_{\mathrm{mo}}$ array. All sixteen pairs are then available at the cost of
+the largest one, and pair lookup costs no arithmetic.
+
+\paragraph{Implementation note: the fitting basis must be chosen by role.}
+The auxiliary expansion of Eq.~\eqref{eq:df} is not one fixed object. Fitting
+sets are optimized for a purpose: JKFIT sets for Coulomb and exchange matrices,
+RIFIT sets for correlation energies. The distinction is quantitatively decisive
+for SAPT because $E^{(10)}_{\mathrm{elst}}$ is a small residual of large
+cancelling contributions --- the two-electron Coulomb term against nuclear
+attraction and nuclear repulsion --- so fitting error in the two-electron part
+cancels against nothing and survives at full size in the residual. Correlation
+energies have no such cancellation.
+
+Measured on water/He at cc-pVDZ, using a RIFIT set for every term gives an
+$E^{(10)}_{\mathrm{elst}}$ error of $3.2\times10^{-5}\,E_h$ against
+$4.0\times10^{-7}\,E_h$ for JKFIT, a factor of $79$; the exchange-induction and
+induction terms improve by factors of $53$ and $19$. Dispersion is indifferent
+(factor $0.9$), being the term RIFIT was designed for. This mirrors Psi4's own
+SAPT, which fits electrostatics, exchange and induction with
+\texttt{DF\_BASIS\_ELST}/\texttt{DF\_BASIS\_SCF} (JKFIT) and the MP2-like terms
+with \texttt{DF\_BASIS\_SAPT} (RIFIT).
+
+The implementation therefore maintains two augmented tensors, differing only in
+their first $\naux$ rows; the DSE row $\tilde B^{\naux+1} = d$ is identical in
+both and exact in both. The choice of fitting set is an approximation to the
+Coulomb kernel alone and never touches the cavity contribution.
+
+\paragraph{Implementation note (aliasing).} The three operator contexts of
+Eq.~\eqref{eq:contexts} and all pair blocks are overlapping views of that one
+array. They are marked read-only. An in-place write would silently couple the
+contexts --- the same class of defect recorded in
+\texttt{docs/development/psi4\_array\_aliasing.md}, where a NumPy view of a
+Psi4 buffer collapsed two physically distinct orbital-energy sets into one and
+produced plausible, wrong numbers for an extended period.
+
+\subsection{Dressed blocks}
+
+The SAPT interaction operator $\tilde{v}$ adds one-electron and scalar
+dressings to the two-electron block,
+\begin{equation}
+\tilde{v}(\sigma_0\sigma_1\sigma_2\sigma_3)_{ABCD}
+= v_{ABCD}
++ S^{(\sigma_0\sigma_2)}_{AC}\,\frac{V^{A,(\sigma_1\sigma_3)}_{BD}}{N_A}
++ \frac{V^{B,(\sigma_0\sigma_2)}_{AC}}{N_B}\,S^{(\sigma_1\sigma_3)}_{BD}
++ S^{(\sigma_0\sigma_2)}_{AC} S^{(\sigma_1\sigma_3)}_{BD}\,
+  \frac{\mathcal{V}_{\mathrm{nuc}}}{N_A N_B},
+\label{eq:vt}
+\end{equation}
+with $N_X$ the electron count of monomer $X$. Every term on the right
+factorizes over the \emph{same} pair partition $(\sigma_0\sigma_2)$,
+$(\sigma_1\sigma_3)$ as Eq.~\eqref{eq:pairfac}. The cavity contributions to
+$V^A$, $V^B$ and $\mathcal{V}_{\mathrm{nuc}}$ are the $\dexp$-dependent pieces
+recorded in Sec.~\ref{sec:pf}; all are $O(N^2)$ or $O(N^3)$ and require no
+fitting. Consequently \textbf{only $v$ needs re-plumbing}: $\tilde v$ inherits
+the factorization unchanged.
+
+% =============================================================================
+\section{Second-order dispersion}
+\label{sec:disp}
+
+\subsection{Amplitudes and \texorpdfstring{$E^{(20)}_{\mathrm{disp}}$}{Edisp20}}
+
+The uncoupled dispersion amplitudes and energy are
+\begin{align}
+t_{rsab} &= \frac{v(rsab)_{rsab}}
+{\epsilon_a + \epsilon_b - \epsilon_r - \epsilon_s},
+\label{eq:tamp}\\[4pt]
+E^{(20)}_{\mathrm{disp}} &= 4 \sum_{abrs} t_{rsab}\, v(abrs)_{abrs} .
+\label{eq:disp}
+\end{align}
+Under Eq.~\eqref{eq:pairfac} the numerator is
+$v(abrs)_{abrs} = \sum_P b^{P}_{(ar)}[a,r]\, b^{P}_{(bs)}[b,s]$, i.e. the
+familiar DF-MP2 form with the auxiliary range extended by one.
+
+\paragraph{Which orbital energies (implementation note).} The denominators in
+Eq.~\eqref{eq:tamp} use the \emph{CQED} orbital energies. The perturbation
+series is defined relative to the CQED monomer Hamiltonians and the numerator
+already carries cavity-dressed integrals, so canonical (cavity-free)
+denominators would mix two reference definitions. The code retains a
+\texttt{canonical\_denom} switch as a \emph{diagnostic} only, and records which
+convention produced a given set of amplitudes so that the
+exchange-dispersion term cannot silently consume amplitudes built under the
+other one.
+
+\subsection{Long-range behaviour}
+\label{sec:longrange}
+
+The cavity contribution to Eq.~\eqref{eq:disp} deserves comment because it
+looks pathological and is not. Its kernel, $d_{pq}d_{rs}$, contains \emph{no
+Coulomb operator} and therefore no $R$-dependence at any separation. Through
+$v(abrs)$ it becomes $d^{A}_{ar} d^{B}_{bs}$ in the numerator; the denominator
+also tends to a constant as $R\to\infty$, so the cavity part of
+$E^{(20)}_{\mathrm{disp}}$ approaches a finite non-zero constant rather than
+decaying.
+
+This is the single-mode long-wavelength approximation behaving as specified:
+both monomers couple to the same cavity mode with the same $\lam$, so the
+cavity mediates an interaction with no distance decay.
+
+The $R\to\infty$ limit is computable in closed form from \emph{isolated-monomer}
+transition dipoles and excitation energies, with no dimer calculation:
+\begin{equation}
+\lim_{R\to\infty} E^{(20)}_{\mathrm{disp}}
+= 4 \sum_{ar}\sum_{bs}
+\frac{(d^{A}_{ar})^{2}\,(d^{B}_{bs})^{2}}
+     {\epsilon_a + \epsilon_b - \epsilon_r - \epsilon_s} .
+\label{eq:plateau}
+\end{equation}
+That makes it a sharp validation target rather than a qualitative observation.
+Running it is instructive, and gives a mixed verdict.
+
+\paragraph{The numerator plateaus; the energy does not.} Measured on water/He,
+$\lVert v_{\mathrm{cav}}\rVert$ is constant to seven significant figures from
+$R = 8$ to $50$\,\AA{}, exactly as the vanishing Coulomb kernel requires. The
+\emph{energy}, however, decays steadily, reaching only $5.5\%$ of
+Eq.~\eqref{eq:plateau} at $50$\,\AA. With the numerator constant, the drift is
+entirely in the denominators.
+
+\paragraph{Implementation note: the orbital energies are not translation
+invariant.} The cause is a property of the CQED-SCF reference rather than of
+the dispersion expression. For a single atom translated by $z_0$ along the
+polarization direction --- physically the same system --- the total CQED-SCF
+energy is invariant to $4\times10^{-14}\,E_h$, but the HOMO--LUMO gap grows as
+$\lambda^2 z_0^2$, and occupied and virtual orbitals move in \emph{opposite}
+directions. Consequently a rigid translation of an entire dimer by $20$\,\AA{}
+leaves $E^{(10)}_{\mathrm{elst}}$, $E^{(10)}_{\mathrm{exch}}$,
+$E^{(20)}_{\mathrm{ind,r}}$ and $E^{(20)}_{\mathrm{exch-ind,r}}$ unchanged to
+$10^{-12}\,E_h$ while changing $E^{(20)}_{\mathrm{disp}}$ by a factor of $7.4$.
+
+Only the terms dividing by \emph{bare} monomer orbital-energy differences are
+affected. Induction is invariant despite also involving orbital energies,
+because its coupled response carries the compensating DSE Hessian contribution;
+Eq.~\eqref{eq:tamp} divides by the bare difference with nothing to cancel it.
+The opposite-sign shift of occupied against virtual orbitals points at the
+exchange-like term $N_{\mu\nu}[D] = \sum_{\rho\sigma} d_{\mu\rho} d_{\nu\sigma}
+D_{\rho\sigma}$ of Eq.~(fock) in the companion document, which is built from
+the bare dipole matrix rather than the coherent-state fluctuation
+$\dop - \dexp$: under a translation $d \to d + z_0\lambda S$ this acquires a
+$z_0^2\lambda^2\,(SDS)$ contribution supported only on the occupied space.
+
+This is independent of the factorization developed in this note --- it is
+present identically in the dense four-index formulation, and absent at
+$\lam = \bm{0}$ --- but it must be settled before any long-range
+cavity-dispersion curve is interpreted physically. Section~\ref{sec:origin}
+sets out the three remedies under consideration.
+
+% =============================================================================
+\section{Origin dependence of the reference: three remedies}
+\label{sec:origin}
+
+\subsection{The defect, stated precisely}
+
+Under a rigid translation by $\bm{T}$, the AO dipole matrix transforms as
+$d \to d + (\lam\cdot\bm{T})\,S$. Two terms of the Pauli--Fierz Fock operator
+respond:
+
+\begin{itemize}[leftmargin=*, itemsep=3pt]
+\item the one-electron DSE (quadrupole) term $Q^{\mathrm{PF}}$ acquires a
+contribution proportional to $S$, shifting \emph{every} orbital by
+$+\tfrac12(\lam\cdot\bm{T})^2$;
+\item the exchange-like term $N_{\mu\nu}[D] = \sum_{\rho\sigma} d_{\mu\rho}
+d_{\nu\sigma} D_{\rho\sigma}$ acquires $(\lam\cdot\bm{T})^2 (SDS)$, which is
+supported \emph{only on the occupied space}, so $-\bm{N}$ shifts occupied
+orbitals by $-(\lam\cdot\bm{T})^2$.
+\end{itemize}
+
+Net: occupied $-\tfrac12(\lam\cdot\bm{T})^2$, virtual
+$+\tfrac12(\lam\cdot\bm{T})^2$, and every gap widens by $(\lam\cdot\bm{T})^2$.
+Measured for water at $T = 20$\,\AA{}, $\lambda = 0.1$: occupied shift
+$-7.142242$ against $-\tfrac12\lambda^2T^2 = -7.142130$.
+
+What is \emph{not} broken matters as much. The total CQED-SCF energy is
+invariant to $4\times10^{-14}\,E_h$ and the density to $8\times10^{-12}$, so the
+occupied and virtual \emph{subspaces} are correct; it is the canonical rotation
+within each subspace, and the eigenvalues, that move. Consequently
+$E^{(10)}_{\mathrm{elst}}$, $E^{(10)}_{\mathrm{exch}}$,
+$E^{(20)}_{\mathrm{ind,r}}$ and $E^{(20)}_{\mathrm{exch-ind,r}}$ are all
+invariant; only the terms dividing by bare orbital-energy differences are not.
+
+\subsection{Option 1: an intrinsic reference frame (implemented)}
+
+Solve each monomer's CQED-SCF after translating its ghosted geometry so that
+its own real-atom centre of mass lies at the origin. Every monomer quantity is
+then independent of where the dimer sits, and translation invariance follows by
+construction. The MO coefficients transfer into the dimer frame unchanged,
+because a rigid translation moves the basis functions with the molecule.
+
+The implementation turns on one distinction, which is the substantive content
+of this option:
+
+\begin{quote}
+A block whose four orbital indices all belong to \emph{one} monomer is an
+\textbf{internal} quantity and must be built in that monomer's intrinsic frame.
+Every block that mixes the monomers is an \textbf{interaction} quantity and must
+be built in the shared dimer frame.
+\end{quote}
+
+Both halves are load-bearing.
+
+\emph{Interaction quantities.} Monomers $A$ and $B$ use \emph{different}
+intrinsic frames, so dipole matrices taken from those frames would differ by
+$(\lam\cdot(\bm{T}_A-\bm{T}_B))S$. That would misstate the interaction and
+destroy $d^A = d^B$, and with it the single-auxiliary-row factorization
+Eq.~\eqref{eq:augmented} on which the entire density-fitted backend rests. The
+overlap, the ERIs, the dipole matrices and the nuclear attraction integrals
+therefore all stay in the dimer frame.
+
+\emph{Internal quantities.} The coupled-perturbed Hartree--Fock matrix is
+monomer $B$'s own orbital Hessian, built from the blocks $v(sbbs)$ and
+$v(sbsb)$. Its diagonal carries $\epsilon_s - \epsilon_b$ from the intrinsic
+frame, while its exchange-like DSE contribution $-d_{bb'}d_{ss'}$ involves the
+occupied--occupied and virtual--virtual blocks of $d$, which are \emph{not}
+translation invariant (unlike the occupied--virtual blocks, which are, because
+$S_{bs} = 0$). Induction is origin independent only because these two
+origin-dependent pieces cancel; supplying intrinsic-frame orbital energies
+alongside a dimer-frame Hessian breaks the cancellation. In an intermediate
+version of this implementation that mismatch changed $E^{(20)}_{\mathrm{ind,r}}$
+by $1.1\times10^{-5}\,E_h$ and reversed its sign under a $20$\,\AA{}
+translation. With the Hessian built in the matching frame, induction returns
+\emph{exactly} to its dimer-frame value.
+
+\paragraph{Result.} All six components become translation invariant, and the
+cavity dispersion plateaus as Eq.~\eqref{eq:plateau} predicts:
+
+\begin{center}
+\small
+\begin{tabular}{lrr}
+\toprule
+& \multicolumn{2}{c}{change under a $20$\,\AA{} rigid translation} \\
+\cmidrule(l){2-3}
+component & \texttt{dimer} frame & \texttt{monomer\_com} frame \\
+\midrule
+$E^{(10)}_{\mathrm{elst}}$       & $4.7\times10^{-14}$ & $4.5\times10^{-14}$ \\
+$E^{(10)}_{\mathrm{exch}}$       & $5.6\times10^{-14}$ & $8.0\times10^{-17}$ \\
+$E^{(20)}_{\mathrm{disp}}$       & $\bm{1.8\times10^{-5}}$ & $1.0\times10^{-18}$ \\
+$E^{(20)}_{\mathrm{exch-disp}}$  & $\bm{6.0\times10^{-7}}$ & $4.6\times10^{-18}$ \\
+$E^{(20)}_{\mathrm{ind,r}}$      & $7.1\times10^{-15}$ & $2.0\times10^{-17}$ \\
+$E^{(20)}_{\mathrm{exch-ind,r}}$ & $8.9\times10^{-15}$ & $1.8\times10^{-17}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+$\mathrm{Disp20[cav,cav]}$ is then constant at $-2.909131200\times10^{-5}\,E_h$
+from $R = 8$ to $50$\,\AA{} (eleven significant figures), against the
+isolated-monomer prediction of Eq.~\eqref{eq:plateau},
+$-2.9087\times10^{-5}\,E_h$; the residual difference is the ghosted (dimer)
+basis, as expected. Only the dispersion terms change value; electrostatics,
+exchange and induction are reproduced exactly.
+
+\paragraph{What Option 1 does not do.} It selects a convention rather than
+removing one. The residual dependence enters through $\langle z^2\rangle$, so
+centre of mass, centre of nuclear charge and centroid of electronic charge give
+different answers. Centre of mass is also a \emph{mass}-weighted choice in a
+problem with no mass dependence, which is hard to justify from the Hamiltonian.
+
+\subsection{Option 2: build the DSE Fock terms from the fluctuation operator}
+
+The coherent-state DSE is $\tfrac12(\lam\cdot(\hat{\bm\mu}-\langle\hat{\bm\mu}
+\rangle))^2$, and the operator inside the square is manifestly translation
+invariant. The origin dependence in the Fock arises because the implementation
+expands the square and builds $Q^{\mathrm{PF}}$ and $\bm{N}[D]$ from the
+\emph{bare} $d$ rather than from the fluctuation. Restoring it costs one
+definition:
+\begin{equation}
+c = \frac{\dexp_{\mathrm{el}}}{N_{\mathrm{el}}},
+\qquad
+\tilde{d} = d - c\,S ,
+\label{eq:fluct}
+\end{equation}
+where $c \to c + \lam\cdot\bm{T}$ under translation, so $\tilde d$ is exactly
+invariant. Using $\tilde d$ in $\bm{N}[D]$ and correcting the one-electron term
+to $\bm{H} = \bm{H}_0 + \bm{Q}^{\mathrm{PF}} - (c\,d - \tfrac12 c^2 S)$ --- which
+is $-\tfrac12(\tilde d^{\,2})_{\mathrm{AO}}$ expanded --- gives:
+
+\begin{center}
+\small
+\begin{tabular}{lrrl}
+\toprule
+Fock construction & $\max|\Delta D|$ & $\max|\Delta\epsilon|$ & HOMO--LUMO gap, $0 \to 20$\,\AA \\
+\midrule
+bare $d$ (current) & $3.2\times10^{-10}$ & $7.61$ & $0.69545907 \to 15.27376202$ \\
+fluctuation $\tilde d$ & $1.8\times10^{-13}$ & $2.6\times10^{-13}$ & $0.69367500 \to 0.69367500$ \\
+$\tilde d$, wrong sign & $4.9\times10^{-1}$ & $14.9$ & converges elsewhere \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+Advantages over Option 1: no convention is chosen, $d^A = d^B$ is untouched, and
+the internal/interaction distinction of Section~\ref{sec:origin} disappears
+because there is nothing left to be inconsistent about. Costs: it is a different
+definition of the mean-field operator, so it changes results even at the origin
+(the gap moves from $0.69545907$ to $0.69367500$) and every pinned reference
+value would need re-establishing. The prototype validated the Fock only; whether
+the total-energy expression remains consistent under the same substitution has
+not been checked, and the sign had to be pinned empirically.
+
+\subsection{Option 3: strong-coupling QED-HF}
+
+Riso, Haugland, Ronca and Koch~\cite{Riso2022} identify origin dependence of the
+QED-HF reference as a structural defect rather than an implementation detail,
+and resolve it by generalising the ansatz: the coherent-state transformation is
+made orbital-dependent and optimised together with the orbitals, rather than
+fixed by the mean-field dipole expectation. This removes the origin dependence
+of the orbitals and orbital energies themselves, at the level of the reference
+definition, and therefore fixes every downstream quantity at once rather than
+term by term.
+
+It is the most principled of the three and the most invasive: it replaces the
+CQED-SCF reference, so every pinned energy in the package would be
+re-established against a different reference, and the SAPT monomer interface
+would need to expose whatever the generalised transformation carries.
+
+\subsection{Summary}
+
+\begin{center}
+\small
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{lccc}
+\toprule
+& Option 1 (frame) & Option 2 (fluctuation) & Option 3 (SC-QED-HF) \\
+\midrule
+removes origin dependence & yes & yes & yes \\
+chooses a convention & \textbf{yes} & no & no \\
+changes the reference definition & no & \textbf{yes} & \textbf{yes} \\
+changes results at the origin & dispersion only & \textbf{all terms} & \textbf{all terms} \\
+preserves $d^A = d^B$ & yes (by design) & yes & yes \\
+needs internal/interaction split & \textbf{yes} & no & no \\
+pinned values need re-establishing & dispersion only & \textbf{all} & \textbf{all} \\
+status & implemented, tested & prototyped & not started \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+Option 1 is available now as
+\texttt{monomer\_reference\_frame="monomer\_com"} and is opt-in; the historical
+\texttt{"dimer"} behaviour remains the default so that existing reference values
+are untouched. It is best read as a stopgap that makes long-range cavity
+dispersion interpretable, not as a resolution of the underlying question, which
+Options 2 and 3 address at the level where it arises.
+
+\subsection{Exchange-dispersion}
+
+$E^{(20)}_{\mathrm{exch\text{-}disp}}$ contracts the same amplitudes against an
+overlap-dressed intermediate,
+\begin{equation}
+E^{(20)}_{\mathrm{exch\text{-}disp}}
+= -2 \sum_{abrs}\Bigl[\tilde v(absr) + h_{absr} + q_{absr}\Bigr] t_{rsab},
+\label{eq:exchdisp}
+\end{equation}
+where $h$ and $q$ are built from $\tilde v$ blocks contracted with the
+intermonomer overlap blocks $s(ab)$, $s(as)$, $s(br)$. The algebra is lengthy
+but structurally uniform: every $\tilde v$ block entering
+Eq.~\eqref{eq:exchdisp} is one of the nine strings
+$abar$, $abra$, $absb$, $abbs$, $abas$, $abrb$, $abab$, $abrs$, $absr$, and
+each factorizes by Eq.~\eqref{eq:pairfac}. No $\nbf^4$ AO quantity is required
+at any point; the largest intermediates are of dimension
+$n_o^A n_o^B n_v^A n_v^B$, which the dense formulation also forms.
+
+% =============================================================================
+\section{Numerical verification}
+\label{sec:numerics}
+
+The factorization was checked against the dense four-index reference for a
+water/He dimer in cc-pVDZ at $\lam = (0,0,0.1)$, over every four-character
+string used by the driver (seventeen strings, including all cross-monomer pair
+types). The asymmetry between the two rows below is the substantive result:
+
+\begin{center}
+\small
+\begin{tabular}{lll}
+\toprule
+context & $\max$ deviation from dense $v$ & interpretation \\
+\midrule
+\textsf{standard} & $7\times10^{-6}$ -- $6\times10^{-5}$ &
+  ordinary fitting error on MO integrals \\
+\textsf{cavity} & $3.3\times10^{-17}$ &
+  \textbf{exact} --- as Eq.~\eqref{eq:augmented} requires \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+Had the DSE row been mispaired, transposed, or misscaled, the cavity row would
+read like the standard row. The eleven orders of magnitude between them is what
+makes this a decisive rather than a suggestive test.
+
+\paragraph{External oracle.} At $\lam = \bm 0$ the theory reduces exactly to
+conventional SAPT0, so Psi4's own \texttt{sapt0} is an independent
+implementation against which the dense reference can be pinned. For the same
+dimer the dense $E^{(20)}_{\mathrm{disp}}$ and
+$E^{(20)}_{\mathrm{exch\text{-}disp}}$ agree with Psi4 to
+$3.9\times10^{-8}$ and $2.5\times10^{-8}$ $E_h$ respectively, consistent with
+Psi4's density-fitting error against our exact-ERI reference. (Psi4's
+\texttt{FISAPT} routines are \emph{functional-group} SAPT and are not the
+appropriate oracle here.)
+
+\paragraph{Partition identity.} \textsf{standard} $+$ \textsf{cavity} $=$
+\textsf{total} is verified to $10^{-13}$ for every string; by
+Eq.~\eqref{eq:contexts} this is a slicing identity, so any deviation would
+indicate an indexing error rather than a physical discrepancy.
+
+\paragraph{End-to-end.} With the role assignment above, all six QED-SAPT0
+components computed through the factorization agree with the dense four-index
+reference for the water/methylamine dimer in jun-cc-pVDZ at
+$\lam = (0,0,0.1)$:
+
+\begin{center}
+\small
+\begin{tabular}{lrrr}
+\toprule
+component & dense / $E_h$ & factorized / $E_h$ & difference / kcal\,mol$^{-1}$ \\
+\midrule
+$E^{(10)}_{\mathrm{elst}}$      & $-0.0086737093$ & $-0.0086743054$ & $-3.7\times10^{-4}$ \\
+$E^{(10)}_{\mathrm{exch}}$      & $ 0.0030805286$ & $ 0.0030819372$ & $ 8.8\times10^{-4}$ \\
+$E^{(20)}_{\mathrm{disp}}$      & $-0.0027151107$ & $-0.0027146006$ & $ 3.2\times10^{-4}$ \\
+$E^{(20)}_{\mathrm{exch-disp}}$ & $ 0.0001966590$ & $ 0.0001952441$ & $-8.9\times10^{-4}$ \\
+$E^{(20)}_{\mathrm{ind,r}}$     & $-0.0017887767$ & $-0.0017887293$ & $ 3.0\times10^{-5}$ \\
+$E^{(20)}_{\mathrm{exch-ind,r}}$& $ 0.0008167150$ & $ 0.0008166473$ & $-4.2\times10^{-5}$ \\
+\midrule
+total                           & $-0.0090836941$ & $-0.0090838066$ & $-7.1\times10^{-5}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+with $N_{\mathrm{bf}} = 89$, $\naux = 398$ (JKFIT) and $293$ (RIFIT). Wall time
+for the integral construction and all six components fell from $11.7$\,s to
+$1.1$\,s and peak memory from $2380$\,MB to $254$\,MB.
+
+% =============================================================================
+\section{Relationship to the treatment of the DSE elsewhere in the package}
+
+The factorization developed here is a restatement, not a new approximation, of
+the position taken throughout \texttt{cqed-scf}: the DSE is a genuine
+two-electron operator. This is worth recording explicitly because the
+literature is not uniform on the point. Yang \emph{et al.}~\cite{Yang2021}
+evaluate the DSE as the square of a one-body expectation value over a single
+determinant, which yields a rank-one \emph{mean-field} coupling with no
+exchange-like counterpart. Treating it as a two-electron operator instead
+produces the exchange-like terms that appear as $-N_{\mu\nu}[D]$ in the
+Pauli--Fierz Fock matrix, as $K_{\mathrm{DSE}}$ in the \texttt{DSEJK} builder,
+and as $-d_{ij}d_{ab}$ in the response block. These are different levels of
+theory, not a rescaling of one another.
+
+The three faces of the same operator now implemented in the package are:
+
+\begin{center}
+\small
+\begin{tabular}{lll}
+\toprule
+face & object & used by \\
+\midrule
+$J/K$ build & $J = d\,\Tr(dD)$, \; $K = d D d^{\mathsf T}$ & SCF, SAPT first order, induction \\
+MO response block & $2 d_{ia} d_{jb} - d_{ij} d_{ab}$ & QED-CIS, CPHF \\
+DF auxiliary row & $\tilde B^{\naux+1} = d$ & SAPT dispersion (this note) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+All three follow from Eq.~\eqref{eq:sepkernel} by the substitution
+$(pq|rs)\to d_{pq}d_{rs}$ in the corresponding standard expression. The
+response face evaluates it directly in the MO blocks (cheapest: no AO
+transform and no $J/K$ build at all); the SAPT face needs the AO form.
+
+% =============================================================================
+\begin{thebibliography}{9}
+
+\bibitem{Haugland2020}
+T.~S. Haugland, E.~Ronca, E.~F. Kj{\o}nstad, A.~Rubio, and H.~Koch,
+\emph{Coupled Cluster Theory for Molecular Polaritons: Changing Ground and
+Excited States}, Phys. Rev. X \textbf{10}, 041043 (2020).
+
+\bibitem{Yang2021}
+J.~Yang, Q.~Ou, Z.~Pei, H.~Wang, B.~Weng, Z.~Shuai, K.~Mullen, and Y.~Shao,
+\emph{Quantum-electrodynamical time-dependent density functional theory within
+Gaussian atomic basis}, J. Chem. Phys. \textbf{155}, 064107 (2021).
+
+\bibitem{Jeziorski1994}
+B.~Jeziorski, R.~Moszynski, and K.~Szalewicz,
+\emph{Perturbation Theory Approach to Intermolecular Potential Energy Surfaces
+of van der Waals Complexes}, Chem. Rev. \textbf{94}, 1887 (1994).
+
+\bibitem{Hohenstein2012}
+E.~G. Hohenstein and C.~D. Sherrill,
+\emph{Raising the Prediction Limit: Symmetry-Adapted Perturbation Theory},
+WIREs Comput. Mol. Sci. \textbf{2}, 304 (2012).
+
+\bibitem{Riso2022}
+R.~R. Riso, T.~S. Haugland, E.~Ronca, and H.~Koch,
+\emph{Molecular orbital theory in cavity QED environments},
+Nat. Commun. \textbf{13}, 1368 (2022).
+
+\bibitem{Whitten1973}
+J.~L. Whitten,
+\emph{Coulombic potential energy integrals and approximations},
+J. Chem. Phys. \textbf{58}, 4496 (1973).
+
+\bibitem{Dunlap1979}
+B.~I. Dunlap, J.~W.~D. Connolly, and J.~R. Sabin,
+\emph{On some approximations in applications of $X\alpha$ theory},
+J. Chem. Phys. \textbf{71}, 3396 (1979).
+
+\end{thebibliography}
+
+\end{document}

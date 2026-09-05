@@ -7,16 +7,74 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 import warnings
 import opt_einsum as oe
 import numpy as np
+# Used by _resolve_df_aux_basis and by the psi4.core.clean() calls on the
+# argument-validation error paths below, which previously raised NameError
+# instead of the intended exception.
+import psi4
 
 from ..references import CQEDConfig
 from .. import output
 
 from .monomer import SAPTMonomer
 from .results import QEDSAPT0Results
+from .dse_df import PauliFierzDF
 
 
 _VT_PART_KEYS = ("eri", "potential_A", "potential_B", "constant")
 _OPERATOR_CONTEXTS = ("standard", "total", "cavity")
+
+#: ``full_eri`` builds the dense nbf**4 AO tensor; ``df`` factorizes the
+#: Pauli-Fierz two-electron integral as an augmented density-fitting expansion
+#: in which the dipole self-energy is a single exact auxiliary row.  See
+#: docs/qed_sapt0_formalism.tex.
+_INTEGRAL_BACKENDS = ("full_eri", "df")
+
+#: Fitting-basis roles, following Psi4's own SAPT practice.  Psi4 fits the
+#: Coulomb-like terms (electrostatics, exchange, induction) with a JKFIT set
+#: (DF_BASIS_ELST / DF_BASIS_SCF) and the MP2-like dispersion terms with a
+#: RIFIT set (DF_BASIS_SAPT).  The distinction is not cosmetic: RIFIT is
+#: optimized for correlation energies, and using it for electrostatics costs
+#: roughly two orders of magnitude of accuracy, because Elst10 is a small
+#: residual of large cancelling terms and the fitting error does not cancel
+#: with anything.  Measured on water/He at cc-pVDZ, Elst10 error was 3.2e-5 Eh
+#: with RIFIT versus 4.0e-7 Eh with JKFIT.
+_DF_ROLES = ("scf", "corr")
+
+#: Frame in which each monomer's CQED-SCF reference is solved.
+#:
+#: ``dimer`` (default, historical) solves each ghosted monomer where it sits in
+#: the dimer.  ``monomer_com`` first translates the ghosted monomer so that its
+#: own real-atom centre of mass is at the coordinate origin.
+#:
+#: This matters because CQED-SCF orbitals and orbital energies are *not*
+#: translation invariant, even though the total energy and the density are: the
+#: one-electron DSE term shifts every orbital by +lambda^2 T^2 / 2 while the
+#: exchange-like N[D] term shifts only the occupied ones by -lambda^2 T^2.  A
+#: monomer sitting a distance T from the origin therefore acquires a spurious
+#: lambda^2 T^2 widening of its orbital-energy gaps, which propagates into the
+#: dispersion denominators.  Solving each reference in an intrinsic frame
+#: removes the dependence on where the dimer happens to sit.
+#:
+#: Only the *reference* moves.  Every interaction quantity -- overlap, ERIs,
+#: dipole matrices, nuclear attraction -- is built in the shared dimer frame,
+#: because monomers A and B use different intrinsic frames and the interaction
+#: operator must live in one.  In particular this keeps ``d_A == d_B``, on which
+#: the density-fitted backend depends.
+_MONOMER_REFERENCE_FRAMES = ("dimer", "monomer_com")
+
+
+def _read_only(array):
+    """Mark a large shared integral view read-only.
+
+    The AO integral tensors are views (of Psi4 buffers, or of one another when
+    the cavity is disabled and total == standard).  Nothing should write to
+    them, and a stray in-place update would silently couple the operator
+    contexts -- the failure mode documented in
+    docs/development/psi4_array_aliasing.md.  Making the views non-writeable
+    turns that into an immediate error instead of a plausible wrong number.
+    """
+    array.flags.writeable = False
+    return array
 
 
 @dataclass
@@ -40,6 +98,10 @@ class QEDSAPT0Driver:
     monomer_indices: Optional[Tuple[Sequence[int], Sequence[int]]] = None
     integral_backend: str = "full_eri"
     include_cavity_terms: bool = True
+    df_aux_basis: Optional[str] = None
+    df_scf_fitting_role: str = "JKFIT"
+    df_corr_fitting_role: str = "RIFIT"
+    monomer_reference_frame: str = "dimer"
     metadata: Dict[str, Any] = field(default_factory=dict)
     monomer_a: InitVar[Optional[SAPTMonomer]] = None
     monomer_b: InitVar[Optional[SAPTMonomer]] = None
@@ -86,8 +148,29 @@ class QEDSAPT0Driver:
             self.integral_backend = "full_eri"
             self.include_cavity_terms = False
 
+        if self.integral_backend not in _INTEGRAL_BACKENDS:
+            allowed = ", ".join(repr(name) for name in _INTEGRAL_BACKENDS)
+            raise ValueError(
+                f"integral_backend must be one of {allowed}; got {self.integral_backend!r}"
+            )
+
+        if self.monomer_reference_frame not in _MONOMER_REFERENCE_FRAMES:
+            allowed = ", ".join(repr(name) for name in _MONOMER_REFERENCE_FRAMES)
+            raise ValueError(
+                "monomer_reference_frame must be one of "
+                f"{allowed}; got {self.monomer_reference_frame!r}"
+            )
+
+        self._pf_df: Dict[str, PauliFierzDF] = {}
+        self._ghosted_molecules: Dict[str, Any] = {}
+        self._frame_mints: Dict[str, Any] = {}
+
         self.metadata.setdefault("integral_backend", self.integral_backend)
         self.metadata.setdefault("include_cavity_terms", self.include_cavity_terms)
+        self.metadata.setdefault("monomer_reference_frame", self.monomer_reference_frame)
+        if self.integral_backend == "df":
+            self.metadata.setdefault("df_scf_fitting_role", self.df_scf_fitting_role)
+            self.metadata.setdefault("df_corr_fitting_role", self.df_corr_fitting_role)
 
     def prepare_geometries(self) -> Tuple[str, str, str]:
         """Build dimer and ghosted monomer geometry strings from a Psi4 dimer."""
@@ -95,11 +178,71 @@ class QEDSAPT0Driver:
         monomer_A_geometry = self.dimer_geometry.extract_subsets(1, 2)
         monomer_B_geometry = self.dimer_geometry.extract_subsets(2, 1)
 
+        # Keep the dimer-frame ghosted molecules: every interaction integral is
+        # built in this single shared frame regardless of where the monomer
+        # references are solved.
+        self._ghosted_molecules = {"A": monomer_A_geometry, "B": monomer_B_geometry}
+        self._frame_mints = {}
+
         dimer_string = self.dimer_geometry.create_psi4_string_from_molecule()
-        monomer_A_string = monomer_A_geometry.create_psi4_string_from_molecule()
-        monomer_B_string = monomer_B_geometry.create_psi4_string_from_molecule()
+        monomer_A_string = self._reference_frame_string(monomer_A_geometry, 1)
+        monomer_B_string = self._reference_frame_string(monomer_B_geometry, 2)
 
         return dimer_string, monomer_A_string, monomer_B_string
+
+    def _reference_frame_string(self, ghosted_molecule, subset_index: int) -> str:
+        """Geometry string in which this monomer's CQED-SCF reference is solved."""
+
+        if self.monomer_reference_frame == "dimer":
+            return ghosted_molecule.create_psi4_string_from_molecule()
+
+        # Translate so the monomer's own real-atom centre of mass is at the
+        # origin.  Ghost centres move with it, so the ghosted basis and every
+        # internal distance are unchanged -- only the origin-dependent dipole
+        # and quadrupole operators see the shift.
+        real_molecule = self.dimer_geometry.extract_subsets(subset_index)
+        com = real_molecule.center_of_mass()
+        shifted = ghosted_molecule.clone()
+        shifted.translate(psi4.core.Vector3(-com[0], -com[1], -com[2]))
+        return shifted.create_psi4_string_from_molecule()
+
+    def _basis_name(self) -> str:
+        basis = (self.config.psi4_options or {}).get("basis")
+        if basis is None:
+            basis = psi4.core.get_global_option("BASIS")
+        return str(basis)
+
+    def _dimer_frame_mints(self, side: str):
+        """MintsHelper for one ghosted monomer, always in the shared dimer frame.
+
+        When the references are solved in the dimer frame this is exactly the
+        monomer's own MintsHelper (verified bitwise identical), so the default
+        path is unchanged.
+        """
+        if side not in ("A", "B"):
+            raise ValueError(f"side must be 'A' or 'B'; got {side!r}")
+
+        if self.monomer_reference_frame == "dimer":
+            return (self.monomer_A if side == "A" else self.monomer_B).mints
+
+        if side not in self._frame_mints:
+            basisset = self._dimer_frame_basisset(side)
+            self._frame_mints[side] = psi4.core.MintsHelper(basisset)
+        return self._frame_mints[side]
+
+    def _dimer_frame_basisset(self, side: str = "A"):
+        """Orbital basis for one ghosted monomer, in the shared dimer frame."""
+        if self.monomer_reference_frame == "dimer":
+            return (self.monomer_A if side == "A" else self.monomer_B).wfn.basisset()
+        return psi4.core.BasisSet.build(
+            self._ghosted_molecules[side], "BASIS", self._basis_name()
+        )
+
+    def _dimer_frame_molecule(self, side: str = "A"):
+        """Ghosted monomer molecule in the shared dimer frame."""
+        if self.monomer_reference_frame == "dimer":
+            return (self.monomer_A if side == "A" else self.monomer_B).wfn.molecule()
+        return self._ghosted_molecules[side]
 
     def prepare_monomers(self) -> Tuple[SAPTMonomer, SAPTMonomer]:
         """Prepare or retrieve monomer references."""
@@ -182,6 +325,21 @@ class QEDSAPT0Driver:
         self.d_exp_B = self.monomer_B.d_exp
         self.d_nuc_A = self.monomer_A.d_nuc
         self.d_nuc_B = self.monomer_B.d_nuc
+        self.d_A = self.monomer_A.d_ao
+        self.d_B = self.monomer_B.d_ao
+
+        # When the references were solved in their own intrinsic frames, every
+        # dipole-derived quantity above belongs to the wrong frame.  Rebuild all
+        # of them in the shared dimer frame, from the (frame-independent)
+        # monomer densities.
+        if self.monomer_reference_frame != "dimer":
+            self._rebase_dipole_data_to_dimer_frame()
+
+        # Each monomer's own CQED-SCF was solved with this dipole matrix, so it
+        # is the one its *internal* orbital Hessian must use.  Under the default
+        # frame these are the shared dimer-frame matrices and every correction
+        # below vanishes identically.
+        self._d_intrinsic = {"A": self.monomer_A.d_ao, "B": self.monomer_B.d_ao}
 
         # Constant term in the coherent-state fluctuation product,
         # + <d_A><d_B>.
@@ -190,8 +348,22 @@ class QEDSAPT0Driver:
         assert np.isclose(self.d_exp_A, (self.d_exp_el_A + self.d_nuc_A))
         assert np.isclose(self.d_exp_B, (self.d_exp_el_B + self.d_nuc_B))
 
-        self.d_A = self.monomer_A.d_ao
-        self.d_B = self.monomer_B.d_ao
+        # d_ao = lambda . mu_ao is a property of the shared dimer AO basis and
+        # frame, not of the monomer, so the two ghosted monomer calculations must
+        # produce the same matrix.  This is load-bearing: it makes the cavity
+        # two-electron kernel d_A (x) d_B symmetric under (pq) <-> (rs), which is
+        # what lets the density-fitted backend represent the whole dipole
+        # self-energy as a single extra auxiliary row (see dse_df.PauliFierzDF
+        # and docs/qed_sapt0_formalism.tex).  A mismatch would mean the monomer
+        # bases or dipole origins have diverged, which breaks far more than
+        # dispersion, so fail loudly here rather than silently downstream.
+        if not np.allclose(self.d_A, self.d_B, rtol=0.0, atol=1e-12):
+            raise RuntimeError(
+                "monomer A and B dipole-projected AO matrices differ "
+                f"(max|d_A - d_B| = {np.abs(self.d_A - self.d_B).max():.3e}). "
+                "They must be identical in the shared dimer basis; check that "
+                "both monomers were built from the same dimer geometry and frame."
+            )
 
         electron_count_A = 2 * self.ndocc_A + self.nsocc_A
         electron_count_B = 2 * self.ndocc_B + self.nsocc_B
@@ -202,6 +374,47 @@ class QEDSAPT0Driver:
             else 0.0
         )
         self.vt_nuc_rep = self.vt_nuc_rep_standard + self.vt_nuc_rep_cavity 
+
+    def _rebase_dipole_data_to_dimer_frame(self) -> None:
+        """Recompute every dipole-derived quantity in the shared dimer frame.
+
+        Only ``C`` and ``eps`` are taken from the intrinsic-frame reference.
+        The interaction operator must live in one common frame: monomers A and
+        B use *different* intrinsic frames, so dipole matrices taken from those
+        would differ by ``(z_A - z_B) lambda S``, which would both misstate the
+        interaction and break the ``d_A == d_B`` identity the density-fitted
+        backend relies on.
+
+        The MO coefficients transfer without modification: a rigid translation
+        moves the basis functions with the molecule, so a coefficient vector
+        describes the correspondingly translated orbital.
+        """
+        lambda_vector = np.asarray(self.config.lambda_vector)
+
+        for side, monomer in (("A", self.monomer_A), ("B", self.monomer_B)):
+            mints = self._dimer_frame_mints(side)
+            molecule = self._ghosted_molecules[side]
+
+            mu_ao = np.asarray(mints.ao_dipole())
+            d_ao = sum(lambda_vector[i] * mu_ao[i] for i in range(3))
+
+            # Densities are frame independent given the coefficients.
+            Co = monomer.Co
+            D = oe.contract("pi,qi->pq", Co, Co, optimize="optimal")
+
+            mu_el = np.array(
+                [2.0 * oe.contract("pq,pq->", mu_ao[i], D, optimize="optimal") for i in range(3)]
+            )
+            nuclear_dipole = molecule.nuclear_dipole()
+            mu_nuc = np.array([nuclear_dipole[0], nuclear_dipole[1], nuclear_dipole[2]])
+
+            d_exp_el = float(np.dot(lambda_vector, mu_el))
+            d_nuc = float(np.dot(lambda_vector, mu_nuc))
+
+            setattr(self, f"d_{side}", d_ao)
+            setattr(self, f"d_exp_el_{side}", d_exp_el)
+            setattr(self, f"d_nuc_{side}", d_nuc)
+            setattr(self, f"d_exp_{side}", d_exp_el + d_nuc)
 
     def build_orbitals(self) -> Any:
         """Build orbital intermediates needed for QED-SAPT0 components.
@@ -262,11 +475,14 @@ class QEDSAPT0Driver:
         # build sizes for number of occupied and virtual orbitals of each monomer
         self.build_sizes()
 
-        # Monomer A and B are ghosted calculations in the dimer basis, so either
-        # MintsHelper can define the shared AO integral environment.
-        shared_mints = self.monomer_A.mints
-        monomer_A_mints = self.monomer_A.mints
-        monomer_B_mints = self.monomer_B.mints
+        # Monomer A and B are ghosted calculations in the same dimer basis, so
+        # either MintsHelper can define the shared AO integral environment --
+        # provided it is the *dimer-frame* one.  With intrinsic-frame references
+        # the monomers' own MintsHelpers sit in different frames and must not be
+        # used for interaction integrals.
+        shared_mints = self._dimer_frame_mints("A")
+        monomer_A_mints = self._dimer_frame_mints("A")
+        monomer_B_mints = self._dimer_frame_mints("B")
 
         # overlap of dimer in AO basis
         self.S_dimer = np.asarray(shared_mints.ao_overlap())
@@ -274,26 +490,25 @@ class QEDSAPT0Driver:
         # overlap transformed on bra with monomer A and ket with monomer B
         self.S_AB = oe.contract("uI,vJ,uv->IJ", self.C_A, self.C_B, self.S_dimer)
 
-        # 1. Get the ERI array directly (try to avoid copying if ao_eri() allows)
-        I_dimer_standard = np.asarray(shared_mints.ao_eri())
-        I_dimer = I_dimer_standard.copy()
-
-        # 2. Reshape self.d_A and self.d_B to broadcast into a 4D shape (pqrs)
-        #    d_A (p, q) -> (p, q, 1, 1)
-        #    d_B (r, s) -> (1, 1, r, s)
-        # This adds the outer product directly to self.I_dimer in-place, swapping axes on the fly.
-        I_dimer_cavity = np.zeros_like(I_dimer)
-        if self.include_cavity_terms:
-            I_dimer_cavity = self.d_A[:, :, np.newaxis, np.newaxis] * self.d_B[np.newaxis, np.newaxis, :, :]
-            I_dimer += I_dimer_cavity
-
-        # 3. Swap axes in-place (creates a view, zero memory overhead)
-        #    Note: If a contiguous array is strictly required by downstream code, 
-        #    append .copy() here, but it will double the memory momentarily.
-        self.I_dimer_standard = I_dimer_standard.swapaxes(1, 2)
-        self.I_dimer_cavity = I_dimer_cavity.swapaxes(1, 2)
-        self.I_dimer = I_dimer.swapaxes(1, 2)
-
+        if self.integral_backend == "df":
+            # Density-fitted backend: the Pauli-Fierz two-electron integral is
+            # an augmented DF expansion whose last auxiliary row is exactly the
+            # dipole matrix (docs/qed_sapt0_formalism.tex).  No nbf**4 AO tensor
+            # is ever formed, so the dense attributes are left unset and
+            # _eri_for_context() refuses rather than returning something
+            # plausible.
+            self.I_dimer_standard = None
+            self.I_dimer_cavity = None
+            self.I_dimer = None
+            self._pf_df = {}
+            self.metadata["df_aux_basis"] = self._resolve_df_aux_basis()
+            # Build the Coulomb-fitted tensor eagerly so a bad fitting-basis
+            # request fails inside build_integrals rather than mid-component.
+            # The correlation-fitted tensor is built on first use, so a caller
+            # that only wants first-order terms never pays for it.
+            self.metadata["df_naux_scf"] = self._pauli_fierz_df("scf").naux
+        else:
+            self._build_dense_eri_tensors(shared_mints)
 
         # build the one-electron potential integrals for monomer A and monomer B
         # the V_A and V_B terms are scaled by 1 / N_A and 1 / N_B in the v_tilde build
@@ -316,6 +531,88 @@ class QEDSAPT0Driver:
         self.V_B_AA = oe.contract("uI,vJ,uv->IJ", self.C_A, self.C_A, self.V_B, optimize="optimal")
         self.V_B_AB = oe.contract("uI,vJ,uv->IJ", self.C_A, self.C_B, self.V_B, optimize="optimal")
 
+    def _resolve_df_aux_basis(self) -> str:
+        """Pick the fitting-basis key for the DF backend.
+
+        Explicit ``df_aux_basis`` wins; otherwise follow the orbital basis the
+        monomer references were actually run with, and fall back to Psi4's
+        current global option only if the config does not say.
+        """
+        if self.df_aux_basis is not None:
+            return self.df_aux_basis
+        basis = (self.config.psi4_options or {}).get("basis")
+        if basis is not None:
+            return str(basis)
+        return psi4.core.get_global_option("BASIS")
+
+    def _pauli_fierz_df(self, df_role: str = "scf") -> PauliFierzDF:
+        """Return the density-fitted integral tensor for a fitting role.
+
+        ``scf`` fits with a JKFIT set and serves the Coulomb-like terms;
+        ``corr`` fits with a RIFIT set and serves the MP2-like dispersion
+        terms.  See :data:`_DF_ROLES` for why the distinction matters.
+        """
+        if df_role not in _DF_ROLES:
+            allowed = ", ".join(repr(name) for name in _DF_ROLES)
+            raise ValueError(f"df_role must be one of {allowed}; got {df_role!r}")
+        if self.integral_backend != "df":
+            raise RuntimeError(
+                'density-fitted tensors are only built for integral_backend="df"; '
+                f"this driver uses {self.integral_backend!r}."
+            )
+        if getattr(self, "orbitals", None) is None:
+            raise RuntimeError(
+                "The density-fitted backend is not built. Call build_integrals() "
+                'before requesting integrals with integral_backend="df".'
+            )
+
+        if df_role not in self._pf_df:
+            fitting_role = (
+                self.df_scf_fitting_role if df_role == "scf" else self.df_corr_fitting_role
+            )
+            self._pf_df[df_role] = PauliFierzDF.from_driver(
+                self,
+                aux_basis_name=self._resolve_df_aux_basis(),
+                fitting_role=fitting_role,
+            )
+            self.metadata[f"df_naux_{df_role}"] = self._pf_df[df_role].naux
+        return self._pf_df[df_role]
+
+    def _build_dense_eri_tensors(self, shared_mints) -> None:
+        """Build the dense nbf**4 AO tensors used by the ``full_eri`` backend."""
+
+        # 1. Get the ERI array directly (try to avoid copying if ao_eri() allows)
+        I_dimer_standard = np.asarray(shared_mints.ao_eri())
+
+        # 2. The coherent-state fluctuation product contributes a separable
+        #    rank-one kernel, (pq|rs) -> d_A[p, q] * d_B[r, s].  Broadcasting
+        #    d_A (p, q) -> (p, q, 1, 1) against d_B (r, s) -> (1, 1, r, s)
+        #    materializes it in the same chemists' layout as the ordinary ERIs.
+        #
+        #    When the cavity is disabled there is no cavity tensor and the total
+        #    equals the standard tensor, so neither the N^4 zero array nor the
+        #    N^4 copy is allocated.  ``None`` marks the inactive contribution;
+        #    v() and the diagnostics handle it explicitly rather than paying
+        #    nbf**4 doubles to represent zero.
+        if self.include_cavity_terms:
+            I_dimer_cavity = self.d_A[:, :, np.newaxis, np.newaxis] * self.d_B[np.newaxis, np.newaxis, :, :]
+            I_dimer = I_dimer_standard + I_dimer_cavity
+        else:
+            I_dimer_cavity = None
+            I_dimer = I_dimer_standard
+
+        # 3. Swap axes (creates a view, zero memory overhead) so that
+        #    I_dimer[p, q, r, s] holds the chemists' integral (p r | q s).
+        self.I_dimer_standard = _read_only(I_dimer_standard.swapaxes(1, 2))
+        self.I_dimer_cavity = (
+            None if I_dimer_cavity is None else _read_only(I_dimer_cavity.swapaxes(1, 2))
+        )
+        # NOTE: with the cavity disabled this is deliberately the *same* view as
+        # I_dimer_standard.  Both are marked read-only so the sharing cannot turn
+        # into the silent aliasing defect documented in
+        # docs/development/psi4_array_aliasing.md.
+        self.I_dimer = _read_only(I_dimer.swapaxes(1, 2))
+
 
     def compute_components(self, monomers, integrals) -> QEDSAPT0Results:
         """Call future component functions and collect a result object."""
@@ -334,6 +631,15 @@ class QEDSAPT0Driver:
 
     def _eri_for_context(self, context: str):
         context = self._validate_operator_context(context)
+        if self.integral_backend == "df":
+            # There is no dense AO tensor to return.  Refuse loudly: returning
+            # None here would make v() hand back zeros, which is exactly the
+            # kind of plausible-but-wrong result this codebase has been bitten
+            # by before (docs/development/psi4_array_aliasing.md).
+            raise RuntimeError(
+                'the "df" integral backend has no dense AO ERI tensor; '
+                "use v() or PauliFierzDF.b() instead of _eri_for_context()."
+            )
         if context == "standard":
             return self.I_dimer_standard
         if context == "cavity":
@@ -377,16 +683,53 @@ class QEDSAPT0Driver:
         total += parts["constant"]
         return total
 
-    def v(self, string, context: str = "total"):
+    def v(self, string, context: str = "total", df_role: str = "scf", frame: Optional[str] = None):
         """
         Builds two-electron integrals dressed with monomerA - monomerB dipole integrals
         transformed with appropriate MO coefficients
+
+        ``df_role`` selects the fitting basis under the ``df`` backend: ``scf``
+        (JKFIT) for the Coulomb-like terms, ``corr`` (RIFIT) for the MP2-like
+        dispersion terms.  It is ignored by the exact ``full_eri`` backend.
+
+        ``frame`` selects the frame of the cavity (dipole self-energy)
+        contribution.  Leave it ``None`` for interaction blocks; pass the
+        monomer label for a block whose four indices all belong to one monomer,
+        so that its cavity operator matches the reference its orbital energies
+        came from.  Under ``monomer_reference_frame="dimer"`` this is a no-op.
         """
+        if frame is not None:
+            if frame not in ("A", "B"):
+                raise ValueError(f"frame must be 'A', 'B' or None; got {frame!r}")
+            # When the references were solved in the dimer frame the intrinsic
+            # and shared operators are the same matrix, so short-circuit rather
+            # than subtracting and re-adding it: (a - x) + x is not bitwise a.
+            if (
+                self.monomer_reference_frame == "dimer"
+                or context == "standard"
+                or not self.include_cavity_terms
+            ):
+                if context == "cavity":
+                    return self._cavity_v(string, frame)
+                return self.v(string, context=context, df_role=df_role)
+            if context == "cavity":
+                return self._cavity_v(string, frame)
+            shared = self.v(string, context=context, df_role=df_role)
+            return shared - self._cavity_v(string, None) + self._cavity_v(string, frame)
+
         if len(string) != 4:
             psi4.core.clean()
             raise Exception("v: string %s does not have length 4" % string)
+        if self.integral_backend == "df":
+            return self._pauli_fierz_df(df_role).v(string, context=context)
+
         I_dimer = self._eri_for_context(context)
-        
+
+        # An inactive cavity contributes exactly zero.  Return that directly
+        # rather than transforming an nbf**4 array of zeros.
+        if I_dimer is None:
+            return np.zeros(tuple(self.orbitals[label].shape[1] for label in string))
+
         # ERI's from mints are in chemist's notation (pq|rs), but we want to access them in physicist's notation (pr|qs)
         # so we need to swap the middle two indices
         V = oe.contract("pA,pqrs->Aqrs", self.orbitals[string[0]], I_dimer, optimize="optimal")
@@ -395,6 +738,27 @@ class QEDSAPT0Driver:
         V = oe.contract("sD,ABCs->ABCD", self.orbitals[string[3]], V, optimize="optimal")
         return V
     
+    def _cavity_mo_pair(self, pair: str, frame: Optional[str] = None):
+        """``C_x^T d C_y`` for the rank-one cavity kernel.
+
+        ``frame=None`` uses the shared dimer-frame dipole matrix, which is what
+        every *interaction* quantity needs.  ``frame="A"`` / ``"B"`` uses that
+        monomer's own intrinsic-frame matrix, which is what its *internal*
+        orbital Hessian needs -- the CPHF denominators come from that monomer's
+        orbital energies, and mixing them with a differently-framed dipole
+        matrix breaks the cancellation that makes induction origin independent.
+        """
+        d_ao = self.d_A if frame is None else self._d_intrinsic[frame]
+        return self.orbitals[pair[0]].T @ d_ao @ self.orbitals[pair[1]]
+
+    def _cavity_v(self, string: str, frame: Optional[str] = None):
+        """Rank-one cavity block, never materialized as an AO tensor."""
+        if not self.include_cavity_terms:
+            return np.zeros(tuple(self.orbitals[label].shape[1] for label in string))
+        left = self._cavity_mo_pair(string[0] + string[2], frame)
+        right = self._cavity_mo_pair(string[1] + string[3], frame)
+        return oe.contract("AC,BD->ABCD", left, right, optimize="optimal")
+
     def s(self, string):
         # Grap appropriate overlap integrals 
         if len(string) != 2:
@@ -466,7 +830,7 @@ class QEDSAPT0Driver:
         return (self.orbitals[s1].T).dot(potential).dot(self.orbitals[s2])
         
 
-    def vt_parts(self, string, context: str = "total"):
+    def vt_parts(self, string, context: str = "total", df_role: str = "scf"):
         if len(string)!=4:
             psi4.core.clean()
             raise Exception('Compute tilde{v}: string %s does not have 4 elements' % string)
@@ -480,7 +844,7 @@ class QEDSAPT0Driver:
         s_right = string[1] + string[3]
 
         # ERI term
-        eri = self.v(string, context=context)
+        eri = self.v(string, context=context, df_role=df_role)
 
         # potential A
         S_A = self.s(s_left)
@@ -502,8 +866,10 @@ class QEDSAPT0Driver:
             "constant": constant,
         }
 
-    def vt(self, string, context: str = "total"):
-        return self._sum_vt_parts(self.vt_parts(string, context=context))
+    def vt(self, string, context: str = "total", df_role: str = "scf"):
+        return self._sum_vt_parts(
+            self.vt_parts(string, context=context, df_role=df_role)
+        )
 
     def vt_partitions(self, string):
         standard = self.vt_parts(string, context="standard")
@@ -557,7 +923,7 @@ class QEDSAPT0Driver:
         }
 
         if hasattr(self, "I_dimer_cavity"):
-            scalars["I_dimer_cavity_norm"] = np.linalg.norm(self.I_dimer_cavity)
+            scalars["I_dimer_cavity_norm"] = self._cavity_eri_norm()
         if hasattr(self, "V_A_cavity"):
             scalars["V_A_cavity_norm"] = np.linalg.norm(self.V_A_cavity)
         if hasattr(self, "V_B_cavity"):
@@ -566,6 +932,21 @@ class QEDSAPT0Driver:
             scalars["vt_nuc_rep_cavity"] = self.vt_nuc_rep_cavity
 
         return scalars
+
+    def _cavity_eri_norm(self) -> float:
+        """Frobenius norm of the cavity two-electron tensor.
+
+        The cavity kernel is the rank-one outer product d_A (x) d_B, so its
+        Frobenius norm is ||d_A|| ||d_B|| exactly.  Using that identity keeps
+        the diagnostic meaningful under the "df" backend, where the tensor is
+        deliberately never materialized, and avoids touching an nbf**4 array
+        under "full_eri".
+        """
+        if not self.include_cavity_terms:
+            return 0.0
+        if getattr(self, "d_A", None) is None or getattr(self, "d_B", None) is None:
+            return 0.0
+        return float(np.linalg.norm(self.d_A) * np.linalg.norm(self.d_B))
 
     def _diagnostic_vt_summary(self):
         prefactor = 4.0
@@ -698,6 +1079,9 @@ class QEDSAPT0Driver:
             v_term1 = 'sbbs'
             v_term2 = 'sbsb'
             no, nv = self.ndocc_B, self.nvirt_B
+            # The matrix below is monomer B's own orbital Hessian, so its cavity
+            # operator belongs in B's reference frame.
+            hessian_frame = 'B'
 
         if monomer == 'B':
             w_n = 2 * oe.contract('rbab->ar', self.v('rbab'), optimize="optimal")
@@ -706,10 +1090,11 @@ class QEDSAPT0Driver:
             v_term1 = 'raar'
             v_term2 = 'rara'
             no, nv = self.ndocc_A, self.nvirt_A
+            hessian_frame = 'A'
 
         # form A matrix (LHS)
-        voov = self.v(v_term1)
-        v_vOov = 2 * voov - self.v(v_term2).swapaxes(2,3)
+        voov = self.v(v_term1, frame=hessian_frame)
+        v_vOov = 2 * voov - self.v(v_term2, frame=hessian_frame).swapaxes(2,3)
         v_ooaa = voov.swapaxes(1,3)
         v_vVoO = 2 * v_ooaa- v_ooaa.swapaxes(2,3)
         # A_ovOV = np.einsum('vOoV->ovOV', v_vOoV + v_vVoO.swapaxes(1, 3))
@@ -854,26 +1239,158 @@ class QEDSAPT0Driver:
 
         return Exch100
     
-    def compute_Edisp200(self, canonical_denom=False):
+    def _dispersion_denominator(self, canonical_denom=False):
+        """``1 / (eps_a + eps_b - eps_r - eps_s)``, indexed ``[r, s, a, b]``.
 
-        v_abrs = self.v('abrs')
-        self.v_rsab = self.v('rsab')
+        The CQED orbital energies are the production choice: the perturbation
+        series is defined relative to the CQED monomer Hamiltonians, and the
+        numerator already carries cavity-dressed integrals, so canonical
+        denominators would mix two reference definitions.
+        ``canonical_denom=True`` is retained as a *diagnostic*.
+        """
+        eps = self.eps_canonical if canonical_denom else self.eps
+        return 1 / (
+            -eps('r', dim=4) - eps('s', dim=3) + eps('a', dim=2) + eps('b')
+        )
 
-        if canonical_denom:
-            self.eps_rsab = 1 / (-self.eps_canonical('r', dim=4) - self.eps_canonical('s', dim=3) + self.eps_canonical('a', dim=2) + self.eps_canonical('b'))
-        else:
-            self.eps_rsab = 1 / (-self.eps('r', dim=4) - self.eps('s', dim=3) + self.eps('a', dim=2) + self.eps('b'))
+    def _dispersion_numerator(self, context="total"):
+        """``v(abrs)``, the only two-electron block dispersion needs.
 
-        self.t_rsab = oe.contract("rsab,rsab->rsab", self.v_rsab, self.eps_rsab, optimize="optimal")
-        Disp200 = 4 * oe.contract('rsab,abrs->', self.t_rsab, v_abrs, optimize="optimal")
+        ``v('rsab')`` is not built separately: it is exactly
+        ``v('abrs').transpose(2, 3, 0, 1)``, because the AO three-index tensor
+        is symmetric in its orbital pair and so ``b_(ra) = b_(ar)^T`` (the same
+        identity follows from the eightfold ERI symmetry for the dense
+        backend).  Verified to machine precision in both backends and all three
+        operator contexts; see ``test_disp20_rsab_block_is_the_abrs_transpose``.
+        """
+        return self.v('abrs', context=context, df_role="corr")
+
+    def _store_dispersion_amplitudes(self, v_abrs, canonical_denom, context):
+        self.t_rsab = oe.contract(
+            "rsab,rsab->rsab",
+            v_abrs.transpose(2, 3, 0, 1),
+            self._dispersion_denominator(canonical_denom),
+            optimize="optimal",
+        )
+        self.t_rsab_canonical_denom = bool(canonical_denom)
+        self.t_rsab_context = context
+        return self.t_rsab
+
+    def dispersion_amplitudes(self, canonical_denom=False, context="total"):
+        """Build the second-order dispersion amplitudes ``t_rsab``.
+
+        Both the denominator convention and the operator context are recorded
+        on the driver (``t_rsab_canonical_denom``, ``t_rsab_context``) so that
+        ``compute_Eexchdisp200`` cannot silently consume amplitudes built under
+        a different one.
+        """
+        return self._store_dispersion_amplitudes(
+            self._dispersion_numerator(context), canonical_denom, context
+        )
+
+    def _require_dispersion_amplitudes(self, canonical_denom=None, context="total"):
+        """Return dispersion amplitudes, building them only when unambiguous.
+
+        ``canonical_denom=None`` means "reuse whatever ``compute_Edisp200``
+        built".  That is the ordinary ``run()`` ordering, but it is only safe
+        because the amplitudes must already exist -- reusing stale amplitudes
+        built under a different denominator convention or operator context is
+        exactly the silent coupling this guard exists to prevent.
+        """
+        cached = getattr(self, "t_rsab", None)
+
+        if canonical_denom is None:
+            if cached is None:
+                raise RuntimeError(
+                    "Exchange-dispersion requires the Disp20 amplitudes, which "
+                    "compute_Edisp200() builds. Call compute_Edisp200() (or "
+                    "dispersion_amplitudes()) first, or pass canonical_denom "
+                    "explicitly to build them here."
+                )
+            if self.t_rsab_context != context:
+                raise RuntimeError(
+                    "The cached Disp20 amplitudes were built in the "
+                    f"{self.t_rsab_context!r} operator context, but "
+                    f"{context!r} was requested. Rebuild them explicitly."
+                )
+            return cached
+
+        if (
+            cached is not None
+            and self.t_rsab_canonical_denom == bool(canonical_denom)
+            and self.t_rsab_context == context
+        ):
+            return cached
+
+        return self.dispersion_amplitudes(canonical_denom=canonical_denom, context=context)
+
+    def compute_Edisp200(self, canonical_denom=False, context="total"):
+        """Second-order dispersion.
+
+        ``context`` is a diagnostic: ``"standard"`` and ``"cavity"`` evaluate
+        the expression with only that part of the two-electron operator in
+        *both* factors of the numerator.  Because the energy is quadratic in
+        the numerator, those two do **not** sum to the total --- there is a
+        cross term.  Use :meth:`dispersion_energy_partition` for a partition
+        that does sum.
+        """
+        v_abrs = self._dispersion_numerator(context)
+        t_rsab = self._store_dispersion_amplitudes(v_abrs, canonical_denom, context)
+
+        Disp200 = 4 * oe.contract('rsab,abrs->', t_rsab, v_abrs, optimize="optimal")
         return Disp200
-    
-    def compute_Eexchdisp200(self):
 
-        vt_abar = self.vt('abar')
-        vt_abra = self.vt('abra')
-        vt_absb = self.vt('absb')
-        vt_abbs = self.vt('abbs')
+    def dispersion_energy_partition(self, canonical_denom=False):
+        """Split ``Disp20`` into standard, cavity-mediated, and cross parts.
+
+        With ``v = v_std + v_cav`` the energy is quadratic in the numerator, so
+
+            ``Disp20 = Disp20[std,std] + 2 Disp20[std,cav] + Disp20[cav,cav]``
+
+        and the naive two-way split does *not* add up.  The three-way split
+        here does, exactly.  The ``cavity`` term is the purely cavity-mediated
+        dispersion, which carries no Coulomb kernel and therefore does not
+        decay with intermonomer separation (see
+        ``docs/qed_sapt0_formalism.tex``); ``cross`` is the interference
+        between the two mechanisms.
+
+        This is a diagnostic and deliberately does not disturb the cached
+        production amplitudes.
+        """
+        v_std = self._dispersion_numerator("standard")
+        v_cav = self._dispersion_numerator("cavity")
+        denominator = self._dispersion_denominator(canonical_denom)
+
+        def _energy(left, right):
+            return 4 * float(
+                oe.contract(
+                    "abrs,rsab,rsab->",
+                    left,
+                    right.transpose(2, 3, 0, 1),
+                    denominator,
+                    optimize="optimal",
+                )
+            )
+
+        standard = _energy(v_std, v_std)
+        cavity = _energy(v_cav, v_cav)
+        cross = 2 * _energy(v_std, v_cav)
+
+        return {
+            "standard": standard,
+            "cavity": cavity,
+            "cross": cross,
+            "total": standard + cross + cavity,
+        }
+    
+    def compute_Eexchdisp200(self, canonical_denom=None):
+
+        t_rsab = self._require_dispersion_amplitudes(canonical_denom)
+
+        vt_abar = self.vt('abar', df_role="corr")
+        vt_abra = self.vt('abra', df_role="corr")
+        vt_absb = self.vt('absb', df_role="corr")
+        vt_abbs = self.vt('abbs', df_role="corr")
 
         _tmp = 2 * vt_abar - vt_abra.swapaxes(2,3)
         h_abrs = oe.contract('as,AbAr->abrs', self.s('as'), _tmp, optimize="optimal")
@@ -888,7 +1405,7 @@ class QEDSAPT0Driver:
         h_abrs += oe.contract('Br,abBs->abrs', self.s('br'), _tmp, optimize="optimal")
 
         # build q_abrs
-        vt_abas = self.vt('abas')
+        vt_abas = self.vt('abas', df_role="corr")
         # q_abrs =      np.einsum('br,AB,aBAs->abrs', sapt.s('br'), sapt.s('ab'), vt_abas, optimize=True)
         q_abrs = oe.contract('br,AB,aBAs->abrs', self.s('br'), self.s('ab'), vt_abas, optimize="optimal")
         # q_abrs -= 2 * np.einsum('Br,AB,abAs->abrs', sapt.s('br'), sapt.s('ab'), vt_abas, optimize=True)
@@ -898,7 +1415,7 @@ class QEDSAPT0Driver:
         # q_abrs += 4 * np.einsum('Br,aB,AbAs->abrs', sapt.s('br'), sapt.s('ab'), vt_abas, optimize=True)
         q_abrs += 4 * oe.contract('Br,aB,AbAs->abrs', self.s('br'), self.s('ab'), vt_abas, optimize="optimal")
 
-        vt_abrb = self.vt('abrb')
+        vt_abrb = self.vt('abrb', df_role="corr")
         #q_abrs -= 2 * np.einsum('as,bA,ABrB->abrs', sapt.s('as'), sapt.s('ba'), vt_abrb, optimize=True)
         q_abrs -= 2 * oe.contract('as,bA,ABrB->abrs', self.s('as'), self.s('ba'), vt_abrb, optimize="optimal")
         #q_abrs += 4 * np.einsum('As,bA,aBrB->abrs', sapt.s('as'), sapt.s('ba'), vt_abrb, optimize=True)
@@ -908,7 +1425,7 @@ class QEDSAPT0Driver:
         #q_abrs -= 2 * np.einsum('As,BA,abrB->abrs', sapt.s('as'), sapt.s('ba'), vt_abrb, optimize=True)
         q_abrs -= 2 * oe.contract('As,BA,abrB->abrs', self.s('as'), self.s('ba'), vt_abrb, optimize="optimal")
 
-        vt_abab = self.vt('abab')
+        vt_abab = self.vt('abab', df_role="corr")
         #q_abrs +=     np.einsum('Br,As,abAB->abrs', sapt.s('br'), sapt.s('as'), vt_abab, optimize=True)
         q_abrs +=     oe.contract('Br,As,abAB->abrs', self.s('br'), self.s('as'), vt_abab, optimize="optimal")
         #q_abrs -= 2 * np.einsum('br,As,aBAB->abrs', sapt.s('br'), sapt.s('as'), vt_abab, optimize=True)
@@ -916,7 +1433,7 @@ class QEDSAPT0Driver:
         #q_abrs -= 2 * np.einsum('Br,as,AbAB->abrs', sapt.s('br'), sapt.s('as'), vt_abab, optimize=True)
         q_abrs -= 2 * oe.contract('Br,as,AbAB->abrs', self.s('br'), self.s('as'), vt_abab, optimize="optimal")
 
-        vt_abrs = self.vt('abrs')
+        vt_abrs = self.vt('abrs', df_role="corr")
         #q_abrs +=     np.einsum('bA,aB,ABrs->abrs', sapt.s('ba'), sapt.s('ab'), vt_abrs, optimize=True)
         q_abrs +=     oe.contract('bA,aB,ABrs->abrs', self.s('ba'), self.s('ab'), vt_abrs, optimize="optimal")
         #q_abrs -= 2 * np.einsum('bA,AB,aBrs->abrs', sapt.s('ba'), sapt.s('ab'), vt_abrs, optimize=True)
@@ -925,8 +1442,8 @@ class QEDSAPT0Driver:
         q_abrs -= 2 * oe.contract('BA,aB,Abrs->abrs', self.s('ba'), self.s('ab'), vt_abrs, optimize="optimal")
 
         # sum all terms and contract with t_rsab
-        xd_absr = self.vt('absr') + h_abrs.swapaxes(2,3) + q_abrs.swapaxes(2,3)
-        Eexchdisp200 = -2 * oe.contract('absr,rsab->', xd_absr, self.t_rsab, optimize="optimal")
+        xd_absr = self.vt('absr', df_role="corr") + h_abrs.swapaxes(2,3) + q_abrs.swapaxes(2,3)
+        Eexchdisp200 = -2 * oe.contract('absr,rsab->', xd_absr, t_rsab, optimize="optimal")
         return Eexchdisp200
     
     def compute_Eind200(self):
