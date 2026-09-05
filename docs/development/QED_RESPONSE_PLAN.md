@@ -1,7 +1,7 @@
 # QED-CIS / QED-TDHF / QED-LR-TDDFT Implementation Plan
 
 Target module: `src/cqed_scf/response.py` (+ a new `src/cqed_scf/davidson.py`)
-Oracle: `RESPONSE_REFERENCE/CS_CQED_CIS.py` + `helper_CS_CQED_CIS.py` (QED-CIS-1, MgH+/cc-pVDZ)
+Oracle: `docs/RESPONSE_REFERENCE/CS_CQED_CIS.py` + `helper_CS_CQED_CIS.py` (QED-CIS-1, MgH+/cc-pVDZ)
 
 ## Status
 
@@ -12,7 +12,7 @@ Oracle: `RESPONSE_REFERENCE/CS_CQED_CIS.py` + `helper_CS_CQED_CIS.py` (QED-CIS-1
 | 2 — matrix-free sigma + Davidson | **complete**, all tests green |
 | 3 — QED-CIS-N, TDA-DFT, density fitting | **complete**, all tests green |
 | 4 — QED-TDHF / QED-LR-TDDFT | deferred, out of current scope |
-| 5 — integration, API, docs | **complete**, pending test run |
+| 5 — integration, API, docs | **complete**, all tests green |
 
 Tier 0 also turned up a live defect in QED-SAPT0 unrelated to response theory;
 see `docs/development/psi4_array_aliasing.md`.

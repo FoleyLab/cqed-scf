@@ -2,7 +2,7 @@
 
 Two independent references:
 
-* ``RESPONSE_REFERENCE/helper_CS_CQED_CIS.py`` -- same singlet-adapted CIS space
+* ``docs/RESPONSE_REFERENCE/helper_CS_CQED_CIS.py`` -- same singlet-adapted CIS space
   as ours, so the *entire spectrum* must agree elementwise.  Its eigenvalues are
   relative to E_CQED-RHF.
 * ``qed-ci`` totals stored in ``tests/data/qed_cis_reference.json`` -- a
@@ -25,7 +25,7 @@ from cqed_scf.scf import CQEDSCF
 
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REFERENCE_DIR = os.path.join(REPO_ROOT, "RESPONSE_REFERENCE")
+REFERENCE_DIR = os.path.join(REPO_ROOT, "docs/RESPONSE_REFERENCE")
 DATA_FILE = os.path.join(REPO_ROOT, "tests", "data", "qed_cis_reference.json")
 
 if os.path.isdir(REFERENCE_DIR) and REFERENCE_DIR not in sys.path:
@@ -82,7 +82,7 @@ def test_brillouin_block_is_negligible_for_cqed_orbitals(cavity_run):
 @pytest.mark.slow
 @pytest.mark.skipif(
     not os.path.isdir(REFERENCE_DIR),
-    reason="RESPONSE_REFERENCE/ is not present (it is untracked)",
+    reason="docs/RESPONSE_REFERENCE/ is not present",
 )
 def test_full_spectrum_matches_cs_cqed_cis_oracle(cavity_run):
     """Same CIS space, different basis ordering -> identical spectra."""

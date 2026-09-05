@@ -1,10 +1,10 @@
-"""Tier 0: cqed_scf.scf and the RESPONSE_REFERENCE CQED-RHF are the same theory.
+"""Tier 0: cqed_scf.scf and the docs/RESPONSE_REFERENCE CQED-RHF are the same theory.
 
 `scf.py` uses a simplified coherent-state formulation:
 
     F = H0 + Q_PF + 2J - K - N            E = Tr[(F+H)D] + Enuc
 
-while `RESPONSE_REFERENCE/helper_CQED_RHF.py` carries two extra terms:
+while `docs/RESPONSE_REFERENCE/helper_CQED_RHF.py` carries two extra terms:
 
     F = H0 + Q_PF + d_PF + 2J - K + 2M - N     E = Tr[(F+H)D] + Enuc + d_c
 
@@ -35,12 +35,12 @@ from cqed_scf.scf import CQEDSCF
 
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REFERENCE_DIR = os.path.join(REPO_ROOT, "RESPONSE_REFERENCE")
+REFERENCE_DIR = os.path.join(REPO_ROOT, "docs/RESPONSE_REFERENCE")
 DATA_FILE = os.path.join(REPO_ROOT, "tests", "data", "qed_cis_reference.json")
 
 pytestmark = pytest.mark.skipif(
     not os.path.isdir(REFERENCE_DIR),
-    reason="RESPONSE_REFERENCE/ is not present (it is untracked)",
+    reason="docs/RESPONSE_REFERENCE/ is not present",
 )
 
 if os.path.isdir(REFERENCE_DIR) and REFERENCE_DIR not in sys.path:

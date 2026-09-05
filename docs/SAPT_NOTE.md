@@ -356,3 +356,194 @@ Results:
 - `tests/test_dse_jk_scaffold.py`: `10 passed in 2.01s`;
 - `tests/test_qedsapt0_driver.py`: `11 passed in 35.14s`;
 - companion JK example total delta: `-7.385354e-11 Eh`.
+
+## 2026-09-05 notes from the QED-CIS response work (Tiers 0-3, 5)
+
+Written at the end of the response-theory session, for whoever picks up the SAPT
+driver next. Nothing here changes SAPT behaviour except item 1, which is a
+confirmed defect that was fixed and tested.
+
+### 1. Confirmed defect: `canonical_orbital_energies` was aliased (FIXED)
+
+`np.asarray` on a Psi4 `Vector`/`Matrix` returns a **view** of Psi4's buffer, not
+a copy. Verified directly:
+
+```python
+v = psi4.core.Vector(3); a = np.asarray(v)
+v.nph[0][:] = [1., 2., 3.]
+print(a)                              # -> [1. 2. 3.]
+print(np.shares_memory(a, v.nph[0]))  # -> True
+```
+
+`CQEDSCF.run()` captured `eps_canonical = np.asarray(self.wfn.epsilon_a())` early
+and then `_update_wfn_with_cqed()` wrote the **CQED** orbital energies into that
+same buffer at the end. So `results["canonical_orbital_energies"]` had been
+silently identical to `results["orbital_energies"]`.
+
+**SAPT consequence.** `qed_sapt0.py::compute_Edisp200(canonical_denom=True)`
+selects `eps_canonical` for the dispersion denominator. Both branches of that
+switch were dividing by the same array, so the two settings returned bitwise
+identical energies. This is exactly the null result observed when comparing
+canonical vs CQED-HF orbital energies in the denominator — the experiment was
+uninformative, not wrong.
+
+**Why the suite did not catch it.** The only test exercising
+`canonical_denom=True` ran at `lambda_vector = [0, 0, 0]`, where CQED-SCF reduces
+to RHF and the two orbital-energy sets *genuinely* coincide. The branch was
+covered; the condition that makes the branch matter was not. Worth generalising:
+covering a branch only in the regime where it is degenerate with its alternative
+is not coverage.
+
+Fixed in `scf.py` (explicit copies for `epsilon_a()` and `Ca()`), with four
+regression tests added to `tests/test_qedsapt0_driver.py`:
+
+- `test_canonical_and_cqed_orbital_energies_are_independent_arrays` — asserts
+  `not np.shares_memory(...)`, i.e. catches the *mechanism*, not a symptom;
+- `test_canonical_orbital_energies_are_the_cavity_free_ones` — anchors
+  `eps_canonical(lambda != 0) == eps(lambda = 0)`, so a wrong-but-different array
+  cannot pass;
+- `test_edisp200_denominator_choice_matters_at_finite_coupling` plus its
+  `lambda = 0` control.
+
+Full audit of the remaining `np.asarray` calls on Psi4 objects is in
+`docs/development/psi4_array_aliasing.md`. Only the two `scf.py` sites had the
+dangerous pattern. In `qed_sapt0.py`, `S_dimer`, `V_A`, `V_B` and
+`I_dimer_standard` are views but nothing writes back to them, and
+`I_dimer_standard` is a view **by design** (copying the full ERI tensor would be
+costly; line 279 correctly does `I_dimer = I_dimer_standard.copy()` before adding
+the cavity term).
+
+### 2. Open physics question: which denominator is right
+
+Now that the switch is live, the canonical-vs-CQED comparison can actually be
+run. My reading is that the **CQED orbital energies are the consistent
+production choice** — the perturbation series is defined relative to the CQED
+monomer Hamiltonians, and the numerator already carries cavity-dressed
+integrals, so canonical denominators mix two reference definitions.
+`canonical_denom=True` reads more like a diagnostic than a setting. Not my call
+to make.
+
+### 3. The long-range dispersion plateau is structural, not a bug
+
+`qed_sapt0.py` line 287:
+
+```python
+I_dimer_cavity = self.d_A[:, :, None, None] * self.d_B[None, None, :, :]
+```
+
+A bare outer product — no Coulomb kernel, therefore **no R-dependence at any
+separation**. Through `v('abrs')` this becomes `d^A_{ar} d^B_{bs}` in the
+`Disp200` numerator, and since the denominator also tends to a constant at large
+R, the cavity part of the dispersion tends to a finite non-zero constant rather
+than decaying. That is the single-mode long-wavelength approximation behaving as
+specified: both monomers couple to the same mode with the same `lambda`, so the
+cavity mediates an interaction with no distance decay.
+
+**A sharp, cheap test if this needs settling.** The `R -> inf` limit of the
+cavity part of `Disp200` is computable in closed form from *isolated monomer*
+transition dipoles and excitation energies — no dimer calculation. If the
+computed curve plateaus at that predicted value, the long-range behaviour is the
+model's real content rather than a numerical artifact. Much stronger evidence
+than "the curve looks flat".
+
+**One convention note.** In the coherent-state basis the DSE is
+`(lambda . (mu - <mu>))^2 / 2`, so the A-B cross term is
+`(lambda . dmu_A)(lambda . dmu_B)` with coefficient 1 (the 1/2 cancels against
+the cross term appearing twice) — which matches the code. For *dispersion*
+specifically the `<mu>` shift is harmless: subtracting a constant times the
+identity changes only diagonal elements, so the off-diagonal transition dipoles
+`d^A_{ar}` are untouched. It does affect the first-order and induction terms.
+
+### 4. `sapt/dse_jk.py` should be promoted to a shared module
+
+There are now two consumers of the same physics. The unifying statement, worth
+putting in the shared module's docstring:
+
+> **The two-electron DSE is an ERI with a separable kernel:**
+> `(pq|rs) -> d_pq d_rs`. Every Slater-Condon result carries over verbatim under
+> that substitution.
+
+That is why `DSEJK` is exactly the J/K of that kernel
+(`J = d Tr(dD)`, `K = d D d^T`), and why the response module's DSE block is
+exactly `2(ia|jb) - (ij|ab)` under the same substitution, giving
+`2 d_ia d_jb - d_ij d_ab`. Response evaluates it directly in the MO blocks
+(cheaper: no AO transform, and no J/K build at all), while SAPT needs the AO
+form — but they are the same operator and the derivation should live in one
+place.
+
+### 5. The package is internally consistent on treating the DSE as two-electron
+
+Worth recording as a deliberate position, because the literature is not uniform.
+Yang *et al.*, JCP **155**, 064107 (2021) evaluate the DSE as the square of a
+one-body expectation over a single determinant, giving a **rank-one, mean-field**
+`Delta'_ai,bj = sum_alpha lambda_ai lambda_bj` with no exchange-like counterpart.
+This package treats the DSE as a genuine two-electron operator throughout — SCF,
+SAPT and response alike — which is where the exchange-like terms
+(`-N[D]` in the Fock, `K_DSE` in `DSEJK`, `-d_ij d_ab` in the response block)
+come from. The two are different levels of theory, not a rescaling of one
+another. See `docs/qed_cis_formalism.tex`, "Relationship to linear-response
+QED-TDDFT".
+
+### 6. Reusable infrastructure now available from the response work
+
+- **`src/cqed_scf/davidson.py`** — a general real-symmetric block Davidson-Liu
+  solver with **no cavity physics in it**: batched matvec interface, diagonal
+  preconditioner, thick restart, double Gram-Schmidt with a linear-dependence
+  drop. Directly usable for iterative CPHF/CPKS or any dispersion solver that
+  wants to stop forming matrices. Two non-obvious details it already gets right:
+  preconditioned corrections must be **normalised before** the independence test
+  (otherwise residuals plateau ~1e-6 while eigenvalues look converged), and
+  restarts must be **thick** (collapsing to exactly `nroots` thrashes).
+- **Generalized-JK builder pattern** — `response.py::QEDCIS._build_generalized_jk`
+  plus `JKERIEngine` show how to queue independent `C_left`/`C_right` for the
+  one-sided response density `D = C_o X C_v^T`, and how to batch many densities
+  into a single `compute()`. `scf.py::_build_JK` is `C_left`-only and cannot do
+  this; SAPT's CPHF work may want the same pattern.
+- **`Psi4HxERIEngine`** — routes the two-electron action through
+  `wfn.twoel_Hx_full`, which is how a Kohn-Sham XC kernel gets included without
+  reconstructing factors.
+
+### 7. Psi4 `*_Hx` routines each have their own sign and combination convention
+
+A trap that cost time and would cost it again. Psi4's
+`scf_products.py::_combine_A` has the docstring
+`A X = [(Ea - Ei) + 2J - K] X` and returns **`-A X`**; its caller negates the
+result afterwards. Transcribing the method verbatim gives a global sign error.
+
+SAPT already uses `wfn.cphf_Hx`, which is a *different* routine with a
+*different* combination (`4J - K - K^T`, per
+`docs/development/dse_jk_cphf_design.md`). The lesson generalises: **pin every
+Psi4 `Hx`-family call against an independently constructed reference before
+trusting it**, and read the caller, not just the callee. A function's docstring
+describes its meaning, not necessarily its return value.
+
+### 8. Testing patterns worth reusing
+
+Three that earned their keep this session, all applicable to SAPT:
+
+1. **The column test.** Apply a matrix-free action to every unit vector,
+   assemble the implied matrix, and compare *elementwise* against an explicit
+   build. This validates every sign, factor and index at once and is far more
+   diagnostic than comparing converged energies. It found nothing only because
+   it was run first.
+2. **Pin conventions with non-symmetric probes.** A symmetric test matrix cannot
+   distinguish `M` from `M^T`, so a transpose-convention error passes and
+   surfaces much later as an asymmetric operator.
+3. **Assert that the naive approach fails.** Where a helper exists because an
+   obvious heuristic is wrong, a test that the heuristic *does* get it wrong
+   documents why the helper exists — and turns into a signal if the situation
+   ever changes.
+
+### 9. SCF contract changes that SAPT gets for free
+
+From Tier 0, all in `scf.py`:
+
+- Orbital canonicalization fix: the loop previously broke *before*
+  re-diagonalizing, so `results["orbital_energies"]` were eigenvalues of the
+  previous DIIS-extrapolated Fock rather than of the returned `results["F"]`.
+  They are now consistent, which matters anywhere `eps` and `F` are used
+  together.
+- Results dict gained `omega`, `lambda_vector`, `fock_mo`, and `max_fock_ov`
+  (the canonicality diagnostic, `max|F_ia|`, which must vanish for the CQED
+  Brillouin condition to hold).
+- `HARTREE_TO_EV` added to `utils.py`.

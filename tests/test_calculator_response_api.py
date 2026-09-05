@@ -97,10 +97,18 @@ def test_cis_solvers_agree():
 
 @pytest.mark.slow
 def test_response_returns_an_unsolved_driver():
+    """An unsolved driver must still be able to describe itself.
+
+    block_size and dimension prepare the orbital blocks on demand, like every
+    other entry point on QEDCIS; querying the size of the problem should not
+    require the caller to know to call build_orbital_blocks() first.
+    """
+
     driver = _calculator().response(WATER, n_photon=2)
 
     assert driver.n_photon == 2
     assert driver.dimension == 3 * (1 + driver.n_ov)
+    assert driver.block_size == 1 + driver.ndocc * driver.nvirt
     # nothing has been solved, and no O(N^4) transformation has happened
     assert driver.ovov is None and driver.oovv is None
 

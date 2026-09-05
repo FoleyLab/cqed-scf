@@ -397,12 +397,23 @@ class QEDCIS(CQEDResponse):
 
     @property
     def block_size(self) -> int:
-        """States per photon block: the reference plus all singles."""
+        """States per photon block: the reference plus all singles.
 
+        Prepares the orbital blocks on demand, like every other entry point on
+        this class, so that a driver obtained from ``CQEDCalculator.response()``
+        can report its own size before anything is solved.
+        """
+
+        if not self._prepared:
+            self.build_orbital_blocks()
         return 1 + self.n_ov
 
     @property
     def dimension(self) -> int:
+        """Total basis dimension, ``(N_ph + 1) * (1 + n_ov)``."""
+
+        if not self._prepared:
+            self.build_orbital_blocks()
         return (self.n_photon + 1) * self.block_size
 
     def build_dense_hamiltonian(self) -> np.ndarray:
