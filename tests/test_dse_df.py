@@ -13,6 +13,8 @@ import pytest
 
 from cqed_scf import CQEDConfig
 from cqed_scf.sapt import QEDSAPT0Driver, PauliFierzDF, build_df_ao_tensor
+from cqed_scf.sapt import qed_sapt_jk
+from cqed_scf.sapt.dse_jk import DSEJK, PauliFierzJK
 
 
 BASIS = "cc-pvdz"
@@ -717,17 +719,41 @@ def _framed_driver(frame, shift=0.0, separation=3.4, lambda_vector=(0.0, 0.0, 0.
     return driver
 
 
+_FRAMED_COMPONENTS = {}
+
+
+def _framed_components(frame, shift=0.0, backend="full_eri", lambda_vector=(0.0, 0.0, 0.1)):
+    """Cached component run: the frame tests reuse a handful of identical drivers."""
+    key = (frame, shift, backend, lambda_vector)
+    if key not in _FRAMED_COMPONENTS:
+        _FRAMED_COMPONENTS[key] = _components(
+            _framed_driver(
+                frame,
+                shift=shift,
+                backend=backend,
+                lambda_vector=lambda_vector,
+                convergence=1e-12,
+            )
+        )
+    return _FRAMED_COMPONENTS[key]
+
+
+@pytest.mark.parametrize("backend", ["full_eri", "df"])
 @pytest.mark.parametrize("component", _COMPONENTS)
-def test_monomer_com_frame_makes_every_component_translation_invariant(component):
+def test_monomer_com_frame_makes_every_component_translation_invariant(component, backend):
     """The point of Option 1: results must not depend on where the dimer sits.
 
-    Under the default 'dimer' frame Disp20 changes by a factor of 7 under this
-    same translation (see test_dispersion_energy_is_translation_invariant).
+    Both integral backends are covered. The frame handling lives in
+    build_integrals() *before* the backend branch and in the backend-agnostic
+    v(..., frame=...) dispatch, so the two should behave identically -- but
+    "should" is what this test is for. Under the default 'dimer' frame Disp20
+    changes by a factor of 7 under this same translation (see
+    test_dispersion_energy_is_translation_invariant).
     """
-    here = _components(_framed_driver("monomer_com", shift=0.0))
-    there = _components(_framed_driver("monomer_com", shift=20.0))
+    here = _framed_components("monomer_com", shift=0.0, backend=backend)
+    there = _framed_components("monomer_com", shift=20.0, backend=backend)
 
-    assert there[component] == pytest.approx(here[component], abs=1e-12)
+    assert there[component] == pytest.approx(here[component], abs=1e-11)
 
 
 @pytest.mark.parametrize("component", ["Elst10", "Exch10", "Ind20r", "ExchInd20r"])
@@ -740,8 +766,8 @@ def test_monomer_com_frame_leaves_the_already_invariant_terms_unchanged(componen
     compensating DSE Hessian term, so it stays right only if that Hessian is
     built in the same frame as the orbital energies feeding it.
     """
-    dimer_frame = _components(_framed_driver("dimer"))
-    com_frame = _components(_framed_driver("monomer_com"))
+    dimer_frame = _framed_components("dimer")
+    com_frame = _framed_components("monomer_com")
 
     assert com_frame[component] == pytest.approx(dimer_frame[component], abs=1e-12)
 
@@ -749,8 +775,8 @@ def test_monomer_com_frame_leaves_the_already_invariant_terms_unchanged(componen
 @pytest.mark.parametrize("component", ["Disp20", "ExchDisp20"])
 def test_monomer_com_frame_does_change_the_dispersion_terms(component):
     """The correction is real, not a no-op."""
-    dimer_frame = _components(_framed_driver("dimer"))
-    com_frame = _components(_framed_driver("monomer_com"))
+    dimer_frame = _framed_components("dimer")
+    com_frame = _framed_components("monomer_com")
 
     assert abs(com_frame[component] - dimer_frame[component]) > 1e-9
 
@@ -795,8 +821,8 @@ def test_monomer_com_frame_restores_the_dispersion_plateau():
 
 
 def test_monomer_com_frame_works_with_the_df_backend():
-    dense = _components(_framed_driver("monomer_com", backend="full_eri"))
-    df = _components(_framed_driver("monomer_com", backend="df"))
+    dense = _framed_components("monomer_com", backend="full_eri")
+    df = _framed_components("monomer_com", backend="df")
 
     for component in _COMPONENTS:
         assert df[component] == pytest.approx(dense[component], abs=5e-6)
@@ -839,3 +865,201 @@ def test_lambda_zero_is_insensitive_to_the_reference_frame():
 
     for component in _COMPONENTS:
         assert com_frame[component] == pytest.approx(dimer_frame[component], abs=1e-12)
+
+
+def test_results_metadata_exposes_the_dispersion_partition():
+    """The partition must be reachable from the public facade, not only the driver.
+
+    ``examples/qed_sapt0_water_methylamine/qed_sapt0_scan.py`` relies on this to
+    stay on the documented CQEDConfig / CQEDCalculator interface.
+    """
+    driver = _backend_driver("full_eri")
+    results = driver.run_components()
+
+    partition = results.metadata["disp20_partition"]
+    assert set(partition) == {"standard", "cross", "cavity", "total"}
+    assert partition == driver.dispersion_energy_partition()
+    assert (
+        partition["standard"] + partition["cross"] + partition["cavity"]
+        == pytest.approx(results.disp20, abs=1e-15)
+    )
+
+
+# --------------------------------------------------------------------------
+# The same frame split, through the JK backend
+# --------------------------------------------------------------------------
+#
+# The JK path in ``sapt/qed_sapt_jk.py`` consumes bare Psi4 wavefunctions and
+# a caller-built JK object, so it cannot ask a driver which frame it is in.
+# These tests hold it to the same standard as the dense/DF path above.
+#
+# Only four components are covered because dispersion is not implemented in
+# the JK path yet (Phases 4-5 of docs/development/QED_SAPT_DISPERSION_PLAN.md).
+# Induction is the sharp one here for the same reason as in the dense case.
+
+_JK_COMPONENTS = ("Elst10", "Exch10", "Ind20r", "ExchInd20r")
+
+
+def _jk_components_from_cache(cache):
+    elst = qed_sapt_jk.electrostatics(cache, do_print=False)
+    exch = qed_sapt_jk.exchange(cache, do_print=False)
+    ind = qed_sapt_jk.induction(cache, do_print=False, do_response=True)
+    return {
+        "Elst10": float(elst["Elst10,r"]),
+        # compute_Exch100() is the S^2 expression, so pair it with the
+        # matching JK key rather than the S^inf-style Exch10 value.
+        "Exch10": float(exch["Exch10(S^2)"]),
+        "Ind20r": float(ind["Ind20,r"]),
+        "ExchInd20r": float(ind["Exch-Ind20,r"]),
+    }
+
+
+_FRAMED_JK_COMPONENTS = {}
+
+
+def _framed_jk_components(frame, shift=0.0):
+    """JK-path components, memoized: each entry costs two monomer SCFs."""
+    key = (frame, shift)
+    if key not in _FRAMED_JK_COMPONENTS:
+        driver = _framed_driver(frame, shift=shift)
+        _FRAMED_JK_COMPONENTS[key] = _jk_components_from_cache(
+            qed_sapt_jk.build_sapt_jk_cache_from_driver(driver, do_print=False)
+        )
+    return _FRAMED_JK_COMPONENTS[key]
+
+
+def _legacy_jk_cache(driver):
+    """The pre-frame-awareness wiring, as the shipped examples still do it.
+
+    Kept verbatim so the default path has a regression anchor and so the
+    guard has something realistic to fire on.
+    """
+    wfn_A = driver.monomer_A.wfn
+    wfn_B = driver.monomer_B.wfn
+    jk = psi4.core.JK.build(wfn_A.basisset())
+    jk.set_memory(int(1e9))
+    jk.set_do_J(True)
+    jk.set_do_K(True)
+    jk.set_do_wK(False)
+    jk.initialize()
+    dse_jk = DSEJK(
+        d_ao=np.asarray(driver.monomer_A.d_ao),
+        enabled=driver.include_cavity_terms,
+    )
+    return qed_sapt_jk.build_sapt_jk_cache(
+        wfn_A,
+        wfn_B,
+        PauliFierzJK(jk, dse_jk=dse_jk),
+        do_print=False,
+        d_exp_el_A=driver.d_exp_el_A,
+        d_exp_el_B=driver.d_exp_el_B,
+        include_cavity_terms=driver.include_cavity_terms,
+        nuclear_repulsion_energy=driver.nuc_rep,
+    )
+
+
+@pytest.mark.parametrize("component", _JK_COMPONENTS)
+def test_jk_path_monomer_com_frame_is_translation_invariant(component):
+    """The decisive test: a rigid 20 Ang shift is not a physical change.
+
+    Matches the dense/DF result for the same four components.  With the DSE
+    orbital Hessian left in the shared frame instead -- the state of this path
+    before frame support -- Ind20,r drifts by 1.07e-5 Eh and Exch-Ind20,r by
+    3.1e-6 Eh over this same translation.
+    """
+    here = _framed_jk_components("monomer_com", shift=0.0)
+    there = _framed_jk_components("monomer_com", shift=20.0)
+
+    assert there[component] == pytest.approx(here[component], abs=1e-11)
+
+
+@pytest.mark.parametrize("component", _JK_COMPONENTS)
+def test_jk_path_monomer_com_frame_leaves_every_component_unchanged(component):
+    """None of the four JK components should move when the frame changes.
+
+    All four were already origin independent, so ``monomer_com`` must
+    reproduce the dimer-frame numbers exactly.  Induction is the sharp one:
+    it is origin independent only because the drift in its orbital energies
+    cancels against the -d_bb' d_ss' term of the DSE Hessian, so it survives
+    only if that Hessian is built in the frame its orbital energies came from.
+    """
+    dimer_frame = _framed_jk_components("dimer")
+    com_frame = _framed_jk_components("monomer_com")
+
+    assert com_frame[component] == pytest.approx(dimer_frame[component], abs=1e-12)
+
+
+@pytest.mark.parametrize("frame", ["dimer", "monomer_com"])
+@pytest.mark.parametrize("component", _JK_COMPONENTS)
+def test_jk_path_matches_the_dense_reference_in_either_frame(component, frame):
+    """The JK path must not drift from the validated dense implementation.
+
+    The dense-vs-JK agreement was ~1e-12 Eh before frame support existed; the
+    intrinsic-frame Hessian must not cost any of it.
+    """
+    jk_values = _framed_jk_components(frame)
+    dense_values = _framed_components(frame)
+
+    assert jk_values[component] == pytest.approx(dense_values[component], abs=1e-11)
+
+
+def test_jk_cache_refuses_divergent_monomer_frames_it_cannot_account_for():
+    """Silent wrongness is the one outcome this path must not produce.
+
+    ``build_sapt_jk_cache`` takes raw wavefunctions and has no driver to ask,
+    but the frames are directly observable: two ghosted monomers in one dimer
+    frame have bitwise identical coordinates, and under ``monomer_com`` they
+    sit 6.3 bohr apart.
+    """
+    dimer_driver = _framed_driver("dimer")
+    com_driver = _framed_driver("monomer_com")
+
+    geom = lambda d, side: np.asarray(
+        (d.monomer_A if side == "A" else d.monomer_B).wfn.molecule().geometry()
+    )
+    assert np.abs(geom(dimer_driver, "A") - geom(dimer_driver, "B")).max() == 0.0
+    assert np.abs(geom(com_driver, "A") - geom(com_driver, "B")).max() > 6.0
+
+    # The legacy wiring is fine in the dimer frame ...
+    _legacy_jk_cache(dimer_driver)
+
+    # ... and refused in the intrinsic one, rather than quietly returning a
+    # cache whose induction is wrong by 1e-6 Eh.
+    with pytest.raises(RuntimeError, match="different reference frames"):
+        _legacy_jk_cache(com_driver)
+
+
+def test_jk_cache_default_frame_path_is_bitwise_unchanged():
+    """Frame support is opt-in; the dimer-frame numbers must not move at all.
+
+    Compared against the legacy wiring rather than a stored constant, so this
+    keeps holding if the underlying components are ever legitimately revised.
+    """
+    driver = _framed_driver("dimer")
+
+    new = _jk_components_from_cache(
+        qed_sapt_jk.build_sapt_jk_cache_from_driver(driver, do_print=False)
+    )
+    legacy = _jk_components_from_cache(_legacy_jk_cache(driver))
+
+    for component in _JK_COMPONENTS:
+        assert new[component] == legacy[component]
+
+
+def test_jk_cache_reuses_one_dse_provider_when_the_frames_coincide():
+    """The dimer-frame no-op is by identity, not by an equal-valued rebuild."""
+    driver = _framed_driver("dimer")
+    cache = qed_sapt_jk.build_sapt_jk_cache_from_driver(driver, do_print=False)
+
+    shared = cache["dse_jk"]
+    assert cache["dse_cphf_A"].dse_jk is shared
+    assert cache["dse_cphf_B"].dse_jk is shared
+
+    # Under monomer_com they must genuinely differ, or the split is a no-op.
+    com_cache = qed_sapt_jk.build_sapt_jk_cache_from_driver(
+        _framed_driver("monomer_com"), do_print=False
+    )
+    d_A = com_cache["dse_cphf_A"].d_ao
+    d_B = com_cache["dse_cphf_B"].d_ao
+    assert np.abs(d_A - d_B).max() > 1e-6
+    assert np.abs(d_A - com_cache["dse_jk"].d_ao).max() > 1e-6

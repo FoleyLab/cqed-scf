@@ -798,13 +798,92 @@ that the frame split is right.
   so centre of mass, centre of nuclear charge and centroid of electronic charge
   give different answers. Centre of mass is a *mass*-weighted choice in a
   problem with no mass dependence.
-- **The JK path (`qed_sapt_jk.py`) is not covered.** It consumes
-  `monomer.wfn`, which under `monomer_com` sits in the intrinsic frame. Do not
-  combine `monomer_reference_frame="monomer_com"` with `build_sapt_jk_cache()`
-  until that path receives the same internal/interaction split.
+- ~~**The JK path (`qed_sapt_jk.py`) is not covered.**~~ **Resolved** --- see
+  "Option 1 in the JK path" below.
 
 *Tests:* 116 passed + 2 xfailed in `tests/test_dse_df.py`; full suite
 **268 passed, 2 xfailed**.
+
+### Option 1 in the JK path
+
+`qed_sapt_jk.py` now carries the same internal/interaction split. The work
+turned out to be narrower than the dense case, and measuring first is what
+showed why.
+
+**What is *not* frame sensitive.** The nuclear attraction integrals, the
+overlap and the ERIs are all translation invariant even when taken from a
+monomer's own intrinsic-frame wavefunction, because a monomer's real nuclei
+translate together with its basis functions and its ghost centres carry no
+charge. Measured on water/He, cc-pVDZ, intrinsic frame against dimer frame:
+
+| quantity | max abs difference |
+|---|---:|
+| `V_A` / `V_B` (`ao_potential`) | 8.0e-15 / 2.6e-15 |
+| `S` (`ao_overlap`) | 1.6e-15 |
+| ERIs (`ao_eri`) | 1.1e-15 |
+| nuclear repulsion | exact |
+
+So the first suspect --- `core.MintsHelper(wfn_A.basisset()).ao_potential()`
+picking up the monomer's translated position --- is not a defect. The dipole
+matrix is the only origin-dependent integral in the path, and it already
+arrives as a caller-supplied argument rather than being derived from a
+wavefunction. `build_sapt_jk_cache` gained optional `V_A_standard` /
+`V_B_standard` overrides anyway, so a caller can state the shared frame
+instead of resting on the invariance above.
+
+**What is frame sensitive.** One thing: the two `DSECPHF` objects were both
+built from a single shared `dse_jk.d_ao`. Each is *one monomer's own* orbital
+Hessian, so each needs that monomer's intrinsic `d` --- the exact analogue of
+`v(..., frame=...)` in the dense `chf()`, and the same term that broke
+induction there. `DSEJK.with_d_ao()` clones a provider onto a different
+operator while preserving its scales, and returns `self` when the operator is
+unchanged, so the dimer-frame path reuses one object and is a no-op by
+identity rather than by value.
+
+Measured on water/He, cc-pVDZ, lambda = (0,0,0.1), convergence 1e-12, with the
+Hessian left in the shared frame (the state before this work):
+
+| component | change over a 20 Ang shift | error vs the dimer-frame answer |
+|---|---:|---:|
+| Elst10 | 5.4e-14 | 7.6e-15 |
+| Exch10 | 8.9e-17 | 4.0e-16 |
+| **Ind20,r** | **1.07e-5** | **1.00e-6** |
+| **Exch-Ind20,r** | **3.07e-6** | **1.08e-7** |
+
+and with each monomer's intrinsic `d` routed to its own Hessian:
+
+| component | change over a 20 Ang shift | error vs the dimer-frame answer |
+|---|---:|---:|
+| Elst10 | 5.4e-14 | 7.6e-15 |
+| Exch10 | 8.9e-17 | 4.0e-16 |
+| Ind20,r | 1.8e-17 | 1.1e-16 |
+| Exch-Ind20,r | 1.8e-17 | 1.3e-15 |
+
+matching the dense/DF `monomer_com` column. The JK path agrees with the dense
+reference to `2.5e-13` in *either* frame, and
+`water_methylamine_qed_sapt_dense_vs_jk.py` is numerically identical row for
+row to its pre-change output. Dispersion is still not implemented here, so
+only four components are covered.
+
+**Two guards, because `build_sapt_jk_cache` has no driver to ask.** Divergent
+frames are directly observable: two ghosted monomers in one dimer frame have
+*bitwise identical* coordinates (they differ only in which centres are
+ghosts), and 6.301 bohr apart under `monomer_com`. The cache raises a directed
+`RuntimeError` when the geometries diverge and the caller has supplied neither
+intrinsic operator --- unless the cavity is off, in which case no dipole
+operator appears anywhere and the frame cannot matter. `d_A == d_B` is
+re-asserted on the interaction side.
+
+**New entry point.** `build_sapt_jk_cache_from_driver(driver)` wires all of
+this from a `QEDSAPT0Driver`: the JK object from the driver's dimer-frame
+basis set, `driver.d_A` as the shared interaction operator, and
+`driver._d_intrinsic[side]` to each monomer's Hessian. The three existing
+examples keep their lower-level `build_sapt_jk_cache()` wiring untouched;
+they run in the dimer frame, where the new path is bitwise identical.
+
+*Tests:* `tests/test_dse_df.py` gains the JK translation-invariance,
+frame-equality, dense-agreement and guard tests;
+`tests/test_dse_jk_scaffold.py` gains guard and `with_d_ao` unit tests.
 
 *Tests:* 98 passed + 2 xfailed in `tests/test_dse_df.py`; full suite
 **250 passed, 2 xfailed**.

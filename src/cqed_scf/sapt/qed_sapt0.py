@@ -1570,6 +1570,10 @@ class QEDSAPT0Driver:
             metadata={
                 **self.metadata,
                 "total": float(self.E_SAPT0),
+                # The standard / cross / cavity split of Disp20.  Exposed here
+                # so callers on the CQEDCalculator facade can reach it without
+                # dropping to the driver; see dispersion_energy_partition().
+                "disp20_partition": self.dispersion_energy_partition(),
             },
         )
 

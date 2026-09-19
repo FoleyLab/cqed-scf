@@ -125,7 +125,7 @@ class CQEDSCF:
     # -------------------------
 
     def run(self):
-        output.banner("CQED-SCF Calculation")
+        output.banner("Restricted Closed-Shell CQED-SCF Calculation")
         self._prepare_options()
 
         self.mol = psi4.geometry(self.geometry)

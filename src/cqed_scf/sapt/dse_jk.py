@@ -119,6 +119,44 @@ class DSEJK:
         """Return whether this DSE provider should be considered by callers."""
         return bool(self.enabled and self.d_ao is not None)
 
+    def with_d_ao(self, d_ao):
+        """Return a copy of this provider carrying a different dipole operator.
+
+        Every other setting -- the J/K scales, the enabled flag, the matrix
+        return convention and the metadata -- is preserved, so the copy differs
+        from the original only in which frame its operator lives in.  This is
+        what lets one monomer's *internal* orbital Hessian use that monomer's
+        own intrinsic-frame ``d`` while the shared *interaction* operator stays
+        in the dimer frame (see ``qed_sapt_jk.build_sapt_jk_cache``).
+
+        ``self`` is returned unchanged when the operator is the same matrix, so
+        the default single-frame path keeps one object and stays bitwise
+        identical.
+        """
+        if d_ao is None:
+            replacement = None
+        else:
+            replacement = np.asarray(d_ao, dtype=float)
+
+        if replacement is self.d_ao:
+            return self
+        if (
+            replacement is not None
+            and self.d_ao is not None
+            and replacement.shape == self.d_ao.shape
+            and np.array_equal(replacement, self.d_ao)
+        ):
+            return self
+
+        return DSEJK(
+            d_ao=replacement,
+            j_scale=self.j_scale,
+            k_scale=self.k_scale,
+            enabled=self.enabled,
+            return_core_matrices=self.return_core_matrices,
+            metadata=self.metadata,
+        )
+
     @staticmethod
     def _validate_d_ao(d_ao):
         if d_ao.ndim != 2 or d_ao.shape[0] != d_ao.shape[1]:
