@@ -43,6 +43,13 @@ def normalize_reference_name(reference: Optional[str], functional: Optional[str]
     If no reference is supplied, the historical calculator behavior is used:
     calculations with a functional default to RKS and calculations without one
     default to RHF.
+
+    Inference is deliberately blind to multiplicity.  ``multiplicity != 1`` does
+    imply an unrestricted reference, but ``multiplicity == 1`` does not imply a
+    restricted one (open-shell singlets exist), so a multiplicity-driven rule
+    would be silently wrong in exactly the interesting case.  It would also
+    switch a user into :class:`~cqed_scf.uscf.CQEDUSCF` without their asking.
+    :class:`CQEDConfig` raises instead, and names the fix.
     """
 
     if reference is None:
@@ -80,6 +87,7 @@ class CQEDConfig:
     def __post_init__(self) -> None:
         self.lambda_vector = self._coerce_lambda_vector(self.lambda_vector)
         self.psi4_options = dict(self.psi4_options or {})
+        reference_was_inferred = self.reference is None
         self.reference = normalize_reference_name(self.reference, self.functional)
         self.dispersion_policy = self.dispersion_policy.strip().lower()
         if self.dispersion_policy not in _DISPERSION_POLICIES:
@@ -88,7 +96,11 @@ class CQEDConfig:
                 f"dispersion_policy must be one of {allowed}; "
                 f"got {self.dispersion_policy!r}"
             )
+        self.charge = self._coerce_integer(self.charge, "charge")
+        self.multiplicity = self._coerce_integer(self.multiplicity, "multiplicity")
+        self._validate_psi4_options()
         self._validate_functional()
+        self._validate_spin(reference_was_inferred)
 
     @classmethod
     def from_legacy_kwargs(
@@ -133,9 +145,68 @@ dispersion_policy: str = "post_scf",
             raise ValueError("lambda_vector must contain exactly three components")
         return values
 
+    @staticmethod
+    def _coerce_integer(value: Any, name: str) -> int:
+        """Return ``value`` as an int, rejecting anything not exactly integral.
+
+        Plain ``int()`` would silently turn ``2.7`` into ``2`` and ``True`` into
+        ``1``.  For charge and multiplicity a wrong-but-plausible number is far
+        worse than an error.
+        """
+
+        if isinstance(value, bool):
+            raise TypeError(f"{name} must be an integer; got {value!r}")
+        try:
+            coerced = int(value)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(f"{name} must be an integer; got {value!r}") from exc
+        if coerced != value:
+            raise ValueError(f"{name} must be an integer; got {value!r}")
+        return coerced
+
+    def _validate_psi4_options(self) -> None:
+        """Reject a ``reference`` smuggled in through ``psi4_options``.
+
+        The SCF engine forces the Psi4 ``REFERENCE`` option from
+        ``self.reference`` (see ``cqed_scf.scf.CQEDSCF._prepare_options``), so a
+        ``reference`` key here would be silently discarded -- an easy and
+        expensive mistake to make now that the config field is load-bearing.
+        """
+
+        for key in self.psi4_options:
+            if str(key).strip().lower() == "reference":
+                raise ValueError(
+                    "set the reference on CQEDConfig (reference='uhf', 'uks', "
+                    "'rhf', or 'rks'), not inside psi4_options; the value in "
+                    "psi4_options would be silently overridden by the SCF engine"
+                )
+
     def _validate_functional(self) -> None:
         if self.is_ks and self.functional is None:
             raise ValueError(f"functional must be provided for {self.reference.upper()}")
+
+    def _validate_spin(self, reference_was_inferred: bool) -> None:
+        """Require a spin-consistent (reference, multiplicity) pair."""
+
+        if self.multiplicity < 1:
+            raise ValueError(
+                f"multiplicity must be a positive integer; got {self.multiplicity}"
+            )
+
+        if self.is_restricted and self.multiplicity != 1:
+            unrestricted = "uks" if self.is_ks else "uhf"
+            if reference_was_inferred:
+                why = (
+                    f"reference defaulted to {self.reference!r} because "
+                    f"{'a functional was given' if self.is_ks else 'no functional was given'}"
+                )
+            else:
+                why = f"reference={self.reference!r} is restricted"
+            raise ValueError(
+                f"{why}, but multiplicity={self.multiplicity} requires an "
+                f"unrestricted reference. Pass reference={unrestricted!r} "
+                f"(open-shell CQED-SCF runs through cqed_scf.uscf.CQEDUSCF)."
+            )
 
     @property
     def is_restricted(self) -> bool:

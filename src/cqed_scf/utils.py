@@ -67,6 +67,13 @@ def parse_psi4_geometry(geometry):
     """
     Extract symbols and coordinates from a Psi4 geometry string.
 
+    Cartesian, single-fragment input only.  This is a line-oriented heuristic,
+    not a Psi4 parser: Z-matrix lines are dropped, a ``--`` fragment separator
+    is ignored so the last fragment's charge/multiplicity line wins, and
+    ``Gh(He)`` is returned as though it were an element symbol.  For charge and
+    multiplicity prefer :func:`cqed_scf.geometry.read_charge_and_multiplicity`,
+    which goes through Psi4 and handles all of those.
+
     Returns
     -------
     symbols : list[str]
@@ -172,8 +179,8 @@ def finite_difference_gradient(
     calculator,
     coords_angstrom,
     symbols,
-    charge=0,
-    multiplicity=1,
+    charge=None,
+    multiplicity=None,
     delta=1.0e-4,
 ):
     """
@@ -183,6 +190,10 @@ def finite_difference_gradient(
     ----------
     coords_angstrom : ndarray, shape (N, 3)
         Cartesian coordinates in angstroms.
+    charge, multiplicity : int, optional
+        Written into each displaced geometry.  Default to the calculator's own
+        values; hardcoding a neutral singlet here would contradict the
+        calculator's config and be rejected.
     delta : float
         Displacement in angstroms.
 
@@ -191,6 +202,11 @@ def finite_difference_gradient(
     grad : ndarray, shape (N, 3)
         Gradient in Hartree / bohr.
     """
+    if charge is None:
+        charge = calculator.charge
+    if multiplicity is None:
+        multiplicity = calculator.multiplicity
+
     natom = coords_angstrom.shape[0]
     grad = np.zeros_like(coords_angstrom)
 
@@ -216,16 +232,30 @@ def finite_difference_gradient(
 def finite_difference_gradient_from_geometry(
     calculator,
     geometry,
-    charge=0,
-    multiplicity=1,
+    charge=None,
+    multiplicity=None,
     delta=1.0e-4,
 ):
     """
     FD gradient using a Psi4 geometry string.
 
+    ``charge`` and ``multiplicity`` default to the values Psi4 parses out of
+    ``geometry``.
+
     Returns gradient in Hartree / bohr.
     """
-    symbols, coords, charge, multiplicity = parse_psi4_geometry(geometry)
+    from .geometry import read_charge_and_multiplicity
+
+    symbols, coords, _, _ = parse_psi4_geometry(geometry)
+
+    # Read charge/multiplicity with Psi4 rather than the heuristic parser above:
+    # the displaced geometries are handed back to the calculator, which now
+    # requires them to match its config exactly.
+    parsed_charge, parsed_multiplicity = read_charge_and_multiplicity(geometry)
+    if charge is None:
+        charge = parsed_charge
+    if multiplicity is None:
+        multiplicity = parsed_multiplicity
     return finite_difference_gradient(
         calculator,
         coords_angstrom=coords,

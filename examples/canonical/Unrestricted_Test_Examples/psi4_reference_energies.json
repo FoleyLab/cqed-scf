@@ -1,0 +1,116 @@
+{
+  "oracle": "psi4",
+  "psi4_version": "1.10",
+  "basis": "6-311++G**",
+  "functional": "PBE0",
+  "systems": {
+    "oh_radical": {
+      "description": "Hydroxide radical (OH), doublet, polar",
+      "charge": 0,
+      "multiplicity": 2,
+      "geometry": "\n0 2\nO     0.000000     0.000000     0.000000\nH     0.000000     0.000000     0.969300\nno_reorient\nno_com\nunits angstrom\nsymmetry c1\n",
+      "methods": {
+        "uhf": {
+          "energy": -75.41452695282392,
+          "nalpha": 5,
+          "nbeta": 4,
+          "nbf": 29,
+          "s_squared": 0.7557636944483495,
+          "s_squared_exact": 0.75,
+          "nuclear_repulsion": 4.3674999333127,
+          "scf_dipole_au": [
+            -7.023872128901792e-16,
+            -1.97172606645365e-15,
+            0.7511705659495929
+          ]
+        },
+        "uks": {
+          "energy": -75.67914644272909,
+          "nalpha": 5,
+          "nbeta": 4,
+          "nbf": 29,
+          "s_squared": 0.7523114960220298,
+          "s_squared_exact": 0.75,
+          "nuclear_repulsion": 4.3674999333127,
+          "scf_dipole_au": [
+            1.2648262714709343e-15,
+            -4.689626007902576e-16,
+            0.7197311533412105
+          ]
+        }
+      }
+    },
+    "o2_triplet": {
+      "description": "Molecular oxygen (O2), triplet ground state, non-polar",
+      "charge": 0,
+      "multiplicity": 3,
+      "geometry": "\n0 3\nO     0.000000     0.000000     0.000000\nO     0.000000     0.000000     1.207520\nno_reorient\nno_com\nunits angstrom\nsymmetry c1\n",
+      "methods": {
+        "uhf": {
+          "energy": -149.65955107394478,
+          "nalpha": 9,
+          "nbeta": 7,
+          "nbf": 44,
+          "s_squared": 2.044794422430365,
+          "s_squared_exact": 2.0,
+          "nuclear_repulsion": 28.047023223532534,
+          "scf_dipole_au": [
+            -5.28960939629764e-15,
+            -2.6300383984276092e-17,
+            -3.517186542012496e-13
+          ]
+        },
+        "uks": {
+          "energy": -150.2143940442963,
+          "nalpha": 9,
+          "nbeta": 7,
+          "nbf": 44,
+          "s_squared": 2.0093708656871723,
+          "s_squared_exact": 2.0,
+          "nuclear_repulsion": 28.047023223532534,
+          "scf_dipole_au": [
+            2.0711484556741783e-16,
+            -1.7329007651122916e-16,
+            8.627623060419864e-10
+          ]
+        }
+      }
+    },
+    "nh_triplet": {
+      "description": "Imidogen (NH), triplet ground state, polar",
+      "charge": 0,
+      "multiplicity": 3,
+      "geometry": "\n0 3\nN     0.000000     0.000000     0.000000\nH     0.000000     0.000000     1.036200\nno_reorient\nno_com\nunits angstrom\nsymmetry c1\n",
+      "methods": {
+        "uhf": {
+          "energy": -54.97804164153066,
+          "nalpha": 5,
+          "nbeta": 3,
+          "nbf": 29,
+          "s_squared": 2.015795723839683,
+          "s_squared_exact": 2.0,
+          "nuclear_repulsion": 3.57483157179116,
+          "scf_dipole_au": [
+            -2.02482925239064e-15,
+            1.3833036675682325e-15,
+            0.6934079903775954
+          ]
+        },
+        "uks": {
+          "energy": -55.17507622947907,
+          "nalpha": 5,
+          "nbeta": 3,
+          "nbf": 29,
+          "s_squared": 2.005948746133365,
+          "s_squared_exact": 2.0,
+          "nuclear_repulsion": 3.57483157179116,
+          "scf_dipole_au": [
+            -1.7471070233288706e-15,
+            -2.6586369746037637e-17,
+            0.6636807890962417
+          ]
+        }
+      }
+    }
+  }
+}

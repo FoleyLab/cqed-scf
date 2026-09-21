@@ -33,6 +33,10 @@ _KCAL_PER_EH = 627.5094740631
 _KJ_PER_EH = 2625.4996394799
 _CM_PER_EH = 219474.63067
 
+# Two ghosted monomers in one dimer frame have bitwise identical
+# coordinates; anything above pure roundoff means divergent frames.
+_FRAME_DIVERGENCE_TOL = 1e-10
+
 
 def print_sapt_summary(components, total=None, do_print=True):
     """Emit a multi-unit SAPT component summary table at normal verbosity.
@@ -140,6 +144,56 @@ def _dse_cavity_terms(
     return V_A_cavity, V_B_cavity, dse_constant
 
 
+def _check_shared_reference_frame(
+    wfn_A, wfn_B, d_ao_intrinsic_A, d_ao_intrinsic_B, include_cavity_terms=True
+):
+    """Refuse divergent monomer frames unless the caller has accounted for them.
+
+    ``build_sapt_jk_cache`` receives bare Psi4 wavefunctions and has no driver
+    to ask which frame they came from, but the frames are directly observable:
+    in the dimer frame both ghosted monomers describe the *same* geometry and
+    differ only in which centres are ghosts, so their coordinates agree
+    bitwise.  Under ``monomer_reference_frame="monomer_com"`` they do not
+    (6.3 bohr apart for water/He).
+
+    Divergent frames are legitimate, but only if the caller has supplied each
+    monomer's intrinsic dipole matrix for its own orbital Hessian.  Without
+    that the DSE response is built in the wrong frame and induction is
+    silently wrong, so fail loudly instead.
+    """
+    if d_ao_intrinsic_A is not None or d_ao_intrinsic_B is not None:
+        return
+
+    # With no cavity there is no dipole operator anywhere in the expressions,
+    # so nothing depends on the frame and divergent references are harmless.
+    if not include_cavity_terms:
+        return
+
+    geom_A = np.asarray(wfn_A.molecule().geometry())
+    geom_B = np.asarray(wfn_B.molecule().geometry())
+    if geom_A.shape != geom_B.shape:
+        raise RuntimeError(
+            "monomer wavefunctions describe different numbers of centres "
+            f"({geom_A.shape[0]} and {geom_B.shape[0]}); the SAPT JK path "
+            "requires two ghosted monomers in one dimer-centred basis."
+        )
+
+    divergence = float(np.abs(geom_A - geom_B).max())
+    if divergence > _FRAME_DIVERGENCE_TOL:
+        raise RuntimeError(
+            "monomer A and B wavefunctions were solved in different reference "
+            f"frames (max|geom_A - geom_B| = {divergence:.3e} bohr). This is "
+            'what QEDSAPT0Driver(monomer_reference_frame="monomer_com") '
+            "produces. The SAPT JK path supports it, but only when each "
+            "monomer's own intrinsic dipole matrix is supplied for its orbital "
+            "Hessian: pass d_ao_intrinsic_A and d_ao_intrinsic_B (and a "
+            "dimer-frame d_ao / jk for the interaction side), or use "
+            "build_sapt_jk_cache_from_driver(), which wires all of it. "
+            "Without them the DSE response is built in the wrong frame and "
+            "induction is silently wrong."
+        )
+
+
 def build_sapt_jk_cache(
     wfn_A,
     wfn_B,
@@ -151,6 +205,10 @@ def build_sapt_jk_cache(
     d_ao=None,
     d_ao_A=None,
     d_ao_B=None,
+    d_ao_intrinsic_A=None,
+    d_ao_intrinsic_B=None,
+    V_A_standard=None,
+    V_B_standard=None,
     d_exp_el_A=None,
     d_exp_el_B=None,
     include_cavity_terms=True,
@@ -158,7 +216,44 @@ def build_sapt_jk_cache(
 ):
     """
     Constructs the DCBS cache data required to compute ELST/EXCH/IND
+
+    Reference frames
+    ----------------
+    A block whose four orbital indices all belong to one monomer is an
+    *internal* quantity and must be built in that monomer's own reference
+    frame; every block mixing the monomers is an *interaction* quantity and
+    must be built in the shared dimer frame.  Under
+    ``QEDSAPT0Driver(monomer_reference_frame="monomer_com")`` the two monomer
+    references are solved in different intrinsic frames, so the distinction
+    becomes observable and both halves must be supplied:
+
+    ``d_ao`` / ``d_ao_A`` / ``d_ao_B`` carry the *interaction* dipole operator
+    and must be in the shared dimer frame, where ``d_A == d_B`` holds exactly.
+
+    ``d_ao_intrinsic_A`` / ``d_ao_intrinsic_B`` carry each monomer's *own*
+    dipole matrix, used only for that monomer's orbital Hessian in
+    :class:`~cqed_scf.sapt.dse_jk.DSECPHF`.  They default to the shared
+    interaction operator, which is exactly right whenever both references were
+    solved in the dimer frame -- so the default path is unchanged.  Passing a
+    dimer-frame Hessian alongside intrinsic-frame orbital energies breaks the
+    cancellation that makes induction origin independent: measured on
+    water/He, cc-pVDZ, lambda = (0,0,0.1), it moves ``Ind20,r`` by ``1.0e-6``
+    Eh and makes it drift by ``1.07e-5`` Eh under a 20 Ang rigid translation.
+
+    ``V_A_standard`` / ``V_B_standard`` optionally override the nuclear
+    attraction integrals.  Deriving them from ``wfn_A.basisset()`` is in fact
+    safe in either frame -- a monomer's real nuclei translate with its basis
+    functions and its ghost centres carry no charge, so the integrals are
+    invariant (measured at ``8e-15``, as are ``S`` and the ERIs) -- but the
+    overrides let a caller state the shared frame rather than rely on that.
+
+    ``jk`` must be built from a dimer-frame basis set.  Use
+    :func:`build_sapt_jk_cache_from_driver` to have all of this wired for you.
     """
+
+    _check_shared_reference_frame(
+        wfn_A, wfn_B, d_ao_intrinsic_A, d_ao_intrinsic_B, include_cavity_terms
+    )
 
     if do_print:
         output.banner("Preparing SAPT Data Cache")
@@ -193,11 +288,28 @@ def build_sapt_jk_cache(
     cache["Cvir_B"] = wfn_B.Ca_subset("AO", "VIR")
 
     if dse_jk_eff is not None and dse_jk_eff.is_active():
-        # hand only the DSE part of J/K to the DSECPHF objects, which are used to compute the DSE response contributions.
+        # Hand only the DSE part of J/K to the DSECPHF objects, which supply
+        # the DSE response contribution to induction.  Each object is *one
+        # monomer's own* orbital Hessian, so it takes that monomer's intrinsic
+        # dipole matrix rather than the shared interaction operator.  When the
+        # two coincide -- every dimer-frame calculation -- ``with_d_ao``
+        # returns the shared provider itself, so this is a no-op by identity
+        # and not merely by value.
+        dse_jk_A = dse_jk_eff.with_d_ao(
+            dse_jk_eff.d_ao if d_ao_intrinsic_A is None else d_ao_intrinsic_A
+        )
+        dse_jk_B = dse_jk_eff.with_d_ao(
+            dse_jk_eff.d_ao if d_ao_intrinsic_B is None else d_ao_intrinsic_B
+        )
+        if d_ao_intrinsic_A is None and d_ao_intrinsic_B is None:
+            assert dse_jk_A is dse_jk_eff and dse_jk_B is dse_jk_eff, (
+                "the default single-frame path must reuse the shared DSE provider"
+            )
+
         if dse_cphf_A is None:
-            dse_cphf_A = DSECPHF(dse_jk=dse_jk_eff, Cocc=cache["Cocc_A"], Cvir=cache["Cvir_A"])
+            dse_cphf_A = DSECPHF(dse_jk=dse_jk_A, Cocc=cache["Cocc_A"], Cvir=cache["Cvir_A"])
         if dse_cphf_B is None:
-            dse_cphf_B = DSECPHF(dse_jk=dse_jk_eff, Cocc=cache["Cocc_B"], Cvir=cache["Cvir_B"])
+            dse_cphf_B = DSECPHF(dse_jk=dse_jk_B, Cocc=cache["Cocc_B"], Cvir=cache["Cvir_B"])
 
     # add instances of DSECPHF to the cache for later use in computing the DSE response contributions to induction.
     cache["dse_cphf_A"] = dse_cphf_A
@@ -217,15 +329,17 @@ def build_sapt_jk_cache(
     cache["P_A"] = core.doublet(cache["Cvir_A"], cache["Cvir_A"], False, True)
     cache["P_B"] = core.doublet(cache["Cvir_B"], cache["Cvir_B"], False, True)
 
-    # Potential ints
-    mints = core.MintsHelper(wfn_A.basisset())
+    # Potential ints.  These are interaction quantities and belong in the
+    # shared dimer frame; a caller may say so explicitly, otherwise they come
+    # from each monomer's own basis set, which carries its real nuclei with it
+    # and so gives the same matrix in either frame (see the docstring).
+    if V_A_standard is None:
+        V_A_standard = core.MintsHelper(wfn_A.basisset()).ao_potential()
+    if V_B_standard is None:
+        V_B_standard = core.MintsHelper(wfn_B.basisset()).ao_potential()
 
-    # this is the standard one-electron potential for monomer A
-    cache["V_A_standard"] = mints.ao_potential().clone()
-
-    # this is the standard one-electron potential for monomer B
-    mints = core.MintsHelper(wfn_B.basisset())
-    cache["V_B_standard"] = mints.ao_potential().clone()
+    cache["V_A_standard"] = V_A_standard.clone()
+    cache["V_B_standard"] = V_B_standard.clone()
 
     # capture the cavity contributions to the one-electron potentials and the DSE constant
     cache["V_A_cavity"], cache["V_B_cavity"], cache["dse_constant"] = _dse_cavity_terms(
@@ -298,6 +412,72 @@ def build_sapt_jk_cache(
     )
 
     return cache
+
+
+def build_sapt_jk_cache_from_driver(driver, jk=None, do_print=True, **kwargs):
+    """Build a SAPT JK cache from a :class:`QEDSAPT0Driver`, frame-correctly.
+
+    This is the supported entry point when the driver may be using a
+    non-default ``monomer_reference_frame``.  It applies the internal /
+    interaction split for you:
+
+    * the JK object, the shared DSE operator ``d_A`` and the dipole
+      expectation values are taken from the driver's *dimer-frame* data, which
+      the driver rebases when the references were solved elsewhere;
+    * each monomer's *intrinsic* dipole matrix is routed to its own orbital
+      Hessian.
+
+    ``driver.prepare_monomers()`` and ``driver.build_integrals()`` must already
+    have run.  Extra keyword arguments pass through to
+    :func:`build_sapt_jk_cache`.
+    """
+    wfn_A = driver.monomer_A.wfn
+    wfn_B = driver.monomer_B.wfn
+
+    if jk is None:
+        # The interaction JK must live in the shared dimer frame.  Asking the
+        # driver rather than wfn_A keeps that true under any frame setting.
+        jk = core.JK.build(driver._dimer_frame_basisset("A"))
+        jk.set_memory(int(1e9))
+        jk.set_do_J(True)
+        jk.set_do_K(True)
+        jk.set_do_wK(False)
+        jk.initialize()
+
+    d_shared = np.asarray(driver.d_A)
+    # The shared interaction operator is a property of the dimer basis and
+    # frame, not of either monomer, so the two must agree exactly.  The DF
+    # backend's single-auxiliary-row factorization rests on this.
+    if not np.allclose(d_shared, np.asarray(driver.d_B), rtol=0.0, atol=1e-12):
+        raise RuntimeError(
+            "driver.d_A and driver.d_B differ "
+            f"(max = {np.abs(d_shared - np.asarray(driver.d_B)).max():.3e}); "
+            "the interaction dipole operator must be in one shared frame."
+        )
+
+    intrinsic = getattr(driver, "_d_intrinsic", None) or {}
+    # Take a DSE provider the caller passed explicitly, or one already
+    # attached to their JK wrapper, rather than silently replacing it.
+    dse_jk = kwargs.pop("dse_jk", None)
+    if dse_jk is None and isinstance(jk, PauliFierzJK):
+        dse_jk = jk.dse_jk
+    if dse_jk is None:
+        dse_jk = DSEJK(d_ao=d_shared, enabled=bool(driver.include_cavity_terms))
+
+    kwargs.setdefault("d_ao_intrinsic_A", np.asarray(intrinsic.get("A", d_shared)))
+    kwargs.setdefault("d_ao_intrinsic_B", np.asarray(intrinsic.get("B", d_shared)))
+    kwargs.setdefault("d_exp_el_A", driver.d_exp_el_A)
+    kwargs.setdefault("d_exp_el_B", driver.d_exp_el_B)
+    kwargs.setdefault("include_cavity_terms", driver.include_cavity_terms)
+    kwargs.setdefault("nuclear_repulsion_energy", driver.nuc_rep)
+
+    return build_sapt_jk_cache(
+        wfn_A,
+        wfn_B,
+        PauliFierzJK(_native_jk(jk), dse_jk=dse_jk),
+        do_print=do_print,
+        **kwargs,
+    )
 
 
 def electrostatics(cache, do_print=True):

@@ -110,7 +110,7 @@ def test_mghplus_wb97x_lambda0():
         lambda_vector=lambda_vector,
         psi4_options=psi4_options,
         omega=0.1,
-        charge=0,
+        charge=1,  # MgH+ -- the geometry string above is "1 1"
         multiplicity=1,
         density_fitting=True,
         functional="wb97x",

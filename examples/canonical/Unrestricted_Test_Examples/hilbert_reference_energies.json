@@ -1,0 +1,453 @@
+{
+  "oracle": "hilbert (polaritonic_scf)",
+  "psi4_version": "1.10",
+  "basis": "6-311++G**",
+  "functional": "PBE0",
+  "omega": 0.1,
+  "n_photon_states": 1,
+  "coupling_convention": "lambda = g * sqrt(2 * omega); we pass g = lambda / sqrt(2 * omega)",
+  "lambda_vectors": {
+    "zero": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "z_only": [
+      0.0,
+      0.0,
+      0.05
+    ],
+    "x_only": [
+      0.05,
+      0.0,
+      0.0
+    ],
+    "general": [
+      0.02,
+      0.03,
+      0.05
+    ]
+  },
+  "systems": {
+    "oh_radical": {
+      "description": "Hydroxide radical (OH), doublet, polar",
+      "charge": 0,
+      "multiplicity": 2,
+      "geometry": "\n0 2\nO     0.000000     0.000000     0.000000\nH     0.000000     0.000000     0.969300\nno_reorient\nno_com\nunits angstrom\nsymmetry c1\n",
+      "methods": {
+        "qed_uhf": {
+          "zero": {
+            "energy": -75.4145269528242,
+            "lambda_vector": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "nuclear_repulsion": 4.3674999333127,
+            "s_squared": 0.7557636944370438
+          },
+          "z_only": {
+            "energy": -75.40979916080092,
+            "lambda_vector": [
+              0.0,
+              0.0,
+              0.05
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.0,
+              0.0,
+              0.1118033988749895
+            ],
+            "nuclear_repulsion": 4.3674999333127,
+            "s_squared": 0.755753725764122
+          },
+          "x_only": {
+            "energy": -75.41065217637515,
+            "lambda_vector": [
+              0.05,
+              0.0,
+              0.0
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.1118033988749895,
+              0.0,
+              0.0
+            ],
+            "nuclear_repulsion": 4.3674999333127,
+            "s_squared": 0.755744027466966
+          },
+          "general": {
+            "energy": -75.40778982661494,
+            "lambda_vector": [
+              0.02,
+              0.03,
+              0.05
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.044721359549995794,
+              0.0670820393249937,
+              0.1118033988749895
+            ],
+            "nuclear_repulsion": 4.3674999333127,
+            "s_squared": 0.755743713416555
+          }
+        },
+        "qed_uks": {
+          "zero": {
+            "energy": -75.67914644272916,
+            "lambda_vector": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "nuclear_repulsion": 4.3674999333127,
+            "s_squared": 0.7523114960221999
+          },
+          "z_only": {
+            "energy": -75.67423606245947,
+            "lambda_vector": [
+              0.0,
+              0.0,
+              0.05
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.0,
+              0.0,
+              0.1118033988749895
+            ],
+            "nuclear_repulsion": 4.3674999333127,
+            "s_squared": 0.7523063434834261
+          },
+          "x_only": {
+            "energy": -75.6751685296032,
+            "lambda_vector": [
+              0.05,
+              0.0,
+              0.0
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.1118033988749895,
+              0.0,
+              0.0
+            ],
+            "nuclear_repulsion": 4.3674999333127,
+            "s_squared": 0.7523041615309483
+          },
+          "general": {
+            "energy": -75.67210833711023,
+            "lambda_vector": [
+              0.02,
+              0.03,
+              0.05
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.044721359549995794,
+              0.0670820393249937,
+              0.1118033988749895
+            ],
+            "nuclear_repulsion": 4.3674999333127,
+            "s_squared": 0.7522957078625927
+          }
+        }
+      }
+    },
+    "o2_triplet": {
+      "description": "Molecular oxygen (O2), triplet ground state, non-polar",
+      "charge": 0,
+      "multiplicity": 3,
+      "geometry": "\n0 3\nO     0.000000     0.000000     0.000000\nO     0.000000     0.000000     1.207520\nno_reorient\nno_com\nunits angstrom\nsymmetry c1\n",
+      "methods": {
+        "qed_uhf": {
+          "zero": {
+            "energy": -149.6595510739443,
+            "lambda_vector": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "nuclear_repulsion": 28.047023223532534,
+            "s_squared": 2.044794422451809
+          },
+          "z_only": {
+            "energy": -149.65019587615993,
+            "lambda_vector": [
+              0.0,
+              0.0,
+              0.05
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.0,
+              0.0,
+              0.1118033988749895
+            ],
+            "nuclear_repulsion": 28.047023223532534,
+            "s_squared": 2.044589524171818
+          },
+          "x_only": {
+            "energy": -149.65344710766098,
+            "lambda_vector": [
+              0.05,
+              0.0,
+              0.0
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.1118033988749895,
+              0.0,
+              0.0
+            ],
+            "nuclear_repulsion": 28.047023223532534,
+            "s_squared": 2.04440072865758
+          },
+          "general": {
+            "energy": -149.647034901405,
+            "lambda_vector": [
+              0.02,
+              0.03,
+              0.05
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.044721359549995794,
+              0.0670820393249937,
+              0.1118033988749895
+            ],
+            "nuclear_repulsion": 28.047023223532534,
+            "s_squared": 2.044398815755417
+          }
+        },
+        "qed_uks": {
+          "zero": {
+            "energy": -150.21439404429586,
+            "lambda_vector": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "nuclear_repulsion": 28.047023223532534,
+            "s_squared": 2.009370865688168
+          },
+          "z_only": {
+            "energy": -150.20480583119206,
+            "lambda_vector": [
+              0.0,
+              0.0,
+              0.05
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.0,
+              0.0,
+              0.1118033988749895
+            ],
+            "nuclear_repulsion": 28.047023223532534,
+            "s_squared": 2.0092959243552118
+          },
+          "x_only": {
+            "energy": -150.2083130489872,
+            "lambda_vector": [
+              0.05,
+              0.0,
+              0.0
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.1118033988749895,
+              0.0,
+              0.0
+            ],
+            "nuclear_repulsion": 28.047023223532534,
+            "s_squared": 2.0092945066362864
+          },
+          "general": {
+            "energy": -150.20165741141568,
+            "lambda_vector": [
+              0.02,
+              0.03,
+              0.05
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.044721359549995794,
+              0.0670820393249937,
+              0.1118033988749895
+            ],
+            "nuclear_repulsion": 28.047023223532534,
+            "s_squared": 2.0092636608874317
+          }
+        }
+      }
+    },
+    "nh_triplet": {
+      "description": "Imidogen (NH), triplet ground state, polar",
+      "charge": 0,
+      "multiplicity": 3,
+      "geometry": "\n0 3\nN     0.000000     0.000000     0.000000\nH     0.000000     0.000000     1.036200\nno_reorient\nno_com\nunits angstrom\nsymmetry c1\n",
+      "methods": {
+        "qed_uhf": {
+          "zero": {
+            "energy": -54.97804164153063,
+            "lambda_vector": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "nuclear_repulsion": 3.57483157179116,
+            "s_squared": 2.0157957238306485
+          },
+          "z_only": {
+            "energy": -54.97286842613659,
+            "lambda_vector": [
+              0.0,
+              0.0,
+              0.05
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.0,
+              0.0,
+              0.1118033988749895
+            ],
+            "nuclear_repulsion": 3.57483157179116,
+            "s_squared": 2.0158530993514896
+          },
+          "x_only": {
+            "energy": -54.97371937598107,
+            "lambda_vector": [
+              0.05,
+              0.0,
+              0.0
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.1118033988749895,
+              0.0,
+              0.0
+            ],
+            "nuclear_repulsion": 3.57483157179116,
+            "s_squared": 2.015744808420921
+          },
+          "general": {
+            "energy": -54.97063118226917,
+            "lambda_vector": [
+              0.02,
+              0.03,
+              0.05
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.044721359549995794,
+              0.0670820393249937,
+              0.1118033988749895
+            ],
+            "nuclear_repulsion": 3.57483157179116,
+            "s_squared": 2.015828489802872
+          }
+        },
+        "qed_uks": {
+          "zero": {
+            "energy": -55.175076229479096,
+            "lambda_vector": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.0,
+              0.0,
+              0.0
+            ],
+            "nuclear_repulsion": 3.57483157179116,
+            "s_squared": 2.0059487461399863
+          },
+          "z_only": {
+            "energy": -55.16969315046883,
+            "lambda_vector": [
+              0.0,
+              0.0,
+              0.05
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.0,
+              0.0,
+              0.1118033988749895
+            ],
+            "nuclear_repulsion": 3.57483157179116,
+            "s_squared": 2.0059707415188934
+          },
+          "x_only": {
+            "energy": -55.17064690962918,
+            "lambda_vector": [
+              0.05,
+              0.0,
+              0.0
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.1118033988749895,
+              0.0,
+              0.0
+            ],
+            "nuclear_repulsion": 3.57483157179116,
+            "s_squared": 2.0059169602155817
+          },
+          "general": {
+            "energy": -55.167402510339755,
+            "lambda_vector": [
+              0.02,
+              0.03,
+              0.05
+            ],
+            "omega": 0.1,
+            "hilbert_coupling_strength": [
+              0.044721359549995794,
+              0.0670820393249937,
+              0.1118033988749895
+            ],
+            "nuclear_repulsion": 3.57483157179116,
+            "s_squared": 2.005954322072471
+          }
+        }
+      }
+    }
+  }
+}

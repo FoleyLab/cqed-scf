@@ -71,7 +71,7 @@ config_1 = CQEDConfig(
     reference="rks",
     functional="wb97x",
     density_fitting=True,
-    charge=0,
+    charge=1,  # the geometry string above is "1 1"
     multiplicity=1,
     debug=True,
 )
@@ -83,7 +83,7 @@ config_2 = CQEDConfig(
     reference="rks",
     functional="wb97x",
     density_fitting=True,
-    charge=0,
+    charge=1,  # the geometry string above is "1 1"
     multiplicity=1,
     debug=True,
 )

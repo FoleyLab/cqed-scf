@@ -19,6 +19,16 @@ def __getattr__(name):
 
         return CQEDGradient if name == "CQEDGradient" else CQEDRHFGradient
 
+    if name in {"CQEDUSCF", "CQEDUHFSCF"}:
+        from .uscf import CQEDUHFSCF, CQEDUSCF
+
+        return CQEDUSCF if name == "CQEDUSCF" else CQEDUHFSCF
+
+    if name in {"CQEDUGradient", "CQEDUHFGradient"}:
+        from .ugradients import CQEDUGradient, CQEDUHFGradient
+
+        return CQEDUGradient if name == "CQEDUGradient" else CQEDUHFGradient
+
     if name in {"QEDCIS", "QEDCISResults", "print_qed_cis_results"}:
         from . import response
 
@@ -36,9 +46,14 @@ __all__ = [
     "__version__",
     "CQEDConfig",
     "CQEDSCF",
+    "CQEDUSCF",
     "CQEDGradient",
+    "CQEDUGradient",
     "CQEDCalculator",
+    "CQEDRHFSCF",
+    "CQEDUHFSCF",
     "CQEDRHFGradient",
+    "CQEDUHFGradient",
     "CQEDRHFCalculator",
     "QEDSAPT0Driver",
     "QEDSAPT0Results",

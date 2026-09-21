@@ -14,7 +14,7 @@
 
 7. Methods .v() is implemented and tested for He dimer, methods .s(), .eps(), .potential(), and .vt() still require implementation and testing.  They should be called by .build_integrals or by .run()
 
-8. After implementation from scratch, we will want to try to hook into as much psi4 capability as possible for a more performant code, i.e. avoiding full 2-ERI builds in favor of JK builds that use density fitting, etc.  This file https://github.com/psi4/psi4/blob/master/psi4/driver/procrouting/sapt/sapt_jk_terms.py looks to be quite useful, as the first function is build_sapt_jk_cach and takes wfn objects for monomer a and b. I have pinned a gemini chat about how to use the helper functions in this file! 
+8. After implementation from scratch, we will want to try to hook into as much psi4 capability as possible for a more performant code, i.e. avoiding full 2-ERI builds in favor of JK builds that use density fitting, etc.  This file https://github.com/psi4/psi4/blob/master/psi4/driver/procrouting/sapt/sapt_jk_terms.py looks to be quite useful, as the first function is build_sapt_jk_cach and takes wfn objects for monomer a and b. I have pinned a gemini chat about how to use the helper functions in this file!  The dispersion terms also require MP2-like evaluation, and the file https://github.com/psi4/psi4/blob/master/psi4/driver/procrouting/sapt/sapt_mp2_terms.py has a helpful pattern for this that we should hook into!
 
 9. Added example calling sapt_jk_terms to compute first-order terms (E_{elest} and E_{exch}) in examples/he_dimer/he_dimer_sapt_jk_test.py, this approach seems promising!
 
@@ -547,3 +547,58 @@ From Tier 0, all in `scf.py`:
   (the canonicality diagnostic, `max|F_ia|`, which must vanish for the CQED
   Brillouin condition to hold).
 - `HARTREE_TO_EV` added to `utils.py`.
+
+## 2026-09-19 reference frames in the SAPT-JK path
+
+`monomer_reference_frame="monomer_com"` (see
+`docs/development/QED_SAPT_DISPERSION_PLAN.md`) is now supported by
+`qed_sapt_jk.py`. Three things are worth keeping.
+
+### 1. Measure before believing a frame audit
+
+The plausible-looking suspect was
+`core.MintsHelper(wfn_A.basisset()).ao_potential()`: under `monomer_com` that
+basis sits at the monomer's own centre of mass, so the nuclear attraction
+integrals "must" be evaluated at the wrong position. They are not. A monomer's
+real nuclei translate together with its basis functions, and its ghost centres
+carry no charge, so `V` is unchanged — measured at `8e-15` on water/He,
+cc-pVDZ, along with `S` (`1.6e-15`), the ERIs (`1.1e-15`) and the nuclear
+repulsion (exact).
+
+**The dipole matrix is the only origin-dependent integral in the path**, and it
+was already a caller-supplied argument rather than something derived from a
+wavefunction. Auditing by translation invariance of each integral, rather than
+by which frame its basis set nominally sits in, gets to this in one run and
+avoids "fixing" four quantities that were never wrong.
+
+### 2. The one real defect was the same one as in the dense path
+
+Both `DSECPHF` objects were built from a single shared `dse_jk.d_ao`. Each is
+*one monomer's own* orbital Hessian, so each needs that monomer's intrinsic
+`d` — the exact analogue of the `v(..., frame=...)` fix in the dense `chf()`.
+Left shared, `Ind20,r` drifts by `1.07e-5` Eh over a 20 Ang rigid translation
+and sits `1.00e-6` Eh away from the dimer-frame answer; `Exch-Ind20,r` drifts
+by `3.07e-6` Eh. Routed correctly, both are invariant at `1.8e-17` and agree
+with the dimer frame to `1e-15`.
+
+Induction is origin independent only as a cancellation: the orbital energies
+drift, the ERI part of the Hessian does not, and the DSE part's `-d_bb' d_ss'`
+term supplies the compensating drift. All three must come from the same frame.
+This is why induction, not dispersion, is the sharp test of a frame change in
+a path that has no dispersion yet.
+
+### 3. Make the no-op provable, not assumed
+
+`DSEJK.with_d_ao()` returns `self` when the operator is unchanged, so in the
+dimer frame the two Hessians and the interaction operator are literally one
+object; `build_sapt_jk_cache` asserts that identity on the default path rather
+than trusting an equal-valued rebuild. Pairs with §8.1's column test: the
+cheapest way to show a refactor changed nothing is to make "nothing" checkable.
+
+The guard for callers who cannot be reached: two ghosted monomers in one dimer
+frame have **bitwise identical** coordinates, and 6.301 bohr apart under
+`monomer_com`. `build_sapt_jk_cache` raises on that divergence unless the
+caller supplied intrinsic operators (or the cavity is off, in which case no
+dipole operator appears and the frame cannot matter).
+`build_sapt_jk_cache_from_driver(driver)` wires the whole split from a
+`QEDSAPT0Driver` and is the entry point to prefer.
