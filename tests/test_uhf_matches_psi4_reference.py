@@ -1,85 +1,132 @@
 import numpy as np
 import pytest
 
-from cqed_scf.references import CQEDConfig
-
-### cavity-free singlet uhf reference matches psi4numpy tutorial example
-# ==> Set Basic Psi4 Options <==
-# Memory specification
-psi4.set_memory(int(5e8))
-numpy_memory = 2
-
-# Set output file
-psi4.core.set_output_file('output.dat', False)
-
-# Define water from psi4numpy tutorial example
-mol_str = """
-O
-H 1 1.1
-H 1 1.1 2 104
-symmetry c1
-"""
-
-# Set options from psi4numpy tutorial example
-psi4_options =    {'guess': 'core',
-                  'basis': 'cc-pvdz',
-                  'scf_type': 'pk',
-                  'e_convergence': 1e-8,
-                  'reference': 'uhf'}
+from cqed_scf import CQEDCalculator, CQEDConfig
 
 
+def test_water_singlet_matches_psi4_reference():
+    # Define water from psi4numpy tutorial example
+    WATER_SINGLET_MOL_STR = """
+    0 1
+    O
+    H 1 1.1
+    H 1 1.1 2 104
+    symmetry c1
+    """
 
-LAMBDA = np.array([0.0, 0.0, 0.05])
+    # Set options from psi4numpy tutorial example
+    WATER_SINGLET_PSI4_OPTIONS = {'guess': 'core',
+                    'basis': 'cc-pvdz',
+                    'scf_type': 'pk',
+                    'e_convergence': 1e-8,
+                    'd_convergence': 5e-7}
 
-OH_DOUBLET = """
-0 2
-O     0.000000     0.000000     0.000000
-H     0.000000     0.000000     0.969300
-no_reorient
-no_com
-units angstrom
-symmetry c1
-"""
+    WATER_CONFIG = config = CQEDConfig(
+        lambda_vector=np.array([0.0, 0.0, 0.0]),
+        omega=0.0,
+        psi4_options=WATER_SINGLET_PSI4_OPTIONS,
+        reference="uhf",
+        functional=None,
+        density_fitting=False,
+        charge=0,
+        multiplicity=1,
+        dispersion_policy="none",
+        debug=False,
+        quiet=True,  # SILENT: suppress all stdout (CQED-SCF + Psi4 engine output)
+    )
+        
 
-WATER_SINGLET = """
-0 1
-O  0.000000000000   0.000000000000  -0.068516219320
-H  0.000000000000  -0.790689573744   0.543701060715
-H  0.000000000000   0.790689573744   0.543701060715
-no_reorient
-no_com
-units angstrom
-symmetry c1
-"""
+    EXPECTED_WATER_SINGLET_ENERGY = -7.598979579E+01 # cc-pVDZ
 
-MGH_CATION = """
-1 1
-Mg
-H 1 1.4
-symmetry c1
-"""
+    WATER_CALC = CQEDCalculator(config=WATER_CONFIG)
+    WATER_ENERGY = WATER_CALC.energy(WATER_SINGLET_MOL_STR)
+    assert np.isclose(WATER_ENERGY, EXPECTED_WATER_SINGLET_ENERGY, rtol=1e-6), f"Expected {EXPECTED_WATER_SINGLET_ENERGY}, but got {WATER_ENERGY}"
 
-def build_calculator(**overrides):
-    from cqed_scf import CQEDCalculator
+@pytest.mark.slow
+def test_hydroxyl_doublet_matches_psi4_reference():
 
-    options = {"basis": "sto-3g", "scf_type": "pk"}
-    return CQEDCalculator(config=make_config(psi4_options=options, **overrides))
+    HYDROXYL_DOUBLET_MOL_STR = """
+    0 2
+    O
+    H 1 0.9697
+    symmetry c1
+    """
+    HYDROXYL_CONFIG = CQEDConfig(
+        lambda_vector=np.array([0.0, 0.0, 0.0]),
+        omega=0.0,
+        psi4_options={'basis': '6-311+G*', 'scf_type': 'pk', 'e_convergence': 1e-8, 'd_convergence': 5e-7},
+        reference="uhf",
+        functional=None,
+        density_fitting=False,
+        charge=0,
+        multiplicity=2,
+        dispersion_policy="none",
+        debug=False,
+        quiet=True,  # SILENT: suppress all stdout (CQED-SCF + Psi4 engine output)
+    )
+
+    EXPECTED_HYDROXYL_DOUBLET_ENERGY = -7.540608221E+01 # 6-311+G* 
+
+    HYDROXYL_CALC = CQEDCalculator(config=HYDROXYL_CONFIG)
+    HYDROXYL_ENERGY = HYDROXYL_CALC.energy(HYDROXYL_DOUBLET_MOL_STR)
+    assert np.isclose(HYDROXYL_ENERGY, EXPECTED_HYDROXYL_DOUBLET_ENERGY, rtol=1e-6), f"Expected {EXPECTED_HYDROXYL_DOUBLET_ENERGY}, but got {HYDROXYL_ENERGY}"
+
+def test_oxygen_triplet_matches_psi4_reference():
+
+    OXYGEN_TRIPLET_MOL_STR = """
+    0 3
+    O
+    O 1 1.210 
+    symmetry c1
+    """
+
+    EXPECTED_OXYGEN_TRIPLET_ENERGY = -1.496590418E+02 # 6-311+G*
+
+    OXYGEN_TRIPLET_CONFIG = CQEDConfig(
+        lambda_vector=np.array([0.0, 0.0, 0.0]),
+        omega=0.0,
+        psi4_options={'basis': '6-311+G*', 'scf_type': 'pk', 'e_convergence': 1e-8, 'd_convergence': 5e-7},
+        reference="uhf",
+        functional=None,
+        density_fitting=False,
+        charge=0,
+        multiplicity=3,
+        dispersion_policy="none",
+        debug=False,
+        quiet=True,  # SILENT: suppress all stdout (CQED-SCF + Psi4 engine output)
+    )
+
+    OXYGEN_CALC = CQEDCalculator(config=OXYGEN_TRIPLET_CONFIG)
+    OXYGEN_ENERGY = OXYGEN_CALC.energy(OXYGEN_TRIPLET_MOL_STR)
+    assert np.isclose(OXYGEN_ENERGY, EXPECTED_OXYGEN_TRIPLET_ENERGY, rtol=1e-6), f"Expected {EXPECTED_OXYGEN_TRIPLET_ENERGY}, but got {OXYGEN_ENERGY}"
 
 
-@pytest.mark.parametrize(
-    "overrides",
-    [
-        dict(reference="uhf", multiplicity=2),
-        dict(reference="uks", functional="pbe0", multiplicity=2),
-    ],
-    ids=["uhf", "uks"],
-)
-def test_energy_dispatches_to_uscf(overrides):
-    """Validation passes and dispatch lands in CQEDUSCF, not the restricted engine."""
-    calc = build_calculator(**overrides)
-    with pytest.raises(NotImplementedError) as excinfo:
-        calc.energy(OH_DOUBLET)
-    message = str(excinfo.value)
-    assert "Unrestricted CQED-SCF physics is not implemented" in message
-    assert overrides["reference"] in message
 
+def test_imidogen_triplet_matches_psi4_reference():
+
+    IMIDOGEN_TRIPLET_MOL_STR = """
+    0 3
+    N
+    H 1 1.06
+    symmetry c1
+    """
+
+    EXPECTED_IMIDOGEN_TRIPLET_ENERGY = -5.497317027E+01 # 6-311+G*
+
+    IMIDOGEN_TRIPLET_CONFIG = CQEDConfig(
+        lambda_vector=np.array([0.0, 0.0, 0.0]),
+        omega=0.0,
+        psi4_options={'basis': '6-311+G*', 'scf_type': 'pk', 'e_convergence': 1e-8, 'd_convergence': 5e-6},
+        reference="uhf",
+        functional=None,
+        density_fitting=False,
+        charge=0,
+        multiplicity=3,
+        dispersion_policy="none",
+        debug=False,
+        quiet=True,  # SILENT: suppress all stdout (CQED-SCF + Psi4 engine output)
+    )
+
+    IMIDOGEN_CALC = CQEDCalculator(config=IMIDOGEN_TRIPLET_CONFIG)
+    IMIDOGEN_ENERGY = IMIDOGEN_CALC.energy(IMIDOGEN_TRIPLET_MOL_STR)
+    assert np.isclose(IMIDOGEN_ENERGY, EXPECTED_IMIDOGEN_TRIPLET_ENERGY, rtol=1e-6), f"Expected {EXPECTED_IMIDOGEN_TRIPLET_ENERGY}, but got {IMIDOGEN_ENERGY}"

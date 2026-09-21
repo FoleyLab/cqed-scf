@@ -247,7 +247,7 @@ class CQEDUSCF:
         e_conv = self.psi4_options.get("e_convergence", 1.0e-10)
         d_conv = self.psi4_options.get("d_convergence", 1.0e-8)
 
-        for it in range(1, 501):
+        for it in range(1, 101):
             # build Ja and Jb matrices
             Ja = oe.contract("pqrs,rs->pq", I, Da, optimize="optimal")
             Jb = oe.contract("pqrs,rs->pq", I, Db, optimize="optimal")
@@ -288,7 +288,7 @@ class CQEDUSCF:
             SCF_E_old = SCF_E
 
             # DIIS Extrapolation
-            if it >= 2:
+            if it >= 8:
                 Fa = diis_xtrap(F_list_a, R_list_a)
                 Fb = diis_xtrap(F_list_b, R_list_b)
 
@@ -297,7 +297,7 @@ class CQEDUSCF:
             Cb, Db = diag_F(A, Fb, nbeta)
 
             # max iterations check
-            if it == 500:
+            if it == 100:
                 psi4.core.clean()
                 raise Exception("SCF did not converge in 500 iterations.")
 
