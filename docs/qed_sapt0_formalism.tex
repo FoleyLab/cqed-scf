@@ -656,12 +656,18 @@ status & implemented, tested & prototyped & not started \\
 \end{center}
 
 \noindent
-Option 1 is available now as
-\texttt{monomer\_reference\_frame="monomer\_com"} and is opt-in; the historical
-\texttt{"dimer"} behaviour remains the default so that existing reference values
-are untouched. It is best read as a stopgap that makes long-range cavity
-dispersion interpretable, not as a resolution of the underlying question, which
-Options 2 and 3 address at the level where it arises.
+Option 1 is the default as of 2026-09-21,
+\texttt{monomer\_reference\_frame="monomer\_com"}; the historical
+\texttt{"dimer"} behaviour remains selectable and reproduces earlier reference
+values bitwise. The default moved because the defect is not confined to
+artificially translated geometries: a single shared origin cannot sit on both
+monomers, so $\mathrm{Disp20}$ in the \texttt{"dimer"} frame is already
+$7\%$ off at $R = 3.4$\,\AA{} and $50\%$ off at $12$\,\AA{} for water/He,
+and $\mathrm{Disp20[cav,cav]}$ decays by $92\%$ over $R = 8 \to 50$\,\AA{}
+when it provably must not decay at all. It remains best read as a stopgap that
+makes long-range cavity dispersion interpretable, not as a resolution of the
+underlying question, which Options 2 and 3 address at the level where it
+arises.
 
 \subsection{Exchange-dispersion}
 

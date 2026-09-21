@@ -728,15 +728,53 @@ would need re-establishing.
 
 #### Status
 
-**Option 1 is implemented, tested and opt-in** (below). Options 2 and 3 remain
-under consideration; all three are compared in
+**Option 1 is implemented, tested and is now the default** (below). Options 2
+and 3 remain under consideration; all three are compared in
 `docs/qed_sapt0_formalism.tex` §"Origin dependence of the reference".
 
 ### Option 1 implemented: `monomer_reference_frame`
 
-New driver field, default `"dimer"` (historical behaviour, bitwise unchanged).
-Setting `"monomer_com"` translates each ghosted monomer so its own real-atom
-centre of mass is at the origin before solving its CQED-SCF reference.
+Driver field, default `"monomer_com"` (2026-09-21): each ghosted monomer is
+translated so its own real-atom centre of mass is at the origin before its
+CQED-SCF reference is solved. `"dimer"` remains selectable and reproduces the
+historical numbers bitwise.
+
+**Why it became the default.** The 20 Ang translation used to expose the defect
+is a diagnostic, not the failure mode. A single shared origin cannot sit on
+both monomers, so under `"dimer"` at least one is displaced along the
+polarization direction, and increasingly so as the dimer opens up. Measured on
+water/He, cc-pVDZ, lambda = (0,0,0.1), with nothing translated:
+
+| R / Ang | `dimer` Disp20 | `monomer_com` Disp20 | difference |
+|---:|---:|---:|---:|
+| 3.4 | -2.0668e-05 | -2.2244e-05 | 7.1% |
+| 5.0 | -1.5013e-05 | -1.7651e-05 | 15.0% |
+| 8.0 | -1.7795e-05 | -2.5754e-05 | 30.9% |
+| 12.0 | -1.4026e-05 | -2.8079e-05 | 50.1% |
+
+The sharper statement uses a prediction rather than a comparison. The cavity
+kernel contains no Coulomb operator and its denominators are monomer-internal,
+so `Disp20[cav,cav]` *cannot* decay with R. Over R = 8 -> 50 Ang it drifts by
+**92.05%** in the `"dimer"` frame and by **~6e-13** (constant to eleven
+significant figures) in `"monomer_com"`, which also lands within 0.015% of the
+independent isolated-monomer closed form, the residual being the ghosted basis.
+
+Note this check is convention-free only in the weak sense that *any* fixed
+per-monomer origin yields a plateau — at its own constant. It falsifies
+`"dimer"`; it does not establish centre of mass as uniquely correct. The spread
+across conventions (COM, centre of nuclear charge, electronic centroid) has not
+been measured, because no alternative is implemented. That measurement is the
+natural next step and would show how much the flip above is really worth.
+
+**Migration.** Only two pinned values moved, both on water/methylamine:
+`Disp20` and `Total`, by 5.3e-9 and 5.5e-9 Eh (2e-6 relative). lambda lies
+along z while that dimer lies almost entirely in the xy-plane, so both monomer
+centres of mass sit within 0.032 Ang of the origin along the polarization axis
+and the (lambda . T)^2 drift is nearly absent there. The six lambda = 0 pinned
+dispersion values are provably frame-independent and did not move. The flip
+also exposed a latent bug in the monomer_com path: `_ghosted_molecules` was
+never populated when the caller supplies its own monomer references, which is
+invisible under `"dimer"` and raises `KeyError: 'A'` under `"monomer_com"`.
 
 The implementation turns on one distinction, which is the real content:
 

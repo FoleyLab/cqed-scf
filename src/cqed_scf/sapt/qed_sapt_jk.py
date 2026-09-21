@@ -227,8 +227,21 @@ def build_sapt_jk_cache(
     references are solved in different intrinsic frames, so the distinction
     becomes observable and both halves must be supplied:
 
-    ``d_ao`` / ``d_ao_A`` / ``d_ao_B`` carry the *interaction* dipole operator
-    and must be in the shared dimer frame, where ``d_A == d_B`` holds exactly.
+    ``d_ao`` / ``d_ao_A`` / ``d_ao_B`` carry the *interaction* dipole operator.
+    All three must be in one shared frame -- in practice the dimer frame, since
+    that is where the geometry, the overlap and the ERIs are defined.  They
+    feed ``V_A_cavity = -<d>_A d_B`` and ``V_B_cavity = -<d>_B d_A``, which
+    enter Elst10 and induction, so a per-monomer frame here is not a small
+    error: on water/He, cc-pVDZ, lambda = (0,0,0.1), supplying each monomer's
+    own intrinsic matrix gives ``Elst10 = +3.39e-01`` against the correct
+    ``-2.71e-05`` -- four orders of magnitude out, and the wrong sign.
+
+    ``QEDSAPT0Driver`` supplies this as ``driver.d_A``, which it rebases into
+    the dimer frame whenever the references were solved elsewhere.  Note that
+    the *monomer* matrices genuinely differ under ``monomer_com``:
+    ``monomer_A.d_ao - monomer_B.d_ao = lambda . (com_A - com_B) S``, which is
+    ``6.3e-01`` for water/He.  ``driver.d_A == driver.d_B`` holds in either
+    frame only *because* of that rebasing, not automatically.
 
     ``d_ao_intrinsic_A`` / ``d_ao_intrinsic_B`` carry each monomer's *own*
     dipole matrix, used only for that monomer's orbital Hessian in

@@ -101,7 +101,14 @@ class QEDSAPT0Driver:
     df_aux_basis: Optional[str] = None
     df_scf_fitting_role: str = "JKFIT"
     df_corr_fitting_role: str = "RIFIT"
-    monomer_reference_frame: str = "dimer"
+    # Default: each monomer's CQED-SCF reference is solved with that monomer's
+    # own real-atom centre of mass at the origin.  A single shared origin
+    # cannot sit on both monomers, so under "dimer" at least one of them is
+    # displaced -- and increasingly so as the dimer opens up.  Because the
+    # CQED orbital energies drift as (lambda . T)^2, that costs 7% of Disp20
+    # at R = 3.4 Ang and 50% at 12 Ang for water/He, cc-pVDZ, lambda = 0.1.
+    # "dimer" remains available to reproduce historical numbers bitwise.
+    monomer_reference_frame: str = "monomer_com"
     metadata: Dict[str, Any] = field(default_factory=dict)
     monomer_a: InitVar[Optional[SAPTMonomer]] = None
     monomer_b: InitVar[Optional[SAPTMonomer]] = None
@@ -172,17 +179,24 @@ class QEDSAPT0Driver:
             self.metadata.setdefault("df_scf_fitting_role", self.df_scf_fitting_role)
             self.metadata.setdefault("df_corr_fitting_role", self.df_corr_fitting_role)
 
+    def _populate_ghosted_molecules(self):
+        """Build and cache the dimer-frame ghosted monomer molecules.
+
+        Every interaction integral is built in this single shared frame
+        regardless of where the monomer references are solved, so these are
+        needed even when the caller supplies its own monomer references and
+        ``prepare_geometries`` is therefore never reached.
+        """
+        monomer_A_geometry = self.dimer_geometry.extract_subsets(1, 2)
+        monomer_B_geometry = self.dimer_geometry.extract_subsets(2, 1)
+        self._ghosted_molecules = {"A": monomer_A_geometry, "B": monomer_B_geometry}
+        self._frame_mints = {}
+        return monomer_A_geometry, monomer_B_geometry
+
     def prepare_geometries(self) -> Tuple[str, str, str]:
         """Build dimer and ghosted monomer geometry strings from a Psi4 dimer."""
 
-        monomer_A_geometry = self.dimer_geometry.extract_subsets(1, 2)
-        monomer_B_geometry = self.dimer_geometry.extract_subsets(2, 1)
-
-        # Keep the dimer-frame ghosted molecules: every interaction integral is
-        # built in this single shared frame regardless of where the monomer
-        # references are solved.
-        self._ghosted_molecules = {"A": monomer_A_geometry, "B": monomer_B_geometry}
-        self._frame_mints = {}
+        monomer_A_geometry, monomer_B_geometry = self._populate_ghosted_molecules()
 
         dimer_string = self.dimer_geometry.create_psi4_string_from_molecule()
         monomer_A_string = self._reference_frame_string(monomer_A_geometry, 1)
@@ -248,6 +262,13 @@ class QEDSAPT0Driver:
         """Prepare or retrieve monomer references."""
 
         if self.monomer_A is not None and self.monomer_B is not None:
+            # Caller-supplied references: their frame is whatever the caller
+            # solved them in, and this driver cannot re-solve them, so
+            # monomer_reference_frame does not apply to them.  The shared
+            # dimer-frame ghosted molecules are still required, because the
+            # interaction integrals and the dipole rebasing are built from
+            # them and prepare_geometries() is never reached on this path.
+            self._populate_ghosted_molecules()
             self._populate_dimer_nuclear_terms()
             self._populate_monomer_attributes()
             return self.monomer_A, self.monomer_B
@@ -325,6 +346,10 @@ class QEDSAPT0Driver:
         self.d_exp_B = self.monomer_B.d_exp
         self.d_nuc_A = self.monomer_A.d_nuc
         self.d_nuc_B = self.monomer_B.d_nuc
+        # Provisional: these are still in whatever frame each reference was
+        # solved in, so under "monomer_com" they differ from each other by
+        # lambda . (com_A - com_B) S.  The rebasing just below is what makes
+        # d_A == d_B hold; it is not automatic.
         self.d_A = self.monomer_A.d_ao
         self.d_B = self.monomer_B.d_ao
 

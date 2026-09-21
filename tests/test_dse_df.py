@@ -528,8 +528,20 @@ no_com
 
 
 def _geometry_driver(
-    geometry, lambda_vector=(0.0, 0.0, 0.1), backend="full_eri", convergence=1e-10
+    geometry,
+    lambda_vector=(0.0, 0.0, 0.1),
+    backend="full_eri",
+    convergence=1e-10,
+    frame="dimer",
 ):
+    """Driver pinned to the *dimer* frame by default.
+
+    These helpers predate ``monomer_reference_frame`` and their assertions --
+    including the two strict xfails below -- characterise the dimer frame
+    specifically.  Pinning keeps each one meaning what its author intended now
+    that ``monomer_com`` is the package default; the ``_framed_*`` helpers
+    further down cover the production frame.
+    """
     psi4.core.be_quiet()
     psi4.core.clean()
     driver = QEDSAPT0Driver(
@@ -537,6 +549,7 @@ def _geometry_driver(
         config=_config(lambda_vector, convergence=convergence),
         integral_backend=backend,
         include_cavity_terms=True,
+        monomer_reference_frame=frame,
     )
     driver.prepare_monomers()
     driver.build_integrals()
@@ -828,14 +841,22 @@ def test_monomer_com_frame_works_with_the_df_backend():
         assert df[component] == pytest.approx(dense[component], abs=5e-6)
 
 
-def test_dimer_frame_remains_the_default_and_is_unchanged():
-    """Option 1 is opt-in; the historical path must be bitwise untouched."""
-    driver = _framed_driver("dimer")
-    assert driver.monomer_reference_frame == "dimer"
+def test_monomer_com_is_the_default_and_dimer_stays_reachable():
+    """The default is the frame that does not depend on where the dimer sits.
+
+    A single shared origin cannot sit on both monomers, so under "dimer" at
+    least one is displaced and Disp20 is wrong by 7% at R = 3.4 Ang, rising to
+    50% at 12 Ang (and Disp20[cav,cav] decays 92% over R = 8 -> 50 Ang, which
+    it provably must not).  "dimer" remains selectable for reproducing
+    historical numbers.
+    """
     assert QEDSAPT0Driver(
         dimer_geometry=psi4.geometry(_water_he()),
         config=_config((0.0, 0.0, 0.0)),
-    ).monomer_reference_frame == "dimer"
+    ).monomer_reference_frame == "monomer_com"
+
+    driver = _framed_driver("dimer")
+    assert driver.monomer_reference_frame == "dimer"
 
     # In the dimer frame the intrinsic matrices *are* the shared one, so every
     # frame correction in v() vanishes identically rather than merely being small.
@@ -1063,3 +1084,137 @@ def test_jk_cache_reuses_one_dse_provider_when_the_frames_coincide():
     d_B = com_cache["dse_cphf_B"].d_ao
     assert np.abs(d_A - d_B).max() > 1e-6
     assert np.abs(d_A - com_cache["dse_jk"].d_ao).max() > 1e-6
+
+
+def test_caller_supplied_monomers_still_get_the_shared_dimer_frame():
+    """Regression: the early-return path must still build the ghosted molecules.
+
+    When a caller supplies its own monomer references, ``prepare_geometries()``
+    is never reached, so ``_ghosted_molecules`` stayed empty. Under the old
+    "dimer" default nothing noticed, because every dimer-frame helper
+    short-circuits to the monomer's own wavefunction. Under "monomer_com" the
+    interaction integrals are rebuilt from those molecules, and the driver
+    raised ``KeyError: 'A'``. Caught by
+    ``examples/he_dimer/he_dimer_sapt_example.py`` when the default flipped.
+    """
+    psi4.core.be_quiet()
+    psi4.core.clean()
+    geometry = psi4.geometry(_water_he())
+    config = _config((0.0, 0.0, 0.1), convergence=1e-10)
+
+    seed = QEDSAPT0Driver(
+        dimer_geometry=geometry,
+        config=config,
+        integral_backend="full_eri",
+        include_cavity_terms=True,
+    )
+    monomer_A, monomer_B = seed.prepare_monomers()
+
+    driver = QEDSAPT0Driver(
+        dimer_geometry=geometry,
+        config=config,
+        integral_backend="full_eri",
+        include_cavity_terms=True,
+        monomer_A=monomer_A,
+        monomer_B=monomer_B,
+    )
+    driver.prepare_monomers()
+    driver.build_integrals()
+
+    assert set(driver._ghosted_molecules) == {"A", "B"}
+    # The interaction operator must still be one shared matrix.
+    np.testing.assert_allclose(driver.d_A, driver.d_B, rtol=0.0, atol=1e-13)
+    # And the components must come out, rather than raising.
+    assert driver.compute_Elst100() == pytest.approx(
+        _framed_components("monomer_com")["Elst10"], abs=1e-9
+    )
+
+
+def test_shared_interaction_operator_is_restored_by_rebasing_not_automatic():
+    """d_A == d_B holds in either frame, but only because the driver rebases.
+
+    Easy to misread: the driver assigns d_A/d_B from the monomer references
+    first and rebases them a few lines later, so the assignment alone looks
+    like it leaves them in the intrinsic frame. The *monomer* matrices really
+    do diverge under monomer_com, by exactly lambda . (com_A - com_B) S.
+    """
+    driver = _framed_driver("monomer_com")
+
+    # Driver-level: one shared operator, exactly.
+    np.testing.assert_array_equal(driver.d_A, driver.d_B)
+
+    # Monomer-level: genuinely different, and by the analytic amount.
+    d_A = np.asarray(driver.monomer_A.d_ao)
+    d_B = np.asarray(driver.monomer_B.d_ao)
+    assert np.abs(d_A - d_B).max() > 1e-6
+
+    lambda_vector = np.asarray(driver.config.lambda_vector)
+
+    def _com(subset):
+        centre = driver.dimer_geometry.extract_subsets(subset).center_of_mass()
+        return np.array([centre[0], centre[1], centre[2]])
+
+    overlap = np.asarray(driver._dimer_frame_mints("A").ao_overlap())
+    predicted = float(lambda_vector @ (_com(1) - _com(2))) * overlap
+    np.testing.assert_allclose(d_A - d_B, predicted, rtol=0.0, atol=1e-13)
+
+
+def test_interaction_dipole_operator_must_share_one_frame():
+    """Assert that the naive per-monomer choice really does get it wrong.
+
+    d_ao_A/d_ao_B feed V_A_cavity = -<d>_A d_B and V_B_cavity = -<d>_B d_A,
+    which enter Elst10. Using each monomer's own intrinsic matrix there is not
+    a small error. Under the dimer frame the two choices coincide, which is
+    why this could not be observed before intrinsic frames existed.
+    """
+    def elst(driver, d_ao_A, d_ao_B):
+        wfn_A, wfn_B = driver.monomer_A.wfn, driver.monomer_B.wfn
+        jk = psi4.core.JK.build(driver._dimer_frame_basisset("A"))
+        jk.set_memory(int(1e9))
+        jk.set_do_J(True)
+        jk.set_do_K(True)
+        jk.set_do_wK(False)
+        jk.initialize()
+        shared = np.asarray(driver.d_A)
+        cache = qed_sapt_jk.build_sapt_jk_cache(
+            wfn_A,
+            wfn_B,
+            PauliFierzJK(jk, dse_jk=DSEJK(d_ao=shared, enabled=True)),
+            do_print=False,
+            d_ao_A=d_ao_A,
+            d_ao_B=d_ao_B,
+            d_ao_intrinsic_A=np.asarray(driver._d_intrinsic["A"]),
+            d_ao_intrinsic_B=np.asarray(driver._d_intrinsic["B"]),
+            d_exp_el_A=driver.d_exp_el_A,
+            d_exp_el_B=driver.d_exp_el_B,
+            include_cavity_terms=True,
+            nuclear_repulsion_energy=driver.nuc_rep,
+        )
+        return float(qed_sapt_jk.electrostatics(cache, do_print=False)["Elst10,r"])
+
+    driver = _framed_driver("monomer_com")
+    shared = np.asarray(driver.d_A)
+    reference = driver.compute_Elst100()
+
+    assert elst(driver, shared, shared) == pytest.approx(reference, abs=1e-12)
+
+    wrong = elst(
+        driver,
+        np.asarray(driver._d_intrinsic["A"]),
+        np.asarray(driver._d_intrinsic["B"]),
+    )
+    # Four orders of magnitude out, and the wrong sign.
+    assert abs(wrong - reference) > 1e-3
+    assert wrong > 0.0 > reference
+
+    # In the dimer frame the two choices are the same matrix, so no difference.
+    dimer_driver = _framed_driver("dimer")
+    d_shared = np.asarray(dimer_driver.d_A)
+    assert elst(dimer_driver, d_shared, d_shared) == pytest.approx(
+        elst(
+            dimer_driver,
+            np.asarray(dimer_driver._d_intrinsic["A"]),
+            np.asarray(dimer_driver._d_intrinsic["B"]),
+        ),
+        abs=0.0,
+    )
