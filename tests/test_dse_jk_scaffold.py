@@ -219,3 +219,135 @@ def test_dse_cphf_disabled_returns_zero_matrix():
     hx = dse_cphf.hx_matrix(X)
 
     np.testing.assert_allclose(hx.np, np.zeros((2, 3)))
+
+
+# --------------------------------------------------------------------------
+# Reference frames: the internal / interaction split
+# --------------------------------------------------------------------------
+
+
+class FakeMolecule:
+    def __init__(self, geometry):
+        self._geometry = np.asarray(geometry, dtype=float)
+
+    def geometry(self):
+        return self._geometry
+
+
+class FakeWavefunction:
+    """Just enough of a wavefunction for the frame guard, which reads only geometry."""
+
+    def __init__(self, geometry):
+        self._molecule = FakeMolecule(geometry)
+
+    def molecule(self):
+        return self._molecule
+
+
+_DIMER_GEOM = np.array([[0.0, 0.0, 0.0], [0.0, 1.4, 0.0], [0.0, 0.0, 6.4]])
+
+
+def _guard(geom_A, geom_B, **kwargs):
+    kwargs.setdefault("d_ao_intrinsic_A", None)
+    kwargs.setdefault("d_ao_intrinsic_B", None)
+    return qed_sapt_jk._check_shared_reference_frame(
+        FakeWavefunction(geom_A), FakeWavefunction(geom_B), **kwargs
+    )
+
+
+def test_frame_guard_is_silent_when_both_monomers_share_the_dimer_frame():
+    """Ghosted monomers in one dimer frame have bitwise identical coordinates."""
+    assert _guard(_DIMER_GEOM, _DIMER_GEOM.copy()) is None
+
+
+def test_frame_guard_fires_on_divergent_monomer_frames():
+    """This is what monomer_reference_frame="monomer_com" produces."""
+    shifted = _DIMER_GEOM - np.array([0.0, 0.0, 6.3])
+
+    with pytest.raises(RuntimeError, match="different reference frames") as excinfo:
+        _guard(_DIMER_GEOM, shifted)
+
+    # The message must name the likely cause and the way out, or it just
+    # relocates the confusion.
+    message = str(excinfo.value)
+    assert "monomer_com" in message
+    assert "d_ao_intrinsic_A" in message
+    assert "6.300e+00" in message
+
+
+def test_frame_guard_stands_down_once_intrinsic_operators_are_supplied():
+    """Divergent frames are legitimate -- the guard is about unhandled ones."""
+    shifted = _DIMER_GEOM - np.array([0.0, 0.0, 6.3])
+    d = np.eye(3)
+
+    assert _guard(shifted, _DIMER_GEOM, d_ao_intrinsic_A=d, d_ao_intrinsic_B=d) is None
+    # Either one alone is enough to signal that the caller knows about frames.
+    assert _guard(shifted, _DIMER_GEOM, d_ao_intrinsic_A=d) is None
+    assert _guard(shifted, _DIMER_GEOM, d_ao_intrinsic_B=d) is None
+
+
+def test_frame_guard_rejects_mismatched_centre_counts():
+    with pytest.raises(RuntimeError, match="different numbers of centres"):
+        _guard(_DIMER_GEOM, _DIMER_GEOM[:2])
+
+
+def test_with_d_ao_preserves_every_other_setting():
+    original = DSEJK(
+        d_ao=np.array([[1.0, 0.2], [0.2, -0.5]]),
+        j_scale=2.0,
+        k_scale=-3.0,
+        enabled=True,
+        return_core_matrices=False,
+        metadata={"frame": "dimer"},
+    )
+    replacement = np.array([[0.0, 1.0], [1.0, 4.0]])
+
+    copy = original.with_d_ao(replacement)
+
+    assert copy is not original
+    np.testing.assert_array_equal(copy.d_ao, replacement)
+    assert copy.j_scale == original.j_scale
+    assert copy.k_scale == original.k_scale
+    assert copy.enabled == original.enabled
+    assert copy.return_core_matrices == original.return_core_matrices
+    assert copy.metadata == original.metadata
+    # The original must be untouched: the two frames coexist.
+    np.testing.assert_array_equal(original.d_ao, [[1.0, 0.2], [0.2, -0.5]])
+
+
+def test_with_d_ao_returns_self_for_an_equal_operator():
+    """The single-frame path must be a no-op by identity, not merely by value.
+
+    build_sapt_jk_cache asserts on this to keep the default dimer-frame path
+    bitwise unchanged rather than re-deriving an equal-but-separate provider.
+    """
+    d_ao = np.array([[1.0, 0.2], [0.2, -0.5]])
+    original = DSEJK(d_ao=d_ao)
+
+    assert original.with_d_ao(d_ao) is original
+    assert original.with_d_ao(d_ao.copy()) is original
+    assert original.with_d_ao(original.d_ao) is original
+    assert original.with_d_ao(d_ao + 1e-13) is not original
+
+
+def test_with_d_ao_round_trips_through_an_inactive_operator():
+    original = DSEJK(d_ao=np.eye(2))
+
+    disabled = original.with_d_ao(None)
+    assert disabled is not original
+    assert disabled.d_ao is None
+    assert not disabled.is_active()
+    assert original.is_active()
+
+
+def test_frame_guard_stands_down_when_the_cavity_is_off():
+    """No cavity means no dipole operator anywhere, so no frame dependence.
+
+    Without this the guard would reject a perfectly well-defined lambda = 0
+    calculation purely on the geometry of its references.
+    """
+    shifted = _DIMER_GEOM - np.array([0.0, 0.0, 6.3])
+
+    assert _guard(_DIMER_GEOM, shifted, include_cavity_terms=False) is None
+    with pytest.raises(RuntimeError, match="different reference frames"):
+        _guard(_DIMER_GEOM, shifted, include_cavity_terms=True)

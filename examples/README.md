@@ -17,6 +17,9 @@ demonstrating a lower-level development interface.
 - `canonical/cqed_dft_energy_gradient.py`: CQED-DFT energy and nuclear gradient.
 - `canonical/cqed_dft_projected_gradient.py`: CQED-DFT energy and projected gradient.
 - `canonical/cqed_sapt0_components.py`: QED-SAPT0 total energy and components.
+- `qed_sapt0_water_methylamine/qed_sapt0_scan.py`: QED-SAPT0 distance scan
+  comparing the density-fitted and dense integral backends, with the
+  dispersion partition and a lambda = 0 control.
 
 ## Parameter Ownership
 

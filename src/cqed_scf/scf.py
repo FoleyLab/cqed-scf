@@ -93,6 +93,14 @@ class CQEDSCF:
         else:
             self.method = method.lower()
 
+        if self.method in ("uhf", "uks"):
+            raise ValueError(
+                f"CQEDSCF is the restricted engine and cannot run method="
+                f"{self.method!r}; unrestricted references run through "
+                "cqed_scf.uscf.CQEDUSCF (reached automatically by "
+                "CQEDCalculator when the config reference is 'uhf' or 'uks')."
+            )
+
         if self.method not in ("rhf", "rks", "hybrid"):
             raise ValueError("method must be 'rhf', 'rks', or 'hybrid'")
 
@@ -117,10 +125,23 @@ class CQEDSCF:
     # -------------------------
 
     def run(self):
-        output.banner("CQED-SCF Calculation")
+        output.banner("Restricted Closed-Shell CQED-SCF Calculation")
         self._prepare_options()
 
         self.mol = psi4.geometry(self.geometry)
+
+        # Closed-shell backstop.  This fires here, before the Psi4 reference SCF
+        # below, because _prepare_options() forces REFERENCE = rhf|rks and Psi4
+        # would otherwise fail deep inside a wasted SCF with a message that
+        # never mentions the unrestricted engine.  Kept even though
+        # CQEDCalculator validates first: CQEDSCF is also constructed directly.
+        if self.mol.multiplicity() != 1:
+            raise ValueError(
+                f"CQEDSCF is the restricted closed-shell engine, but the "
+                f"geometry has multiplicity {self.mol.multiplicity()}. "
+                "Open-shell references run through cqed_scf.uscf.CQEDUSCF "
+                "(set reference='uhf' or 'uks' on CQEDConfig)."
+            )
 
         # get a Psi4 wavefunction carrying the correct reference/method metadata
         ref_method = self._reference_method_string()
@@ -139,10 +160,6 @@ class CQEDSCF:
         self.ndocc = self.wfn.nalpha()
 
         self._print_calculation_metadata()
-
-        # closed-shell only
-        if self.wfn.nalpha() != self.wfn.nbeta():
-            raise ValueError("CQEDSCF currently assumes a restricted closed-shell reference.")
 
         # one-electron integrals
         T = np.asarray(self.mints.ao_kinetic())

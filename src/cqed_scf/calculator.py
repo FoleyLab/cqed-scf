@@ -5,6 +5,7 @@ from . import output
 from .scf import CQEDSCF
 from .gradients import CQEDGradient
 from .drivers import project_cartesian_gradient_remove_translation_rotation
+from .geometry import validate_geometry_against_config
 from .references import CQEDConfig
 from .utils import AMU_TO_AU
 
@@ -157,14 +158,23 @@ class CQEDCalculator:
     # internal helpers
     # -------------------------
 
+    def _require_restricted_reference(self, what: str) -> None:
+        """Raise for features that have no unrestricted implementation yet.
+
+        Energies route to :class:`~cqed_scf.uscf.CQEDUSCF`; gradients and
+        response theory do not have an unrestricted counterpart at all, so they
+        are refused up front rather than after paying for an SCF.
+        """
+
+        if self.config.is_unrestricted:
+            raise NotImplementedError(
+                f"{what} are not implemented for reference="
+                f"{self.config.reference!r}. Only unrestricted energies are "
+                "wired up, and they route to cqed_scf.uscf.CQEDUSCF."
+            )
+
     def _make_restricted_scf(self, geometry):
         from .scf import CQEDSCF
-
-        if self.config.multiplicity != 1:
-            raise NotImplementedError(
-                "Restricted CQED-SCF currently supports only multiplicity=1. "
-                "Use reference='uhf' or reference='uks' once CQEDUSCF is implemented."
-            )
 
         return CQEDSCF(
             geometry=geometry,
@@ -184,6 +194,10 @@ class CQEDCalculator:
         return CQEDUSCF(geometry=geometry, config=self.config)
 
     def _run_scf(self, geometry):
+        # Single funnel for energy(), energy_and_gradient(), cis(), and
+        # response(), so one call here covers every path that runs an SCF.
+        validate_geometry_against_config(geometry, self.config)
+
         if self.config.is_unrestricted:
             scf = self._make_unrestricted_scf(geometry)
             return scf.run()
@@ -267,17 +281,13 @@ class CQEDCalculator:
         import numpy as np
         import psi4
 
+        self._require_restricted_reference("Unrestricted CQED gradients")
+
         self.geometry = geometry
 
         with output.quiet_context(self.config.quiet):
             energy_qed, data = self._run_scf(geometry)
             energy_psi4_base = data["energy_psi4"]
-
-            if self.config.is_unrestricted:
-                from .ugradients import CQEDUGradient
-
-                grad_engine = CQEDUGradient(self.config)
-                grad_engine.compute(data)
 
             from .gradients import CQEDGradient
 
@@ -392,6 +402,8 @@ class CQEDCalculator:
 
         from .response import QEDCIS, print_qed_cis_results
 
+        self._require_restricted_reference("Unrestricted QED-CIS calculations")
+
         if scf_results is None and geometry is None:
             raise TypeError("cis() requires either a geometry or scf_results")
 
@@ -418,7 +430,7 @@ class CQEDCalculator:
                 # QED-TDDFT (TDA-PF) of Yang et al., JCP 155, 064107 (2021).
                 # See docs/qed_cis_formalism.tex, "Relationship to
                 # linear-response QED-TDDFT".
-                reference = "CQED-RKS" if driver.is_ks else "CQED-RHF"
+                reference = f"CQED-{self.config.reference.upper()}"
                 print_qed_cis_results(
                     results,
                     n_print=n_print,
@@ -465,6 +477,8 @@ class CQEDCalculator:
         """
 
         from .response import QEDCIS
+
+        self._require_restricted_reference("Unrestricted QED response calculations")
 
         if scf_results is None:
             if geometry is None:
