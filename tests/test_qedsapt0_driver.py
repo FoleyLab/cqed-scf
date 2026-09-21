@@ -661,14 +661,21 @@ def test_qedsapt0_driver_water_methylamine_qed_sapt_example():
     """
 
     hartree_to_kcal_mol = 627.5094740631
+    # Re-pinned when monomer_reference_frame's default became "monomer_com".
+    # Only Disp20 and Total moved, by 5.3e-9 and 5.5e-9 Eh (2e-6 relative):
+    # lambda points along z while this dimer lies almost entirely in the
+    # xy-plane, so both monomer centres of mass sit within 0.032 Ang of the
+    # origin along the polarization axis and the (lambda . T)^2 drift that
+    # the frame corrects is nearly absent here. The four origin-independent
+    # components moved by 1e-12 or less, i.e. not at all.
     expected_components_hartree = {
         "Elst10": -0.00867371,
         "Exch10": 0.00308053,
-        "Disp20": -0.00271511,
+        "Disp20": -0.00271512,
         "ExchDisp20": 0.00019666,
         "Ind20r": -0.00178878,
         "ExchInd20r": 0.00081671,
-        "Total": -0.00908369,
+        "Total": -0.00908370,
     }
     expected_components_kcal_mol = {
         "Elst10": -5.4428,

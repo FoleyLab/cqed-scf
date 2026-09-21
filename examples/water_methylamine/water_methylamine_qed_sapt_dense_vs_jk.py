@@ -263,8 +263,8 @@ def _dense_uncoupled_exch_ind_components(driver, CPHF_ra, CPHF_sb):
     }
 
 
-def _build_native_jk(wfn):
-    jk = psi4.core.JK.build(wfn.basisset())
+def _build_native_jk(basisset):
+    jk = psi4.core.JK.build(basisset)
     jk.set_memory(int(1e9))
     if hasattr(jk, "set_do_J"):
         jk.set_do_J(True)
@@ -277,18 +277,46 @@ def _build_native_jk(wfn):
 
 
 def _shared_dse_operator(driver):
-    d_ao_A = np.asarray(driver.monomer_A.d_ao)
-    d_ao_B = np.asarray(driver.monomer_B.d_ao)
+    """Return the dimer-frame dipole operator shared by the two ghost bases.
+
+    This is an *interaction* quantity, so it must come from the driver's
+    shared dimer frame -- ``driver.d_A``, which the driver rebases when the
+    monomer references were solved elsewhere -- and not from
+    ``driver.monomer_A.d_ao``, which under the default
+    ``monomer_reference_frame="monomer_com"`` is monomer A's own intrinsic
+    matrix and differs from B's.
+    """
+    d_ao_A = np.asarray(driver.d_A)
+    d_ao_B = np.asarray(driver.d_B)
     if not np.allclose(d_ao_A, d_ao_B, atol=1e-12, rtol=1e-12):
         raise ValueError("Monomer DSE AO dipole operators differ in the shared dimer basis.")
     return d_ao_A
 
 
+def _intrinsic_dse_operators(driver):
+    """Return each monomer's own dipole matrix, for its own orbital Hessian.
+
+    A block whose four orbital indices belong to one monomer is an *internal*
+    quantity and must be built in that monomer's frame. Supplying a
+    dimer-frame Hessian alongside intrinsic-frame orbital energies breaks the
+    cancellation that makes induction origin independent.
+    """
+    intrinsic = getattr(driver, "_d_intrinsic", None) or {}
+    shared = np.asarray(driver.d_A)
+    return (
+        np.asarray(intrinsic.get("A", shared)),
+        np.asarray(intrinsic.get("B", shared)),
+    )
+
+
 def _compute_jk_components(driver):
     wfn_A = driver.monomer_A.wfn
     wfn_B = driver.monomer_B.wfn
-    native_jk = _build_native_jk(wfn_A)
+    # The interaction JK belongs in the shared dimer frame; ask the driver
+    # for that basis rather than wfn_A, whose basis follows its own frame.
+    native_jk = _build_native_jk(driver._dimer_frame_basisset("A"))
     dse_jk = DSEJK(d_ao=_shared_dse_operator(driver), enabled=driver.include_cavity_terms)
+    d_intrinsic_A, d_intrinsic_B = _intrinsic_dse_operators(driver)
     pf_jk = PauliFierzJK(native_jk, dse_jk=dse_jk)
 
     cache = qed_sapt_jk.build_sapt_jk_cache(
@@ -296,6 +324,8 @@ def _compute_jk_components(driver):
         wfn_B,
         pf_jk,
         do_print=False,
+        d_ao_intrinsic_A=d_intrinsic_A,
+        d_ao_intrinsic_B=d_intrinsic_B,
         d_exp_el_A=driver.d_exp_el_A,
         d_exp_el_B=driver.d_exp_el_B,
         include_cavity_terms=driver.include_cavity_terms,
