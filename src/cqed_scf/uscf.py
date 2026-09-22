@@ -27,7 +27,7 @@ Start from :class:`cqed_scf.scf.CQEDSCF` and split each spin channel:
 * The restricted code carries an explicit factor of 2 throughout because its
   ``D`` is the alpha density alone.  With separate ``Da``/``Db`` those factors
   disappear and ``Dt = Da + Db`` takes their place -- in the Coulomb term, in the
-  dipole expectation value at ``scf.py:341``, and in the dipole self-energy.
+  dipole expectation value (``mu_el`` near ``scf.py:358``), and in the dipole self-energy.
 * :meth:`~cqed_scf.scf.CQEDSCF._build_JK` adds a single ``C_left_add(Cocc)``,
   relying on ``J_alpha == J_beta``.  Unrestricted needs both occupied blocks
   pushed through, with ``J`` summed over spins and ``K`` kept spin-resolved.
@@ -172,11 +172,14 @@ class CQEDUSCF:
         ref_method = self._reference_method_string()
         E_psi4, self.wfn = psi4.energy(ref_method, return_wfn=True)
 
-        # get instance of mints object
-        mints = psi4.core.MintsHelper(self.wfn.basisset())
+        # get instance of mints object, call it `mints`
+        # Hint: psi4.core.MintsHelper(...) takes the basis set of the Psi4 wavefunction, self.wfn.basisset()
+        #<-- code goes here to get mints object -->
 
-        # get overlap matrix
-        S = np.array(mints.ao_overlap(), copy=True)
+        # get overlap matrix, call it `S`
+        # Hint: mints.ao_overlap() returns a psi4 Matrix; store S as a NumPy array with np.array(..., copy=True)
+        # because the DIIS error vector below needs S as a NumPy array
+        #<-- code goes here to get overlap matrix -->
 
         # get basic information about the system
         # number of basis functions
@@ -197,9 +200,12 @@ class CQEDUSCF:
         print(f"Number of double occupied orbitals: {ndocc}")
         print(f"Number of singly occupied orbitals: {nsocc}")
 
-        # get the canonical orbital energies and coefficients for alpha and beta
-        self.eps_a = np.array(self.wfn.epsilon_a(), copy=True)
-        self.eps_b = np.array(self.wfn.epsilon_b(), copy=True)
+        # get the canonical Psi4 orbital energies for alpha and beta, call them `self.eps_a` and `self.eps_b`
+        # (these are reported in the results dictionary; the SCF guess below comes from the core Hamiltonian,
+        # not from the Psi4 orbitals)
+        # Hint: self.wfn.epsilon_a() and self.wfn.epsilon_b(), copied into NumPy arrays
+        #<-- code goes here to get orbital energies -->
+
 
         # Memory check for ERI tensor
         # ==> Set Basic Psi4 Options <==
@@ -213,25 +219,60 @@ class CQEDUSCF:
             raise Exception("Estimated memory utilization (%4.2f GB) exceeds allotted memory \
                             limit of %4.2f GB." % (I_size, numpy_memory))
 
-        # Build ERI Tensor
-        I = np.asarray(mints.ao_eri())
+        # Build ERI Tensor, call it `I`
+        # Hint: np.asarray(mints.ao_eri()) gives the 4-index array (pq|rs) in chemist's notation
+        #<-- code goes here to build ERI tensor -->
+
 
         # Build core Hamiltonian
-        T = np.asarray(mints.ao_kinetic())
-        V = np.asarray(mints.ao_potential())
-        H = T + V
+        # Recall for QED-UHF, H_0 = T + V + Q_PF - <d> d
+        # because we need <d> we need guess C_x first
+        # So build guess from canonical core Hamiltonian and orthogonalization matrix
 
-        # Construct AO orthogonalization matrix A
-        A = mints.ao_overlap()
-        A.power(-0.5, 1.e-16)
-        A = np.asarray(A)
+        #<-- code to build kinetic energy matrix T -->
+        # Hint: mints.ao_kinetic()
 
-        # get guess coefficients and density frojm Core Hamiltonian
-        Ca, Da = diag_F(A, H, nalpha)
-        Cb, Db = diag_F(A, H, nbeta)
+        #<-- code to build nuclear attraction matrix V -->
+        # Hint: mints.ao_potential()
 
-        # get nuclear repulsion energy
-        E_nuc = self.mol.nuclear_repulsion_energy()
+        #<-- code to build canonical core Hamiltonian H_canonical = T + V -->
+
+        # Construct AO orthogonalization matrix `A` = S^(-1/2)
+        # Hint: get a *fresh* overlap matrix with A = mints.ao_overlap() -- do NOT reuse S!
+        # Then call A.power(-0.5, 1.e-16); this modifies A in place and returns nothing,
+        # so reusing S here would silently overwrite S with S^(-1/2) and break the DIIS error vector below.
+        # A is a psi4 core Matrix, so convert it to a NumPy array with np.asarray(A)
+        #<-- code goes here to build AO orthogonalization matrix -->
+
+        # get guess coefficients and density from Core Hamiltonian
+        # Hint - use diag_F function defined above to get guess coefficients and density
+        # using the canonical core Hamiltonian and orthogonalization matrix
+        # Cx, Dx = diag_F(A, H_canonical, nx) where x is a or b and nx is nalpha or nbeta
+        #<-- code goes here to get guess coefficients and density `Ca`, `Da`, `Cb`, `Db` -->
+
+
+        #<-- code to build dipole matrix `d_ao` -->
+        # Hint: mu = [np.asarray(x) for x in mints.ao_dipole()] gives [mu_x, mu_y, mu_z]
+        # recall d_ao = sum(lambda_i * mu_i for i in range(3)), with lambda from self.config.lambda_vector
+
+        #<-- code to compute dipole expectation value <d> -->
+        # recall <d>_a = Tr(Da d) and <d>_b = Tr(Db d) and <d> = <d>_a + <d>_b
+        # Note: <d> here is the ELECTRONIC dipole only -- do not add the nuclear dipole.
+        # In the coherent-state basis the nuclear contribution cancels, and it is the electronic <d>
+        # that makes the -<d> d term in H_0 cancel the J_dse terms in the Fock matrix below.
+
+        #<-- code to build quadrupole matrices Q and `Q_PF` -->
+        # Hint: Q = [np.asarray(x) for x in mints.ao_quadrupole()] gives the 6 unique components
+        # q = [Q_xx, Q_xy, Q_xz, Q_yy, Q_yz, Q_zz] and Q_PF = -0.5 * sum(lambda_i * lambda_j * Q_ij for i,j in range(3))
+        # Index map (i,j) -> position in the list: (0,0)->0, (0,1)->1, (0,2)->2, (1,1)->3, (1,2)->4, (2,2)->5
+        # Q_ij = Q_ji, so each off-diagonal term appears twice in the double sum:
+        # Q_PF = -0.5*(l_x^2 Q_xx + l_y^2 Q_yy + l_z^2 Q_zz) - (l_x l_y Q_xy + l_x l_z Q_xz + l_y l_z Q_yz)
+
+        #<-- code goes here to build the QED-UHF core Hamiltonian `H_0` = H_canonical + Q_PF - <d> d_ao -->
+
+        # get nuclear repulsion energy, call it `E_nuc`
+        # Hint: self.mol.nuclear_repulsion_energy()
+        #<-- code goes here to get nuclear repulsion energy -->
 
         # pre-iteration values
         SCF_E = 0.0
@@ -246,21 +287,33 @@ class CQEDUSCF:
         # get convergence criteria from psi4 options
         e_conv = self.psi4_options.get("e_convergence", 1.0e-10)
         d_conv = self.psi4_options.get("d_convergence", 1.0e-8)
+        max_iter = 100
 
-        for it in range(1, 101):
-            # build Ja and Jb matrices
-            Ja = oe.contract("pqrs,rs->pq", I, Da, optimize="optimal")
-            Jb = oe.contract("pqrs,rs->pq", I, Db, optimize="optimal")
+        for it in range(1, max_iter + 1):
+            # build Ja and Jb matrices using the ERI tensor and the alpha and beta densities
+            # recall definition Jx_{pq} = sum_{rs} (pq|rs) D_x^{rs}
+            #<-- code goes here to build `Ja` and `Jb` matrices -->
 
-            # build Ka and Kb matrices
-            Ka = oe.contract("prqs,rs->pq", I, Da, optimize="optimal")
-            Kb = oe.contract("prqs,rs->pq", I, Db, optimize="optimal")
+            # build `J_dse_a` and `J_dse_b` matrices using the dipole matrix and the dipole expectation value
+            # recall definition J_dse_x_{pq} = sum_{rs} d_pq d_rs D_x^{rs} = <d>_x d_pq
+            #<-- code goes here to build `J_dse_a` and `J_dse_b` matrices -->
+
+            # build `Ka` and `Kb` matrices
+            # recall definition Kx_{pq} = sum_{rs} (pr|qs) D_x^{rs}
+            #<-- code goes here to build `Ka` and `Kb` matrices -->
+
+            # build `K_dse_a` and `K_dse_b` matrices using the dipole matrix and the dipole expectation value
+            # recall definition K_dse_x_{pq} = sum_{rs} d_pr d_qs D_x^{rs}
+            # (in matrix form this is just d_ao @ D_x @ d_ao)
+            #<-- code goes here to build `K_dse_a` and `K_dse_b` matrices -->
 
             # build Fock matrices for alpha and beta
-            Fa = H + Ja + Jb - Ka
-            Fb = H + Ja + Jb - Kb
+            # Recall F_x = H_0 + J_a + J_b - K_x + J_dse_a + J_dse_b - K_dse_x
+            # where x is alpha or beta
+            #<-- code goes here to build `Fa` and `Fb` matrices -->
 
-            # DIIS extrapolation
+
+            # DIIS error vectors (orthogonalized FDS - SDF)
             diis_r_a = A.dot(Fa.dot(Da).dot(S) - S.dot(Da).dot(Fa)).dot(A)
             diis_r_b = A.dot(Fb.dot(Db).dot(S) - S.dot(Db).dot(Fb)).dot(A)
 
@@ -270,12 +323,11 @@ class CQEDUSCF:
             R_list_a.append(diis_r_a)
             R_list_b.append(diis_r_b)
 
-            # Compute UHF energy
-            SCF_E = oe.contract("pq,pq->", (Da + Db), H, optimize="optimal")
-            SCF_E += oe.contract("pq,pq->", Da, Fa, optimize="optimal")
-            SCF_E += oe.contract("pq,pq->", Db, Fb, optimize="optimal")
-            SCF_E *= 0.5
-            SCF_E += E_nuc
+            # Compute QED-UHF energy, call it `SCF_E`
+            # Recall E_scf = 0.5 * (Tr((Da + Db) H_0) + Tr(Da Fa) + Tr(Db Fb)) + 0.5 * <d>^2 + E_nuc
+            # The constant 0.5 * <d>^2 is needed so that all <d>-dependent terms cancel in the energy
+            # (it vanishes when lambda = 0, so the cavity-free tests cannot catch it if it is missing!)
+            #<-- code goes here to compute QED-UHF energy -->
 
             dE = SCF_E - SCF_E_old
             dRMS = 0.5 * (np.mean(diis_r_a**2) + np.mean(diis_r_b**2)) ** 0.5
@@ -296,10 +348,13 @@ class CQEDUSCF:
             Ca, Da = diag_F(A, Fa, nalpha)
             Cb, Db = diag_F(A, Fb, nbeta)
 
+            # Update <d>_a and <d>_b expectation values and QED Core Hamiltonian
+            #<-- code goes here to update <d>_a and <d>_b expectation values and QED Core Hamiltonian -->
+
             # max iterations check
-            if it == 100:
+            if it == max_iter:
                 psi4.core.clean()
-                raise Exception("SCF did not converge in 500 iterations.")
+                raise Exception(f"SCF did not converge in {max_iter} iterations.")
 
         # results dictionary to return
         results = {
