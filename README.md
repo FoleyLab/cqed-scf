@@ -1,3 +1,8 @@
+<p align="center">
+  <img src="docs/logos/cqed-scf-logo.svg#gh-light-mode-only" width="420" alt="CQED-SCF">
+  <img src="docs/logos/cqed-scf-logo-dark.svg#gh-dark-mode-only" width="420" alt="CQED-SCF">
+</p>
+
 # CQED-SCF
 
 An open-source package for mean-field and DFT-based molecular cavity quantum electrodynamics calculations
