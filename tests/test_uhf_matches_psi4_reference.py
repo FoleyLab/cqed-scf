@@ -21,7 +21,7 @@ def test_water_singlet_matches_psi4_reference():
                     'e_convergence': 1e-8,
                     'd_convergence': 5e-7}
 
-    WATER_CONFIG = config = CQEDConfig(
+    WATER_CONFIG = CQEDConfig(
         lambda_vector=np.array([0.0, 0.0, 0.0]),
         omega=0.0,
         psi4_options=WATER_SINGLET_PSI4_OPTIONS,
