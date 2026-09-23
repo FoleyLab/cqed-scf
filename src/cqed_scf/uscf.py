@@ -175,11 +175,14 @@ class CQEDUSCF:
         # get instance of mints object, call it `mints`
         # Hint: psi4.core.MintsHelper(...) takes the basis set of the Psi4 wavefunction, self.wfn.basisset()
         #<-- code goes here to get mints object -->
+        mints = psi4.core.MintsHelper(self.wfn.basisset())
 
         # get overlap matrix, call it `S`
         # Hint: mints.ao_overlap() returns a psi4 Matrix; store S as a NumPy array with np.array(..., copy=True)
         # because the DIIS error vector below needs S as a NumPy array
         #<-- code goes here to get overlap matrix -->
+        S = np.array(mints.ao_overlap(), copy=True)
+        
 
         # get basic information about the system
         # number of basis functions
@@ -205,6 +208,8 @@ class CQEDUSCF:
         # not from the Psi4 orbitals)
         # Hint: self.wfn.epsilon_a() and self.wfn.epsilon_b(), copied into NumPy arrays
         #<-- code goes here to get orbital energies -->
+        self.eps_a = np.array(self.wfn.epsilon_a(), copy=True)
+        self.eps_b = np.array(self.wfn.epsilon_b(), copy=True)
 
 
         # Memory check for ERI tensor
@@ -222,6 +227,7 @@ class CQEDUSCF:
         # Build ERI Tensor, call it `I`
         # Hint: np.asarray(mints.ao_eri()) gives the 4-index array (pq|rs) in chemist's notation
         #<-- code goes here to build ERI tensor -->
+        I = np.asarray(mints.ao_eri())
 
 
         # Build core Hamiltonian
