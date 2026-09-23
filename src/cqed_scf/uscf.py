@@ -319,19 +319,27 @@ class CQEDUSCF:
             # build Ja and Jb matrices using the ERI tensor and the alpha and beta densities
             # recall definition Jx_{pq} = sum_{rs} (pq|rs) D_x^{rs}
             #<-- code goes here to build `Ja` and `Jb` matrices -->
+            J_a = np.einsum('pqrs,rs->pq', I, Da)
+            J_b = np.einsum('pqrs,rs->pq', I, Db)
 
             # build `J_dse_a` and `J_dse_b` matrices using the dipole matrix and the dipole expectation value
             # recall definition J_dse_x_{pq} = sum_{rs} d_pq d_rs D_x^{rs} = <d>_x d_pq
             #<-- code goes here to build `J_dse_a` and `J_dse_b` matrices -->
+            J_dse_a = np.einsum('pq,rs,rs->pq', d_ao, d_ao, Da)
+            J_dse_b = np.einsum('pq,rs,rs->pq', d_ao, d_ao, Db)
 
             # build `Ka` and `Kb` matrices
             # recall definition Kx_{pq} = sum_{rs} (pr|qs) D_x^{rs}
             #<-- code goes here to build `Ka` and `Kb` matrices -->
+            Ka = np.einsum('prqs,rs->pq', I, Da)
+            Kb = np.einsum('prqs,rs->pq', I, Db)
 
             # build `K_dse_a` and `K_dse_b` matrices using the dipole matrix and the dipole expectation value
             # recall definition K_dse_x_{pq} = sum_{rs} d_pr d_qs D_x^{rs}
             # (in matrix form this is just d_ao @ D_x @ d_ao)
             #<-- code goes here to build `K_dse_a` and `K_dse_b` matrices -->
+            K_dse_a = np.einsum('pr,qs,qs->pq', d_ao, d_ao, Da)
+            K_dse_b = np.einsum('pr,qs,qs->pq', d_ao, d_ao, Db)
 
             # build Fock matrices for alpha and beta
             # Recall F_x = H_0 + J_a + J_b - K_x + J_dse_a + J_dse_b - K_dse_x
