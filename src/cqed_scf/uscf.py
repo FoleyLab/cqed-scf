@@ -232,16 +232,20 @@ class CQEDUSCF:
 
         # Build core Hamiltonian
         # Recall for QED-UHF, H_0 = T + V + Q_PF - <d> d
+
         # because we need <d> we need guess C_x first
         # So build guess from canonical core Hamiltonian and orthogonalization matrix
 
         #<-- code to build kinetic energy matrix T -->
         # Hint: mints.ao_kinetic()
+        T = np.asarray(mints.ao_kinetic())
 
         #<-- code to build nuclear attraction matrix V -->
         # Hint: mints.ao_potential()
+        V = np.asarray(mints.ao_potential())
 
         #<-- code to build canonical core Hamiltonian H_canonical = T + V -->
+        H_canonical = T + V
 
         # Construct AO orthogonalization matrix `A` = S^(-1/2)
         # Hint: get a *fresh* overlap matrix with A = mints.ao_overlap() -- do NOT reuse S!
@@ -249,36 +253,52 @@ class CQEDUSCF:
         # so reusing S here would silently overwrite S with S^(-1/2) and break the DIIS error vector below.
         # A is a psi4 core Matrix, so convert it to a NumPy array with np.asarray(A)
         #<-- code goes here to build AO orthogonalization matrix -->
+        A = mints.ao_overlap()
+        
+        A.power(-0.5, 1.e-16)
+        A = np.asarray(A)
 
         # get guess coefficients and density from Core Hamiltonian
         # Hint - use diag_F function defined above to get guess coefficients and density
         # using the canonical core Hamiltonian and orthogonalization matrix
         # Cx, Dx = diag_F(A, H_canonical, nx) where x is a or b and nx is nalpha or nbeta
         #<-- code goes here to get guess coefficients and density `Ca`, `Da`, `Cb`, `Db` -->
+        Ca, Da = diag_F(A, H_canonical, nalpha)
+        Cb, Db = diag_F(A, H_canonical, nbeta)
 
 
         #<-- code to build dipole matrix `d_ao` -->
         # Hint: mu = [np.asarray(x) for x in mints.ao_dipole()] gives [mu_x, mu_y, mu_z]
         # recall d_ao = sum(lambda_i * mu_i for i in range(3)), with lambda from self.config.lambda_vector
+        mu = [np.asarray(x) for x in mints.ao_dipole()]
+        d_ao = sum(lambda_i * mu_i for lambda_i, mu_i in zip(self.config.lambda_vector, mu))
 
         #<-- code to compute dipole expectation value <d> -->
         # recall <d>_a = Tr(Da d) and <d>_b = Tr(Db d) and <d> = <d>_a + <d>_b
         # Note: <d> here is the ELECTRONIC dipole only -- do not add the nuclear dipole.
         # In the coherent-state basis the nuclear contribution cancels, and it is the electronic <d>
         # that makes the -<d> d term in H_0 cancel the J_dse terms in the Fock matrix below.
+        d_a_exp = np.trace(Da @ d_ao)
+        d_b_exp= np.trace(Db @ d_ao)
+        d_exp = d_a_exp + d_b_exp
 
         #<-- code to build quadrupole matrices Q and `Q_PF` -->
         # Hint: Q = [np.asarray(x) for x in mints.ao_quadrupole()] gives the 6 unique components
+        Q = [np.asarray(x) for x in mints.ao_quadrupole()]
         # q = [Q_xx, Q_xy, Q_xz, Q_yy, Q_yz, Q_zz] and Q_PF = -0.5 * sum(lambda_i * lambda_j * Q_ij for i,j in range(3))
         # Index map (i,j) -> position in the list: (0,0)->0, (0,1)->1, (0,2)->2, (1,1)->3, (1,2)->4, (2,2)->5
         # Q_ij = Q_ji, so each off-diagonal term appears twice in the double sum:
         # Q_PF = -0.5*(l_x^2 Q_xx + l_y^2 Q_yy + l_z^2 Q_zz) - (l_x l_y Q_xy + l_x l_z Q_xz + l_y l_z Q_yz)
+        l = self.config.lambda_vector
+        Q_PF = -0.5 * (l[0]**2 * Q[0] + l[1]**2 * Q[3] + l[2]**2 * Q[5]) - (l[0]*l[1]*Q[1] + l[0]*l[2]*Q[2] + l[1]*l[2]*Q[4])
 
         #<-- code goes here to build the QED-UHF core Hamiltonian `H_0` = H_canonical + Q_PF - <d> d_ao -->
+        H_0 = H_canonical + Q_PF - d_exp * d_ao
 
         # get nuclear repulsion energy, call it `E_nuc`
         # Hint: self.mol.nuclear_repulsion_energy()
         #<-- code goes here to get nuclear repulsion energy -->
+        E_nuc = self.mol.nuclear_repulsion_energy()
 
         # pre-iteration values
         SCF_E = 0.0
