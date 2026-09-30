@@ -271,7 +271,23 @@ class CQEDUSCF:
         # Hint: mu = [np.asarray(x) for x in mints.ao_dipole()] gives [mu_x, mu_y, mu_z]
         # recall d_ao = sum(lambda_i * mu_i for i in range(3)), with lambda from self.config.lambda_vector
         mu = [np.asarray(x) for x in mints.ao_dipole()]
+
+        pythonic_start = time.perf_counter()
         d_ao = sum(lambda_i * mu_i for lambda_i, mu_i in zip(self.config.lambda_vector, mu))
+        pythonic_end = time.perf_counter()
+
+        #naive_start = time.perf_counter()
+        #d_ao = self.config.lambda_vector[0] * mu[:,:,0] + self.config.lambda_vector[1] * mu[:,:,1] + self.config.lambda_vector[2] * mu[:,:,2]
+        #naive_end = time.perf_counter()
+
+        #einsum_start = time.perf_counter()
+        #d_ao = oe.contract("i,jki->jk", self.config.lambda_vector, mu)
+        #einsum_end = time.perf_counter()
+
+        print(F"Time required to compute d_ao the pythonic way is {pythonic_end - pythonic_start:12.5e} s")
+        #print(F"Time required to compute d_ao the naive way is {naive_end - naive_start:12.5e} s")
+        #print(F"Time required to compute d_ao the einsum way is {einsum_end - einsum_start:12.5e} s")
+
 
         #<-- code to compute dipole expectation value <d> -->
         # recall <d>_a = Tr(Da d) and <d>_b = Tr(Db d) and <d> = <d>_a + <d>_b
@@ -331,8 +347,8 @@ class CQEDUSCF:
             # build `Ka` and `Kb` matrices
             # recall definition Kx_{pq} = sum_{rs} (pr|qs) D_x^{rs}
             #<-- code goes here to build `Ka` and `Kb` matrices -->
-            Ka = np.einsum('prqs,rs->pq', I, Da)
-            Kb = np.einsum('prqs,rs->pq', I, Db)
+            K_a = np.einsum('prqs,rs->pq', I, Da)
+            K_b = np.einsum('prqs,rs->pq', I, Db)
 
             # build `K_dse_a` and `K_dse_b` matrices using the dipole matrix and the dipole expectation value
             # recall definition K_dse_x_{pq} = sum_{rs} d_pr d_qs D_x^{rs}
@@ -345,7 +361,11 @@ class CQEDUSCF:
             # Recall F_x = H_0 + J_a + J_b - K_x + J_dse_a + J_dse_b - K_dse_x
             # where x is alpha or beta
             #<-- code goes here to build `Fa` and `Fb` matrices -->
-
+            ### COMMENTING FULL CAVITY TERM OUT HERE!
+            #####Fa = H_0 + J_a + J_b - K_a + J_dse_a + J_dse_b - K_dse_a
+            #####Fb = H_0 + J_a + J_b - K_b + J_dse_a + J_dse_b - K_dse_a
+            Fa = H_0 + J_a + J_b - K_a + J_dse_a + J_dse_b - K_dse_a
+            Fb = H_0 + J_a + J_b - K_b + J_dse_a + J_dse_b - K_dse_b
 
             # DIIS error vectors (orthogonalized FDS - SDF)
             diis_r_a = A.dot(Fa.dot(Da).dot(S) - S.dot(Da).dot(Fa)).dot(A)
@@ -362,6 +382,7 @@ class CQEDUSCF:
             # The constant 0.5 * <d>^2 is needed so that all <d>-dependent terms cancel in the energy
             # (it vanishes when lambda = 0, so the cavity-free tests cannot catch it if it is missing!)
             #<-- code goes here to compute QED-UHF energy -->
+            SCF_E = 0.5 * np.trace((Da + Db) @ H_0) + 0.5 * np.trace(Da @ Fa) + 0.5 * np.trace(Db @ Fb) + E_nuc + 0.5 * d_exp ** 2
 
             dE = SCF_E - SCF_E_old
             dRMS = 0.5 * (np.mean(diis_r_a**2) + np.mean(diis_r_b**2)) ** 0.5
@@ -384,6 +405,10 @@ class CQEDUSCF:
 
             # Update <d>_a and <d>_b expectation values and QED Core Hamiltonian
             #<-- code goes here to update <d>_a and <d>_b expectation values and QED Core Hamiltonian -->
+            d_a_exp = np.trace(Da @ d_ao)
+            d_b_exp = np.trace(Da @ d_ao)
+            d_exp = d_a_exp + d_b_exp
+            H_0 = T + V + Q_PF - d_exp * d_ao
 
             # max iterations check
             if it == max_iter:
