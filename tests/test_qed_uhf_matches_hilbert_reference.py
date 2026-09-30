@@ -88,7 +88,7 @@ def test_oxygen_triplet_matches_hilbert_reference():
             functional=None,
             density_fitting=False,
             charge=0,
-            multiplicity=2,
+            multiplicity=3,
             dispersion_policy="none",
             debug=False,
             quiet=True,  # SILENT: suppress all stdout (CQED-SCF + Psi4 engine output)
@@ -133,7 +133,7 @@ def test_imidogen_triplet_matches_hilbert_reference():
             functional=None,
             density_fitting=False,
             charge=0,
-            multiplicity=2,
+            multiplicity=3,
             dispersion_policy="none",
             debug=False,
             quiet=True,  # SILENT: suppress all stdout (CQED-SCF + Psi4 engine output)

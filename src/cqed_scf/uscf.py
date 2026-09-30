@@ -112,6 +112,47 @@ def diis_xtrap(F_list, DIIS_RESID):
     
     return F_DIIS
 
+# ==> Unrestricted DIIS: one subspace shared by both spin channels <==
+def diis_xtrap_uhf(F_list_a, F_list_b, R_list_a, R_list_b):
+    """Shared-coefficient UHF DIIS extrapolation.
+
+    Extrapolating alpha and beta independently lets the two spin channels pull
+    against each other, which stalls open-shell cases with near-degenerate
+    singly-occupied orbitals (e.g. the pi hole in OH).  Instead build a single
+    Pulay B matrix from the combined error,
+
+        B_ij = <r^a_i | r^a_j> + <r^b_i | r^b_j>,
+
+    and apply the resulting coefficients to both Fock series.
+    """
+    n = len(F_list_a)
+    B = np.empty((n + 1, n + 1))
+    B[-1, :] = -1
+    B[:, -1] = -1
+    B[-1, -1] = 0
+    for i in range(n):
+        for j in range(n):
+            B[i, j] = (
+                np.einsum('ij,ij->', R_list_a[i], R_list_a[j], optimize=True)
+                + np.einsum('ij,ij->', R_list_b[i], R_list_b[j], optimize=True)
+            )
+
+    # Build RHS of Pulay equation
+    rhs = np.zeros((n + 1))
+    rhs[-1] = -1
+
+    # Solve Pulay equation for c_i's with NumPy
+    coeff = np.linalg.solve(B, rhs)
+
+    # Build DIIS Fock matrices with the shared coefficients
+    Fa_DIIS = np.zeros_like(F_list_a[0])
+    Fb_DIIS = np.zeros_like(F_list_b[0])
+    for x in range(n):
+        Fa_DIIS += coeff[x] * F_list_a[x]
+        Fb_DIIS += coeff[x] * F_list_b[x]
+
+    return Fa_DIIS, Fb_DIIS
+
 class CQEDUSCF:
     """Unrestricted CQED-SCF driver.
 
@@ -195,6 +236,13 @@ class CQEDUSCF:
         # number of singly occupied orbitals
         nsocc = abs(nalpha - nbeta)
 
+        # initial guess from Psi4 reference
+        Ca = np.array(self.wfn.Ca(), copy=True)  # copy: _update_wfn_with_cqed writes to Ca()
+        Da = np.array(self.wfn.Da(), copy=True)
+
+        Cb = np.array(self.wfn.Cb(), copy=True)
+        Db = np.array(self.wfn.Db(), copy=True)
+
         # print this basic information to the output
         #output.print_basic_info(nbf, nalpha, nbeta, ndocc, nsocc)
         print(f"Number of basis functions: {nbf}")
@@ -263,8 +311,8 @@ class CQEDUSCF:
         # using the canonical core Hamiltonian and orthogonalization matrix
         # Cx, Dx = diag_F(A, H_canonical, nx) where x is a or b and nx is nalpha or nbeta
         #<-- code goes here to get guess coefficients and density `Ca`, `Da`, `Cb`, `Db` -->
-        Ca, Da = diag_F(A, H_canonical, nalpha)
-        Cb, Db = diag_F(A, H_canonical, nbeta)
+        #Ca, Da = diag_F(A, H_canonical, nalpha)
+        #Cb, Db = diag_F(A, H_canonical, nbeta)
 
 
         #<-- code to build dipole matrix `d_ao` -->
@@ -331,6 +379,11 @@ class CQEDUSCF:
         d_conv = self.psi4_options.get("d_convergence", 1.0e-8)
         max_iter = 100
 
+        # DIIS controls: keep the subspace small so the B matrix stays well
+        # conditioned, and start extrapolating early
+        diis_max = 8
+        diis_start = 2
+
         for it in range(1, max_iter + 1):
             # build Ja and Jb matrices using the ERI tensor and the alpha and beta densities
             # recall definition Jx_{pq} = sum_{rs} (pq|rs) D_x^{rs}
@@ -354,8 +407,8 @@ class CQEDUSCF:
             # recall definition K_dse_x_{pq} = sum_{rs} d_pr d_qs D_x^{rs}
             # (in matrix form this is just d_ao @ D_x @ d_ao)
             #<-- code goes here to build `K_dse_a` and `K_dse_b` matrices -->
-            K_dse_a = np.einsum('pr,qs,qs->pq', d_ao, d_ao, Da)
-            K_dse_b = np.einsum('pr,qs,qs->pq', d_ao, d_ao, Db)
+            K_dse_a = d_ao @ Da @ d_ao
+            K_dse_b = d_ao @ Db @ d_ao
 
             # build Fock matrices for alpha and beta
             # Recall F_x = H_0 + J_a + J_b - K_x + J_dse_a + J_dse_b - K_dse_x
@@ -377,6 +430,14 @@ class CQEDUSCF:
             R_list_a.append(diis_r_a)
             R_list_b.append(diis_r_b)
 
+            # Drop the oldest vectors once the subspace is full.  An unbounded
+            # subspace makes every iteration more expensive and drives the B
+            # matrix toward singularity as the error vectors become linearly
+            # dependent.
+            if len(F_list_a) > diis_max:
+                for _list in (F_list_a, F_list_b, R_list_a, R_list_b):
+                    del _list[0]
+
             # Compute QED-UHF energy, call it `SCF_E`
             # Recall E_scf = 0.5 * (Tr((Da + Db) H_0) + Tr(Da Fa) + Tr(Db Fb)) + 0.5 * <d>^2 + E_nuc
             # The constant 0.5 * <d>^2 is needed so that all <d>-dependent terms cancel in the energy
@@ -395,9 +456,8 @@ class CQEDUSCF:
             SCF_E_old = SCF_E
 
             # DIIS Extrapolation
-            if it >= 8:
-                Fa = diis_xtrap(F_list_a, R_list_a)
-                Fb = diis_xtrap(F_list_b, R_list_b)
+            if it >= diis_start:
+                Fa, Fb = diis_xtrap_uhf(F_list_a, F_list_b, R_list_a, R_list_b)
 
             # compute new orbital guess
             Ca, Da = diag_F(A, Fa, nalpha)
@@ -406,7 +466,7 @@ class CQEDUSCF:
             # Update <d>_a and <d>_b expectation values and QED Core Hamiltonian
             #<-- code goes here to update <d>_a and <d>_b expectation values and QED Core Hamiltonian -->
             d_a_exp = np.trace(Da @ d_ao)
-            d_b_exp = np.trace(Da @ d_ao)
+            d_b_exp = np.trace(Db @ d_ao)
             d_exp = d_a_exp + d_b_exp
             H_0 = T + V + Q_PF - d_exp * d_ao
 
