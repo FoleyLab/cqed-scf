@@ -794,6 +794,32 @@ def test_monomer_com_frame_does_change_the_dispersion_terms(component):
     assert abs(com_frame[component] - dimer_frame[component]) > 1e-9
 
 
+def test_monomer_com_frame_does_not_depend_on_no_com():
+    """A dimer without no_com must still get each monomer solved at its COM.
+
+    Psi4 then recentres the dimer itself, and two things used to undo the
+    monomer translation silently: the real-atom subset recentred itself, so
+    its centre of mass read as zero and no shift was applied; and the
+    translated string, lacking no_com, was recentred on a centre of mass that
+    includes the ghost atoms' masses -- the dimer's.  Either way the result
+    quietly equalled the "dimer" frame.
+    """
+    geometry = _water_he(shift=20.0).replace("no_com\n", "")
+    driver = _geometry_driver(geometry, frame="monomer_com", convergence=1e-12)
+
+    for monomer in (driver.monomer_A, driver.monomer_B):
+        molecule = monomer.wfn.molecule()
+        real = [i for i in range(molecule.natom()) if molecule.Z(i) > 0]
+        masses = np.array([molecule.mass(i) for i in real])
+        coords = np.asarray(molecule.geometry())[real]
+        np.testing.assert_allclose(masses @ coords / masses.sum(), 0.0, atol=1e-10)
+
+    got = _components(driver)
+    expected = _framed_components("monomer_com")
+    for component in _COMPONENTS:
+        assert got[component] == pytest.approx(expected[component], abs=1e-11)
+
+
 def test_monomer_com_frame_preserves_the_shared_interaction_frame():
     """d_A == d_B must survive, or the rank-one DF augmentation breaks.
 

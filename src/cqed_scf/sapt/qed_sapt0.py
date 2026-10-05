@@ -214,11 +214,45 @@ class QEDSAPT0Driver:
         # origin.  Ghost centres move with it, so the ghosted basis and every
         # internal distance are unchanged -- only the origin-dependent dipole
         # and quadrupole operators see the shift.
-        real_molecule = self.dimer_geometry.extract_subsets(subset_index)
-        com = real_molecule.center_of_mass()
+        #
+        # The centre of mass is taken from the dimer's own coordinates rather
+        # than from extract_subsets(i).center_of_mass(): when the dimer lacks
+        # no_com, that subset inherits fix_com=False and recentres itself on
+        # update, so its centre of mass reads as zero and no shift is applied.
+        com = self._real_atom_center_of_mass(subset_index)
         shifted = ghosted_molecule.clone()
         shifted.translate(psi4.core.Vector3(-com[0], -com[1], -com[2]))
+        # Pin the frame.  Without no_com, psi4.geometry would recentre the
+        # string on a centre of mass that includes the ghost atoms' masses --
+        # the dimer's -- undoing the translation and silently reproducing the
+        # "dimer" frame.
+        shifted.fix_com(True)
+        shifted.fix_orientation(True)
         return shifted.create_psi4_string_from_molecule()
+
+    def _real_atom_center_of_mass(self, subset_index: int) -> np.ndarray:
+        """Real-atom centre of mass of one fragment, in the dimer's coordinates."""
+        self.dimer_geometry.update_geometry()
+        start, stop = self.dimer_geometry.get_fragments()[subset_index - 1]
+        coords = np.asarray(self.dimer_geometry.geometry())[start:stop]
+        masses = np.array([self.dimer_geometry.mass(i) for i in range(start, stop)])
+        return masses @ coords / masses.sum()
+
+    def _check_monomer_reference_frame(self, monomer: SAPTMonomer) -> None:
+        """Fail if a monomer_com reference was not actually solved at its COM."""
+        if self.monomer_reference_frame != "monomer_com":
+            return
+        molecule = monomer.wfn.molecule()
+        real = [i for i in range(molecule.natom()) if molecule.Z(i) > 0]
+        coords = np.asarray(molecule.geometry())[real]
+        masses = np.array([molecule.mass(i) for i in real])
+        com = masses @ coords / masses.sum()
+        if np.abs(com).max() > 1e-8:
+            raise RuntimeError(
+                f"{monomer.label} reference was solved with its real-atom centre "
+                f"of mass at {com} bohr, not at the origin, although "
+                'monomer_reference_frame="monomer_com" was requested.'
+            )
 
     def _basis_name(self) -> str:
         basis = (self.config.psi4_options or {}).get("basis")
@@ -282,12 +316,14 @@ class QEDSAPT0Driver:
                 geometry=monomer_A_string,
                 config=self.config,
             )
+            self._check_monomer_reference_frame(self.monomer_A)
         if self.monomer_B is None:
             self.monomer_B = SAPTMonomer.from_cqed_scf(
                 label="monomer_B",
                 geometry=monomer_B_string,
                 config=self.config,
             )
+            self._check_monomer_reference_frame(self.monomer_B)
 
         self._populate_monomer_attributes()
         return self.monomer_A, self.monomer_B
