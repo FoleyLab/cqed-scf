@@ -1,0 +1,322 @@
+df cc-pVDZ {'elst10': -0.008370614521371, 'exch10': 0.0031326493368289497, 'ind20': -0.001646665826351476, 'exch_ind20': 0.0007830160030326707, 'disp20': -0.0013048824640010152, 'exch_disp20': 0.0001873928312222725, 'total': -0.007219104640639599}
+└─ CQEDCalculator.sapt0_components  [cqed_scf/calculator.py:516]
+   ├─ CQEDCalculator.sapt0  [cqed_scf/calculator.py:497]
+   │  └─ QEDSAPT0Driver.__post_init__  [cqed_scf/sapt/qed_sapt0.py:117]
+   ├─ quiet_context  [cqed_scf/output.py:52] ×2
+   │  ├─ set_quiet  [cqed_scf/output.py:33]
+   │  └─ psi4_silent  [cqed_scf/output.py:174] ×2
+   │     ├─ psi4.core.get_output_file  (psi4, C++)
+   │     ├─ _null_sink  [cqed_scf/output.py:155]
+   │     └─ psi4.core.set_output_file  (psi4, C++) ×2
+   └─ QEDSAPT0Driver.run_components  [cqed_scf/sapt/qed_sapt0.py:1646]
+      ├─ QEDSAPT0Driver.run  [cqed_scf/sapt/qed_sapt0.py:1652]
+      │  ├─ QEDSAPT0Driver.prepare_monomers  [cqed_scf/sapt/qed_sapt0.py:295]
+      │  │  ├─ QEDSAPT0Driver.prepare_geometries  [cqed_scf/sapt/qed_sapt0.py:196]
+      │  │  │  ├─ QEDSAPT0Driver._populate_ghosted_molecules  [cqed_scf/sapt/qed_sapt0.py:182]
+      │  │  │  │  └─ psi4.core.extract_subsets  (psi4, C++) ×2
+      │  │  │  ├─ psi4.core.create_psi4_string_from_molecule  (psi4, C++)
+      │  │  │  └─ QEDSAPT0Driver._reference_frame_string  [cqed_scf/sapt/qed_sapt0.py:207] ×2
+      │  │  │     ├─ QEDSAPT0Driver._real_atom_center_of_mass  [cqed_scf/sapt/qed_sapt0.py:233] ×2
+      │  │  │     │  ├─ psi4.core.update_geometry  (psi4, C++) ×2
+      │  │  │     │  ├─ psi4.core.get_fragments  (psi4, C++) ×2
+      │  │  │     │  ├─ psi4.core.geometry  (psi4, C++) ×2
+      │  │  │     │  ├─ psi4.driver.p4util.numpy_helper._array_conversion  (psi4, python) ×2
+      │  │  │     │  └─ psi4.core.mass  (psi4, C++) ×10
+      │  │  │     ├─ psi4.core.clone  (psi4, C++) ×2
+      │  │  │     ├─ psi4.core.translate  (psi4, C++) ×2
+      │  │  │     ├─ psi4.core.fix_com  (psi4, C++) ×2
+      │  │  │     ├─ psi4.core.fix_orientation  (psi4, C++) ×2
+      │  │  │     └─ psi4.core.create_psi4_string_from_molecule  (psi4, C++) ×2
+      │  │  ├─ QEDSAPT0Driver._populate_dimer_nuclear_terms  [cqed_scf/sapt/qed_sapt0.py:331]
+      │  │  │  ├─ psi4.core.nuclear_dipole  (psi4, C++)
+      │  │  │  └─ psi4.core.nuclear_repulsion_energy  (psi4, C++)
+      │  │  ├─ SAPTMonomer.from_cqed_scf  [cqed_scf/sapt/monomer.py:118] ×2
+      │  │  │  ├─ CQEDConfig.copy_with  [cqed_scf/references.py:279] ×2
+      │  │  │  │  └─ CQEDConfig.__post_init__  [cqed_scf/references.py:87] ×2
+      │  │  │  │     ├─ CQEDConfig._coerce_lambda_vector  [cqed_scf/references.py:137] ×2
+      │  │  │  │     ├─ normalize_reference_name  [cqed_scf/references.py:40] ×2
+      │  │  │  │     ├─ CQEDConfig._coerce_integer  [cqed_scf/references.py:148] ×4
+      │  │  │  │     ├─ CQEDConfig._validate_psi4_options  [cqed_scf/references.py:167] ×2
+      │  │  │  │     ├─ CQEDConfig._validate_functional  [cqed_scf/references.py:184] ×2
+      │  │  │  │     │  └─ CQEDConfig.is_ks  [cqed_scf/references.py:229] ×2
+      │  │  │  │     └─ CQEDConfig._validate_spin  [cqed_scf/references.py:188] ×2
+      │  │  │  │        └─ CQEDConfig.is_restricted  [cqed_scf/references.py:211] ×2
+      │  │  │  ├─ CQEDConfig.is_unrestricted  [cqed_scf/references.py:217] ×2
+      │  │  │  ├─ CQEDConfig.scf_method  [cqed_scf/references.py:271] ×2
+      │  │  │  │  ├─ CQEDConfig.is_unrestricted  [cqed_scf/references.py:217] ×2
+      │  │  │  │  └─ CQEDConfig.is_ks  [cqed_scf/references.py:229] ×2
+      │  │  │  ├─ CQEDConfig.base_scf_functional  [cqed_scf/references.py:251] ×2
+      │  │  │  │  └─ CQEDConfig.is_hf  [cqed_scf/references.py:223] ×2
+      │  │  │  ├─ CQEDSCF.__init__  [cqed_scf/scf.py:69] ×2
+      │  │  │  ├─ CQEDSCF.run  [cqed_scf/scf.py:127] ×2
+      │  │  │  │  ├─ banner  [cqed_scf/output.py:84] ×2
+      │  │  │  │  │  └─ is_quiet  [cqed_scf/output.py:40] ×2
+      │  │  │  │  ├─ CQEDSCF._prepare_options  [cqed_scf/scf.py:489] ×2
+      │  │  │  │  │  └─ psi4.driver.p4util.python_helpers.set_options  (psi4, python) ×2
+      │  │  │  │  ├─ psi4.driver.molutil.geometry  (psi4, python) ×2
+      │  │  │  │  ├─ psi4.core.multiplicity  (psi4, C++) ×2
+      │  │  │  │  ├─ CQEDSCF._reference_method_string  [cqed_scf/scf.py:502] ×2
+      │  │  │  │  ├─ psi4.driver.driver.energy  (psi4, python) ×2
+      │  │  │  │  ├─ psi4.core.epsilon_a  (psi4, C++) ×2
+      │  │  │  │  ├─ psi4.driver.p4util.numpy_helper._array_conversion  (psi4, python) ×30
+      │  │  │  │  ├─ psi4.core.basisset  (psi4, C++) ×2
+      │  │  │  │  ├─ psi4.core.nmo  (psi4, C++) ×2
+      │  │  │  │  ├─ psi4.core.nalpha  (psi4, C++) ×2
+      │  │  │  │  ├─ CQEDSCF._print_calculation_metadata  [cqed_scf/scf.py:415] ×2
+      │  │  │  │  │  ├─ psi4.core.nalpha  (psi4, C++) ×2
+      │  │  │  │  │  ├─ psi4.core.nbeta  (psi4, C++) ×2
+      │  │  │  │  │  ├─ psi4.core.basisset  (psi4, C++) ×2
+      │  │  │  │  │  ├─ psi4.core.name  (psi4, C++) ×2
+      │  │  │  │  │  ├─ CQEDSCF._print_calculation_metadata.<locals>._row  [cqed_scf/scf.py:422] ×18
+      │  │  │  │  │  │  └─ echo  [cqed_scf/output.py:75] ×18
+      │  │  │  │  │  │     └─ is_quiet  [cqed_scf/output.py:40] ×18
+      │  │  │  │  │  ├─ psi4.core.molecular_charge  (psi4, C++) ×2
+      │  │  │  │  │  ├─ psi4.core.multiplicity  (psi4, C++) ×2
+      │  │  │  │  │  ├─ psi4.core.nbf  (psi4, C++) ×2
+      │  │  │  │  │  └─ echo  [cqed_scf/output.py:75] ×6
+      │  │  │  │  │     └─ is_quiet  [cqed_scf/output.py:40] ×6
+      │  │  │  │  ├─ psi4.core.ao_kinetic  (psi4, C++) ×2
+      │  │  │  │  ├─ psi4.core.ao_potential  (psi4, C++) ×2
+      │  │  │  │  ├─ psi4.core.ao_overlap  (psi4, C++) ×2
+      │  │  │  │  ├─ psi4.core.ao_dipole  (psi4, C++) ×2
+      │  │  │  │  ├─ psi4.core.ao_quadrupole  (psi4, C++) ×2
+      │  │  │  │  ├─ psi4.driver.p4util.numpy_helper.array_to_matrix  (psi4, python) ×2
+      │  │  │  │  ├─ psi4.core.power  (psi4, C++) ×2
+      │  │  │  │  ├─ psi4.core.nuclear_repulsion_energy  (psi4, C++) ×2
+      │  │  │  │  ├─ psi4.core.Ca  (psi4, C++) ×2
+      │  │  │  │  ├─ CQEDSCF._build_jk  [cqed_scf/scf.py:507] ×2
+      │  │  │  │  │  ├─ psi4.core.basisset  (psi4, C++) ×2
+      │  │  │  │  │  ├─ psi4.driver.p4util.python_helpers._core_jk_build  (psi4, python) ×2
+      │  │  │  │  │  ├─ psi4.core.set_memory  (psi4, C++) ×2
+      │  │  │  │  │  ├─ psi4.core.set_do_J  (psi4, C++) ×2
+      │  │  │  │  │  ├─ psi4.core.set_do_K  (psi4, C++) ×2
+      │  │  │  │  │  ├─ psi4.core.set_do_wK  (psi4, C++) ×2
+      │  │  │  │  │  └─ psi4.core.initialize  (psi4, C++) ×2
+      │  │  │  │  ├─ DIISSubspace.__init__  [cqed_scf/scf.py:16] ×2
+      │  │  │  │  ├─ CQEDSCF._build_JK  [cqed_scf/scf.py:541] ×22
+      │  │  │  │  │  ├─ psi4.driver.p4util.numpy_helper.array_to_matrix  (psi4, python) ×22
+      │  │  │  │  │  ├─ psi4.core.C_clear  (psi4, C++) ×22
+      │  │  │  │  │  ├─ psi4.core.C_left_add  (psi4, C++) ×22
+      │  │  │  │  │  ├─ psi4.core.compute  (psi4, C++) ×22
+      │  │  │  │  │  ├─ psi4.core.J  (psi4, C++) ×22
+      │  │  │  │  │  ├─ psi4.driver.p4util.numpy_helper._array_conversion  (psi4, python) ×44
+      │  │  │  │  │  ├─ psi4.core.K  (psi4, C++) ×22
+      │  │  │  │  │  └─ psi4.core.wK  (psi4, C++) ×22
+      │  │  │  │  ├─ DIISSubspace.add  [cqed_scf/scf.py:21] ×22
+      │  │  │  │  ├─ CQEDSCF._canonicalize  [cqed_scf/scf.py:578] ×22
+      │  │  │  │  ├─ DIISSubspace.extrapolate  [cqed_scf/scf.py:29] ×16
+      │  │  │  │  ├─ CQEDSCF._print_scf_iterations  [cqed_scf/scf.py:439] ×2
+      │  │  │  │  │  ├─ banner  [cqed_scf/output.py:84] ×2
+      │  │  │  │  │  │  └─ is_quiet  [cqed_scf/output.py:40] ×2
+      │  │  │  │  │  ├─ table  [cqed_scf/output.py:111] ×2
+      │  │  │  │  │  │  └─ is_quiet  [cqed_scf/output.py:40] ×2
+      │  │  │  │  │  └─ echo  [cqed_scf/output.py:75] ×2
+      │  │  │  │  │     └─ is_quiet  [cqed_scf/output.py:40] ×2
+      │  │  │  │  ├─ psi4.core.nuclear_dipole  (psi4, C++) ×6
+      │  │  │  │  ├─ CQEDSCF._update_wfn_with_cqed  [cqed_scf/scf.py:607] ×2
+      │  │  │  │  │  ├─ psi4.core.Ca  (psi4, C++) ×2
+      │  │  │  │  │  ├─ psi4.driver.p4util.numpy_helper._nph_view  (psi4, python) ×12
+      │  │  │  │  │  ├─ psi4.core.Cb  (psi4, C++) ×2
+      │  │  │  │  │  ├─ psi4.core.Da  (psi4, C++) ×2
+      │  │  │  │  │  ├─ psi4.core.Db  (psi4, C++) ×2
+      │  │  │  │  │  ├─ psi4.core.epsilon_a  (psi4, C++) ×2
+      │  │  │  │  │  └─ psi4.core.epsilon_b  (psi4, C++) ×2
+      │  │  │  │  ├─ CQEDSCF._print_final_energy  [cqed_scf/scf.py:482] ×2
+      │  │  │  │  │  ├─ banner  [cqed_scf/output.py:84] ×2
+      │  │  │  │  │  │  └─ is_quiet  [cqed_scf/output.py:40] ×2
+      │  │  │  │  │  ├─ property_  [cqed_scf/output.py:93] ×2
+      │  │  │  │  │  │  └─ is_quiet  [cqed_scf/output.py:40] ×2
+      │  │  │  │  │  └─ echo  [cqed_scf/output.py:75] ×2
+      │  │  │  │  │     └─ is_quiet  [cqed_scf/output.py:40] ×2
+      │  │  │  │  └─ psi4.core.natom  (psi4, C++) ×2
+      │  │  │  └─ SAPTMonomer.from_scf_results  [cqed_scf/sapt/monomer.py:93] ×2
+      │  │  │     └─ CQEDConfig.copy_with  [cqed_scf/references.py:279] ×2
+      │  │  │        └─ CQEDConfig.__post_init__  [cqed_scf/references.py:87] ×2
+      │  │  │           ├─ CQEDConfig._coerce_lambda_vector  [cqed_scf/references.py:137] ×2
+      │  │  │           ├─ normalize_reference_name  [cqed_scf/references.py:40] ×2
+      │  │  │           ├─ CQEDConfig._coerce_integer  [cqed_scf/references.py:148] ×4
+      │  │  │           ├─ CQEDConfig._validate_psi4_options  [cqed_scf/references.py:167] ×2
+      │  │  │           ├─ CQEDConfig._validate_functional  [cqed_scf/references.py:184] ×2
+      │  │  │           │  └─ CQEDConfig.is_ks  [cqed_scf/references.py:229] ×2
+      │  │  │           └─ CQEDConfig._validate_spin  [cqed_scf/references.py:188] ×2
+      │  │  │              └─ CQEDConfig.is_restricted  [cqed_scf/references.py:211] ×2
+      │  │  ├─ QEDSAPT0Driver._check_monomer_reference_frame  [cqed_scf/sapt/qed_sapt0.py:241] ×2
+      │  │  │  ├─ SAPTMonomer.wfn  [cqed_scf/sapt/monomer.py:57] ×2
+      │  │  │  ├─ psi4.core.molecule  (psi4, C++) ×2
+      │  │  │  ├─ psi4.core.natom  (psi4, C++) ×2
+      │  │  │  ├─ psi4.core.Z  (psi4, C++) ×20
+      │  │  │  ├─ psi4.core.geometry  (psi4, C++) ×2
+      │  │  │  ├─ psi4.driver.p4util.numpy_helper._array_conversion  (psi4, python) ×2
+      │  │  │  └─ psi4.core.mass  (psi4, C++) ×10
+      │  │  └─ QEDSAPT0Driver._populate_monomer_attributes  [cqed_scf/sapt/qed_sapt0.py:344]
+      │  │     ├─ SAPTMonomer.energy_scf  [cqed_scf/sapt/monomer.py:89] ×2
+      │  │     ├─ SAPTMonomer.ndocc  [cqed_scf/sapt/monomer.py:77] ×2
+      │  │     ├─ SAPTMonomer.nvirt  [cqed_scf/sapt/monomer.py:81] ×2
+      │  │     ├─ SAPTMonomer.C  [cqed_scf/sapt/monomer.py:29] ×2
+      │  │     ├─ SAPTMonomer.Co  [cqed_scf/sapt/monomer.py:33] ×2
+      │  │     ├─ SAPTMonomer.Cv  [cqed_scf/sapt/monomer.py:37] ×2
+      │  │     ├─ SAPTMonomer.eps  [cqed_scf/sapt/monomer.py:41] ×2
+      │  │     ├─ SAPTMonomer.eps_canonical  [cqed_scf/sapt/monomer.py:45] ×2
+      │  │     ├─ SAPTMonomer.nuc_rep  [cqed_scf/sapt/monomer.py:85] ×2
+      │  │     ├─ SAPTMonomer.d_exp_el  [cqed_scf/sapt/monomer.py:73] ×2
+      │  │     ├─ SAPTMonomer.d_exp  [cqed_scf/sapt/monomer.py:65] ×2
+      │  │     ├─ SAPTMonomer.d_nuc  [cqed_scf/sapt/monomer.py:69] ×2
+      │  │     ├─ SAPTMonomer.d_ao  [cqed_scf/sapt/monomer.py:61] ×4
+      │  │     └─ QEDSAPT0Driver._rebase_dipole_data_to_dimer_frame  [cqed_scf/sapt/qed_sapt0.py:439]
+      │  │        ├─ QEDSAPT0Driver._dimer_frame_mints  [cqed_scf/sapt/qed_sapt0.py:263] ×2
+      │  │        │  └─ QEDSAPT0Driver._dimer_frame_basisset  [cqed_scf/sapt/qed_sapt0.py:281] ×2
+      │  │        │     ├─ QEDSAPT0Driver._basis_name  [cqed_scf/sapt/qed_sapt0.py:257] ×2
+      │  │        │     └─ psi4.driver.p4util.python_helpers._pybuild_basis  (psi4, python) ×2
+      │  │        ├─ psi4.core.ao_dipole  (psi4, C++) ×2
+      │  │        ├─ psi4.driver.p4util.numpy_helper._array_conversion  (psi4, python) ×6
+      │  │        ├─ SAPTMonomer.Co  [cqed_scf/sapt/monomer.py:33] ×2
+      │  │        └─ psi4.core.nuclear_dipole  (psi4, C++) ×2
+      │  ├─ QEDSAPT0Driver.build_integrals  [cqed_scf/sapt/qed_sapt0.py:512]
+      │  │  ├─ QEDSAPT0Driver.build_orbitals  [cqed_scf/sapt/qed_sapt0.py:480]
+      │  │  ├─ QEDSAPT0Driver.build_slices  [cqed_scf/sapt/qed_sapt0.py:492]
+      │  │  ├─ QEDSAPT0Driver.build_sizes  [cqed_scf/sapt/qed_sapt0.py:501]
+      │  │  ├─ QEDSAPT0Driver._dimer_frame_mints  [cqed_scf/sapt/qed_sapt0.py:263] ×3
+      │  │  ├─ psi4.core.ao_overlap  (psi4, C++)
+      │  │  ├─ psi4.driver.p4util.numpy_helper._array_conversion  (psi4, python) ×3
+      │  │  ├─ QEDSAPT0Driver._resolve_df_aux_basis  [cqed_scf/sapt/qed_sapt0.py:595]
+      │  │  ├─ QEDSAPT0Driver._pauli_fierz_df  [cqed_scf/sapt/qed_sapt0.py:609]
+      │  │  │  ├─ QEDSAPT0Driver._resolve_df_aux_basis  [cqed_scf/sapt/qed_sapt0.py:595]
+      │  │  │  └─ PauliFierzDF.from_driver  [cqed_scf/sapt/dse_df.py:145]
+      │  │  │     ├─ QEDSAPT0Driver._dimer_frame_basisset  [cqed_scf/sapt/qed_sapt0.py:281]
+      │  │  │     │  ├─ QEDSAPT0Driver._basis_name  [cqed_scf/sapt/qed_sapt0.py:257]
+      │  │  │     │  └─ psi4.driver.p4util.python_helpers._pybuild_basis  (psi4, python)
+      │  │  │     ├─ QEDSAPT0Driver._dimer_frame_molecule  [cqed_scf/sapt/qed_sapt0.py:289]
+      │  │  │     ├─ psi4.driver.p4util.python_helpers._pybuild_basis  (psi4, python)
+      │  │  │     ├─ build_df_ao_tensor  [cqed_scf/sapt/dse_df.py:59]
+      │  │  │     │  ├─ psi4.core.zero_ao_basis_set  (psi4, C++)
+      │  │  │     │  ├─ psi4.core.ao_eri  (psi4, C++) ×2
+      │  │  │     │  ├─ psi4.driver.p4util.numpy_helper.array_to_matrix  (psi4, python)
+      │  │  │     │  ├─ psi4.core.power  (psi4, C++)
+      │  │  │     │  └─ psi4.driver.p4util.numpy_helper._array_conversion  (psi4, python)
+      │  │  │     └─ PauliFierzDF.__init__  [cqed_scf/sapt/dse_df.py:104]
+      │  │  │        └─ PauliFierzDF._validate_ao_tensor  [cqed_scf/sapt/dse_df.py:237]
+      │  │  └─ psi4.core.ao_potential  (psi4, C++) ×2
+      │  ├─ QEDSAPT0Driver.compute_Elst100  [cqed_scf/sapt/qed_sapt0.py:1277]
+      │  │  └─ QEDSAPT0Driver.vt  [cqed_scf/sapt/qed_sapt0.py:930]
+      │  │     ├─ QEDSAPT0Driver.vt_parts  [cqed_scf/sapt/qed_sapt0.py:894]
+      │  │     │  ├─ QEDSAPT0Driver.v  [cqed_scf/sapt/qed_sapt0.py:747]
+      │  │     │  │  ├─ QEDSAPT0Driver._pauli_fierz_df  [cqed_scf/sapt/qed_sapt0.py:609]
+      │  │     │  │  └─ PauliFierzDF.v  [cqed_scf/sapt/dse_df.py:222]
+      │  │     │  │     └─ PauliFierzDF.b  [cqed_scf/sapt/dse_df.py:201] ×2
+      │  │     │  │        └─ PauliFierzDF._aux_slice  [cqed_scf/sapt/dse_df.py:189] ×2
+      │  │     │  ├─ QEDSAPT0Driver.s  [cqed_scf/sapt/qed_sapt0.py:823] ×2
+      │  │     │  ├─ QEDSAPT0Driver.potential  [cqed_scf/sapt/qed_sapt0.py:875] ×2
+      │  │     │  │  └─ QEDSAPT0Driver._potential_for_context  [cqed_scf/sapt/qed_sapt0.py:710] ×2
+      │  │     │  │     └─ QEDSAPT0Driver._validate_operator_context  [cqed_scf/sapt/qed_sapt0.py:687] ×2
+      │  │     │  └─ QEDSAPT0Driver._vt_nuc_rep_for_context  [cqed_scf/sapt/qed_sapt0.py:728]
+      │  │     │     └─ QEDSAPT0Driver._validate_operator_context  [cqed_scf/sapt/qed_sapt0.py:687]
+      │  │     └─ QEDSAPT0Driver._sum_vt_parts  [cqed_scf/sapt/qed_sapt0.py:740]
+      │  ├─ QEDSAPT0Driver.compute_Exch100  [cqed_scf/sapt/qed_sapt0.py:1280]
+      │  │  ├─ QEDSAPT0Driver.vt  [cqed_scf/sapt/qed_sapt0.py:930] ×4
+      │  │  │  ├─ QEDSAPT0Driver.vt_parts  [cqed_scf/sapt/qed_sapt0.py:894] ×4
+      │  │  │  │  ├─ QEDSAPT0Driver.v  [cqed_scf/sapt/qed_sapt0.py:747] ×4
+      │  │  │  │  │  ├─ QEDSAPT0Driver._pauli_fierz_df  [cqed_scf/sapt/qed_sapt0.py:609] ×4
+      │  │  │  │  │  └─ PauliFierzDF.v  [cqed_scf/sapt/dse_df.py:222] ×4
+      │  │  │  │  │     └─ PauliFierzDF.b  [cqed_scf/sapt/dse_df.py:201] ×8
+      │  │  │  │  │        └─ PauliFierzDF._aux_slice  [cqed_scf/sapt/dse_df.py:189] ×8
+      │  │  │  │  ├─ QEDSAPT0Driver.s  [cqed_scf/sapt/qed_sapt0.py:823] ×8
+      │  │  │  │  ├─ QEDSAPT0Driver.potential  [cqed_scf/sapt/qed_sapt0.py:875] ×8
+      │  │  │  │  │  └─ QEDSAPT0Driver._potential_for_context  [cqed_scf/sapt/qed_sapt0.py:710] ×8
+      │  │  │  │  │     └─ QEDSAPT0Driver._validate_operator_context  [cqed_scf/sapt/qed_sapt0.py:687] ×8
+      │  │  │  │  └─ QEDSAPT0Driver._vt_nuc_rep_for_context  [cqed_scf/sapt/qed_sapt0.py:728] ×4
+      │  │  │  │     └─ QEDSAPT0Driver._validate_operator_context  [cqed_scf/sapt/qed_sapt0.py:687] ×4
+      │  │  │  └─ QEDSAPT0Driver._sum_vt_parts  [cqed_scf/sapt/qed_sapt0.py:740] ×4
+      │  │  └─ QEDSAPT0Driver.s  [cqed_scf/sapt/qed_sapt0.py:823]
+      │  ├─ QEDSAPT0Driver.compute_Edisp200  [cqed_scf/sapt/qed_sapt0.py:1388]
+      │  │  ├─ QEDSAPT0Driver._dispersion_numerator  [cqed_scf/sapt/qed_sapt0.py:1317]
+      │  │  │  └─ QEDSAPT0Driver.v  [cqed_scf/sapt/qed_sapt0.py:747]
+      │  │  │     ├─ QEDSAPT0Driver._pauli_fierz_df  [cqed_scf/sapt/qed_sapt0.py:609]
+      │  │  │     │  ├─ QEDSAPT0Driver._resolve_df_aux_basis  [cqed_scf/sapt/qed_sapt0.py:595]
+      │  │  │     │  └─ PauliFierzDF.from_driver  [cqed_scf/sapt/dse_df.py:145]
+      │  │  │     │     ├─ QEDSAPT0Driver._dimer_frame_basisset  [cqed_scf/sapt/qed_sapt0.py:281]
+      │  │  │     │     │  ├─ QEDSAPT0Driver._basis_name  [cqed_scf/sapt/qed_sapt0.py:257]
+      │  │  │     │     │  └─ psi4.driver.p4util.python_helpers._pybuild_basis  (psi4, python)
+      │  │  │     │     ├─ QEDSAPT0Driver._dimer_frame_molecule  [cqed_scf/sapt/qed_sapt0.py:289]
+      │  │  │     │     ├─ psi4.driver.p4util.python_helpers._pybuild_basis  (psi4, python)
+      │  │  │     │     ├─ build_df_ao_tensor  [cqed_scf/sapt/dse_df.py:59]
+      │  │  │     │     │  ├─ psi4.core.zero_ao_basis_set  (psi4, C++)
+      │  │  │     │     │  ├─ psi4.core.ao_eri  (psi4, C++) ×2
+      │  │  │     │     │  ├─ psi4.driver.p4util.numpy_helper.array_to_matrix  (psi4, python)
+      │  │  │     │     │  ├─ psi4.core.power  (psi4, C++)
+      │  │  │     │     │  └─ psi4.driver.p4util.numpy_helper._array_conversion  (psi4, python)
+      │  │  │     │     └─ PauliFierzDF.__init__  [cqed_scf/sapt/dse_df.py:104]
+      │  │  │     │        └─ PauliFierzDF._validate_ao_tensor  [cqed_scf/sapt/dse_df.py:237]
+      │  │  │     └─ PauliFierzDF.v  [cqed_scf/sapt/dse_df.py:222]
+      │  │  │        └─ PauliFierzDF.b  [cqed_scf/sapt/dse_df.py:201] ×2
+      │  │  │           └─ PauliFierzDF._aux_slice  [cqed_scf/sapt/dse_df.py:189] ×2
+      │  │  └─ QEDSAPT0Driver._store_dispersion_amplitudes  [cqed_scf/sapt/qed_sapt0.py:1329]
+      │  │     └─ QEDSAPT0Driver._dispersion_denominator  [cqed_scf/sapt/qed_sapt0.py:1303]
+      │  │        └─ QEDSAPT0Driver.eps  [cqed_scf/sapt/qed_sapt0.py:839] ×4
+      │  ├─ QEDSAPT0Driver.compute_Eexchdisp200  [cqed_scf/sapt/qed_sapt0.py:1447]
+      │  │  ├─ QEDSAPT0Driver._require_dispersion_amplitudes  [cqed_scf/sapt/qed_sapt0.py:1352]
+      │  │  ├─ QEDSAPT0Driver.vt  [cqed_scf/sapt/qed_sapt0.py:930] ×9
+      │  │  │  ├─ QEDSAPT0Driver.vt_parts  [cqed_scf/sapt/qed_sapt0.py:894] ×9
+      │  │  │  │  ├─ QEDSAPT0Driver.v  [cqed_scf/sapt/qed_sapt0.py:747] ×9
+      │  │  │  │  │  ├─ QEDSAPT0Driver._pauli_fierz_df  [cqed_scf/sapt/qed_sapt0.py:609] ×9
+      │  │  │  │  │  └─ PauliFierzDF.v  [cqed_scf/sapt/dse_df.py:222] ×9
+      │  │  │  │  │     └─ PauliFierzDF.b  [cqed_scf/sapt/dse_df.py:201] ×18
+      │  │  │  │  │        └─ PauliFierzDF._aux_slice  [cqed_scf/sapt/dse_df.py:189] ×18
+      │  │  │  │  ├─ QEDSAPT0Driver.s  [cqed_scf/sapt/qed_sapt0.py:823] ×18
+      │  │  │  │  ├─ QEDSAPT0Driver.potential  [cqed_scf/sapt/qed_sapt0.py:875] ×18
+      │  │  │  │  │  └─ QEDSAPT0Driver._potential_for_context  [cqed_scf/sapt/qed_sapt0.py:710] ×18
+      │  │  │  │  │     └─ QEDSAPT0Driver._validate_operator_context  [cqed_scf/sapt/qed_sapt0.py:687] ×18
+      │  │  │  │  └─ QEDSAPT0Driver._vt_nuc_rep_for_context  [cqed_scf/sapt/qed_sapt0.py:728] ×9
+      │  │  │  │     └─ QEDSAPT0Driver._validate_operator_context  [cqed_scf/sapt/qed_sapt0.py:687] ×9
+      │  │  │  └─ QEDSAPT0Driver._sum_vt_parts  [cqed_scf/sapt/qed_sapt0.py:740] ×9
+      │  │  └─ QEDSAPT0Driver.s  [cqed_scf/sapt/qed_sapt0.py:823] ×32
+      │  ├─ QEDSAPT0Driver.compute_Eind200  [cqed_scf/sapt/qed_sapt0.py:1510]
+      │  │  └─ QEDSAPT0Driver.chf  [cqed_scf/sapt/qed_sapt0.py:1129] ×2
+      │  │     ├─ QEDSAPT0Driver.v  [cqed_scf/sapt/qed_sapt0.py:747] ×6
+      │  │     │  ├─ QEDSAPT0Driver._pauli_fierz_df  [cqed_scf/sapt/qed_sapt0.py:609] ×2
+      │  │     │  ├─ PauliFierzDF.v  [cqed_scf/sapt/dse_df.py:222] ×2
+      │  │     │  │  └─ PauliFierzDF.b  [cqed_scf/sapt/dse_df.py:201] ×4
+      │  │     │  │     └─ PauliFierzDF._aux_slice  [cqed_scf/sapt/dse_df.py:189] ×4
+      │  │     │  ├─ QEDSAPT0Driver.v  [cqed_scf/sapt/qed_sapt0.py:747] ×4
+      │  │     │  │  ├─ QEDSAPT0Driver._pauli_fierz_df  [cqed_scf/sapt/qed_sapt0.py:609] ×4
+      │  │     │  │  └─ PauliFierzDF.v  [cqed_scf/sapt/dse_df.py:222] ×4
+      │  │     │  │     └─ PauliFierzDF.b  [cqed_scf/sapt/dse_df.py:201] ×8
+      │  │     │  │        └─ PauliFierzDF._aux_slice  [cqed_scf/sapt/dse_df.py:189] ×8
+      │  │     │  └─ QEDSAPT0Driver._cavity_v  [cqed_scf/sapt/qed_sapt0.py:815] ×8
+      │  │     │     └─ QEDSAPT0Driver._cavity_mo_pair  [cqed_scf/sapt/qed_sapt0.py:802] ×16
+      │  │     └─ QEDSAPT0Driver.eps  [cqed_scf/sapt/qed_sapt0.py:839] ×4
+      │  ├─ QEDSAPT0Driver.compute_Eexchind200  [cqed_scf/sapt/qed_sapt0.py:1516]
+      │  │  ├─ QEDSAPT0Driver.vt  [cqed_scf/sapt/qed_sapt0.py:930] ×12
+      │  │  │  ├─ QEDSAPT0Driver.vt_parts  [cqed_scf/sapt/qed_sapt0.py:894] ×12
+      │  │  │  │  ├─ QEDSAPT0Driver.v  [cqed_scf/sapt/qed_sapt0.py:747] ×12
+      │  │  │  │  │  ├─ QEDSAPT0Driver._pauli_fierz_df  [cqed_scf/sapt/qed_sapt0.py:609] ×12
+      │  │  │  │  │  └─ PauliFierzDF.v  [cqed_scf/sapt/dse_df.py:222] ×12
+      │  │  │  │  │     └─ PauliFierzDF.b  [cqed_scf/sapt/dse_df.py:201] ×24
+      │  │  │  │  │        └─ PauliFierzDF._aux_slice  [cqed_scf/sapt/dse_df.py:189] ×24
+      │  │  │  │  ├─ QEDSAPT0Driver.s  [cqed_scf/sapt/qed_sapt0.py:823] ×24
+      │  │  │  │  ├─ QEDSAPT0Driver.potential  [cqed_scf/sapt/qed_sapt0.py:875] ×24
+      │  │  │  │  │  └─ QEDSAPT0Driver._potential_for_context  [cqed_scf/sapt/qed_sapt0.py:710] ×24
+      │  │  │  │  │     └─ QEDSAPT0Driver._validate_operator_context  [cqed_scf/sapt/qed_sapt0.py:687] ×24
+      │  │  │  │  └─ QEDSAPT0Driver._vt_nuc_rep_for_context  [cqed_scf/sapt/qed_sapt0.py:728] ×12
+      │  │  │  │     └─ QEDSAPT0Driver._validate_operator_context  [cqed_scf/sapt/qed_sapt0.py:687] ×12
+      │  │  │  └─ QEDSAPT0Driver._sum_vt_parts  [cqed_scf/sapt/qed_sapt0.py:740] ×12
+      │  │  └─ QEDSAPT0Driver.s  [cqed_scf/sapt/qed_sapt0.py:823] ×36
+      │  ├─ <module>  [cqed_scf/sapt/qed_sapt_jk.py:1]
+      │  └─ print_sapt_summary  [cqed_scf/sapt/qed_sapt_jk.py:41]
+      │     ├─ banner  [cqed_scf/output.py:84]
+      │     │  └─ is_quiet  [cqed_scf/output.py:40]
+      │     ├─ echo  [cqed_scf/output.py:75] ×10
+      │     │  └─ is_quiet  [cqed_scf/output.py:40] ×10
+      │     └─ sapt_component  [cqed_scf/output.py:144]
+      │        └─ property_  [cqed_scf/output.py:93]
+      │           └─ is_quiet  [cqed_scf/output.py:40]
+      └─ QEDSAPT0Driver._build_results  [cqed_scf/sapt/qed_sapt0.py:1605]
+         └─ QEDSAPT0Driver.dispersion_energy_partition  [cqed_scf/sapt/qed_sapt0.py:1404]
+            ├─ QEDSAPT0Driver._dispersion_numerator  [cqed_scf/sapt/qed_sapt0.py:1317] ×2
+            │  └─ QEDSAPT0Driver.v  [cqed_scf/sapt/qed_sapt0.py:747] ×2
+            │     ├─ QEDSAPT0Driver._pauli_fierz_df  [cqed_scf/sapt/qed_sapt0.py:609] ×2
+            │     └─ PauliFierzDF.v  [cqed_scf/sapt/dse_df.py:222] ×2
+            │        └─ PauliFierzDF.b  [cqed_scf/sapt/dse_df.py:201] ×4
+            │           └─ PauliFierzDF._aux_slice  [cqed_scf/sapt/dse_df.py:189] ×4
+            ├─ QEDSAPT0Driver._dispersion_denominator  [cqed_scf/sapt/qed_sapt0.py:1303]
+            │  └─ QEDSAPT0Driver.eps  [cqed_scf/sapt/qed_sapt0.py:839] ×4
+            └─ QEDSAPT0Driver.dispersion_energy_partition.<locals>._energy  [cqed_scf/sapt/qed_sapt0.py:1425] ×3
