@@ -1,132 +1,62 @@
-import numpy as np
+import importlib.util
+import json
+from pathlib import Path
+
 import pytest
 
-from cqed_scf import CQEDCalculator, CQEDConfig
+from cqed_scf import CQEDConfig
+from cqed_scf.uscf import CQEDUSCF
 
 
-def test_water_singlet_matches_psi4_reference():
-    # Define water from psi4numpy tutorial example
-    WATER_SINGLET_MOL_STR = """
-    0 1
-    O
-    H 1 1.1
-    H 1 1.1 2 104
-    symmetry c1
-    """
+REFERENCE_DIR = (
+    Path(__file__).parents[1]
+    / "examples"
+    / "canonical"
+    / "Unrestricted_Test_Examples"
+)
 
-    # Set options from psi4numpy tutorial example
-    WATER_SINGLET_PSI4_OPTIONS = {'guess': 'core',
-                    'basis': 'cc-pvdz',
-                    'scf_type': 'pk',
-                    'e_convergence': 1e-8,
-                    'd_convergence': 5e-7}
 
-    WATER_CONFIG = CQEDConfig(
-        lambda_vector=np.array([0.0, 0.0, 0.0]),
-        omega=0.0,
-        psi4_options=WATER_SINGLET_PSI4_OPTIONS,
-        reference="uhf",
-        functional=None,
-        density_fitting=False,
-        charge=0,
-        multiplicity=1,
-        dispersion_policy="none",
-        debug=False,
-        quiet=True,  # SILENT: suppress all stdout (CQED-SCF + Psi4 engine output)
+def _load_system_definitions():
+    spec = importlib.util.spec_from_file_location(
+        "unrestricted_reference_systems", REFERENCE_DIR / "systems.py"
     )
-        
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
-    EXPECTED_WATER_SINGLET_ENERGY = -7.598979579E+01 # cc-pVDZ
 
-    WATER_CALC = CQEDCalculator(config=WATER_CONFIG)
-    WATER_ENERGY = WATER_CALC.energy(WATER_SINGLET_MOL_STR)
-    assert np.isclose(WATER_ENERGY, EXPECTED_WATER_SINGLET_ENERGY, rtol=1e-6), f"Expected {EXPECTED_WATER_SINGLET_ENERGY}, but got {WATER_ENERGY}"
+SYSTEM_DEFINITIONS = _load_system_definitions()
+with (REFERENCE_DIR / "psi4_reference_energies.json").open() as handle:
+    PSI4_REFERENCES = json.load(handle)
+
 
 @pytest.mark.slow
-def test_hydroxyl_doublet_matches_psi4_reference():
-
-    HYDROXYL_DOUBLET_MOL_STR = """
-    0 2
-    O
-    H 1 0.9697
-    symmetry c1
-    """
-    HYDROXYL_CONFIG = CQEDConfig(
-        lambda_vector=np.array([0.0, 0.0, 0.0]),
-        omega=0.0,
-        psi4_options={'basis': '6-311+G*', 'scf_type': 'pk', 'e_convergence': 1e-8, 'd_convergence': 5e-7},
+@pytest.mark.parametrize("system_name", ["oh_radical", "o2_triplet", "nh_triplet"])
+def test_canonical_uhf_energy_and_spin_match_psi4(system_name):
+    system = SYSTEM_DEFINITIONS.SYSTEMS[system_name]
+    reference = PSI4_REFERENCES["systems"][system_name]["methods"]["uhf"]
+    psi4_options = SYSTEM_DEFINITIONS.base_psi4_options("uhf")
+    psi4_options.pop("reference")
+    config = CQEDConfig(
+        lambda_vector=(0.0, 0.0, 0.0),
+        omega=SYSTEM_DEFINITIONS.OMEGA,
+        psi4_options=psi4_options,
         reference="uhf",
-        functional=None,
         density_fitting=False,
-        charge=0,
-        multiplicity=2,
+        charge=system["charge"],
+        multiplicity=system["multiplicity"],
         dispersion_policy="none",
-        debug=False,
-        quiet=True,  # SILENT: suppress all stdout (CQED-SCF + Psi4 engine output)
+        quiet=True,
     )
 
-    EXPECTED_HYDROXYL_DOUBLET_ENERGY = -7.540608221E+01 # 6-311+G* 
+    energy, results = CQEDUSCF(system["geometry"], config).run()
 
-    HYDROXYL_CALC = CQEDCalculator(config=HYDROXYL_CONFIG)
-    HYDROXYL_ENERGY = HYDROXYL_CALC.energy(HYDROXYL_DOUBLET_MOL_STR)
-    assert np.isclose(HYDROXYL_ENERGY, EXPECTED_HYDROXYL_DOUBLET_ENERGY, rtol=1e-6), f"Expected {EXPECTED_HYDROXYL_DOUBLET_ENERGY}, but got {HYDROXYL_ENERGY}"
-
-def test_oxygen_triplet_matches_psi4_reference():
-
-    OXYGEN_TRIPLET_MOL_STR = """
-    0 3
-    O
-    O 1 1.210 
-    symmetry c1
-    """
-
-    EXPECTED_OXYGEN_TRIPLET_ENERGY = -1.496590418E+02 # 6-311+G*
-
-    OXYGEN_TRIPLET_CONFIG = CQEDConfig(
-        lambda_vector=np.array([0.0, 0.0, 0.0]),
-        omega=0.0,
-        psi4_options={'basis': '6-311+G*', 'scf_type': 'pk', 'e_convergence': 1e-8, 'd_convergence': 5e-7},
-        reference="uhf",
-        functional=None,
-        density_fitting=False,
-        charge=0,
-        multiplicity=3,
-        dispersion_policy="none",
-        debug=False,
-        quiet=True,  # SILENT: suppress all stdout (CQED-SCF + Psi4 engine output)
+    assert energy == pytest.approx(reference["energy"], abs=1.0e-9, rel=0.0)
+    assert results["s_squared"] == pytest.approx(
+        reference["s_squared"], abs=1.0e-8, rel=0.0
     )
-
-    OXYGEN_CALC = CQEDCalculator(config=OXYGEN_TRIPLET_CONFIG)
-    OXYGEN_ENERGY = OXYGEN_CALC.energy(OXYGEN_TRIPLET_MOL_STR)
-    assert np.isclose(OXYGEN_ENERGY, EXPECTED_OXYGEN_TRIPLET_ENERGY, rtol=1e-6), f"Expected {EXPECTED_OXYGEN_TRIPLET_ENERGY}, but got {OXYGEN_ENERGY}"
-
-
-
-def test_imidogen_triplet_matches_psi4_reference():
-
-    IMIDOGEN_TRIPLET_MOL_STR = """
-    0 3
-    N
-    H 1 1.06
-    symmetry c1
-    """
-
-    EXPECTED_IMIDOGEN_TRIPLET_ENERGY = -5.497317027E+01 # 6-311+G*
-
-    IMIDOGEN_TRIPLET_CONFIG = CQEDConfig(
-        lambda_vector=np.array([0.0, 0.0, 0.0]),
-        omega=0.0,
-        psi4_options={'basis': '6-311+G*', 'scf_type': 'pk', 'e_convergence': 1e-8, 'd_convergence': 5e-6},
-        reference="uhf",
-        functional=None,
-        density_fitting=False,
-        charge=0,
-        multiplicity=3,
-        dispersion_policy="none",
-        debug=False,
-        quiet=True,  # SILENT: suppress all stdout (CQED-SCF + Psi4 engine output)
+    assert results["spin_contamination"] == pytest.approx(
+        reference["spin_contamination"], abs=1.0e-8, rel=0.0
     )
-
-    IMIDOGEN_CALC = CQEDCalculator(config=IMIDOGEN_TRIPLET_CONFIG)
-    IMIDOGEN_ENERGY = IMIDOGEN_CALC.energy(IMIDOGEN_TRIPLET_MOL_STR)
-    assert np.isclose(IMIDOGEN_ENERGY, EXPECTED_IMIDOGEN_TRIPLET_ENERGY, rtol=1e-6), f"Expected {EXPECTED_IMIDOGEN_TRIPLET_ENERGY}, but got {IMIDOGEN_ENERGY}"
+    assert isinstance(results["s_squared"], float)
+    assert isinstance(results["spin_contamination"], float)

@@ -15,8 +15,9 @@
           "nalpha": 5,
           "nbeta": 4,
           "nbf": 29,
-          "s_squared": 0.7557636944483495,
+          "s_squared": 0.7557636944483499,
           "s_squared_exact": 0.75,
+          "spin_contamination": 0.005763694448349899,
           "nuclear_repulsion": 4.3674999333127,
           "scf_dipole_au": [
             -7.023872128901792e-16,
@@ -31,6 +32,7 @@
           "nbf": 29,
           "s_squared": 0.7523114960220298,
           "s_squared_exact": 0.75,
+          "spin_contamination": 0.0023114960220298464,
           "nuclear_repulsion": 4.3674999333127,
           "scf_dipole_au": [
             1.2648262714709343e-15,
@@ -53,6 +55,7 @@
           "nbf": 44,
           "s_squared": 2.044794422430365,
           "s_squared_exact": 2.0,
+          "spin_contamination": 0.04479442243036491,
           "nuclear_repulsion": 28.047023223532534,
           "scf_dipole_au": [
             -5.28960939629764e-15,
@@ -67,6 +70,7 @@
           "nbf": 44,
           "s_squared": 2.0093708656871723,
           "s_squared_exact": 2.0,
+          "spin_contamination": 0.00937086568717227,
           "nuclear_repulsion": 28.047023223532534,
           "scf_dipole_au": [
             2.0711484556741783e-16,
@@ -89,6 +93,7 @@
           "nbf": 29,
           "s_squared": 2.015795723839683,
           "s_squared_exact": 2.0,
+          "spin_contamination": 0.015795723839683085,
           "nuclear_repulsion": 3.57483157179116,
           "scf_dipole_au": [
             -2.02482925239064e-15,
@@ -101,8 +106,9 @@
           "nalpha": 5,
           "nbeta": 3,
           "nbf": 29,
-          "s_squared": 2.005948746133365,
+          "s_squared": 2.0059487461333645,
           "s_squared_exact": 2.0,
+          "spin_contamination": 0.005948746133364491,
           "nuclear_repulsion": 3.57483157179116,
           "scf_dipole_au": [
             -1.7471070233288706e-15,

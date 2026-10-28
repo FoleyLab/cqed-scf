@@ -43,8 +43,8 @@ def spin_squared(wfn):
     Cb = np.asarray(wfn.Cb_subset("AO", "OCC"))
     na, nb = wfn.nalpha(), wfn.nbeta()
     sz = 0.5 * (na - nb)
-    overlap = Ca.T @ S @ Cb
-    return sz * (sz + 1.0) + nb - np.sum(overlap ** 2)
+    overlap = Ca.conj().T @ S @ Cb
+    return float(sz**2 + 0.5 * (na + nb) - np.real(np.vdot(overlap, overlap)))
 
 
 def run_one(name, spec, method):
@@ -63,14 +63,18 @@ def run_one(name, spec, method):
     psi4_method = "scf" if method == "uhf" else FUNCTIONAL
     energy, wfn = psi4.energy(psi4_method, molecule=mol, return_wfn=True)
 
+    s_squared = spin_squared(wfn)
+    s_target = 0.5 * abs(wfn.nalpha() - wfn.nbeta())
+    s_squared_exact = s_target * (s_target + 1.0)
+
     return {
         "energy": float(energy),
         "nalpha": int(wfn.nalpha()),
         "nbeta": int(wfn.nbeta()),
         "nbf": int(wfn.basisset().nbf()),
-        "s_squared": float(spin_squared(wfn)),
-        "s_squared_exact": float(0.5 * (wfn.nalpha() - wfn.nbeta())
-                                 * (0.5 * (wfn.nalpha() - wfn.nbeta()) + 1.0)),
+        "s_squared": s_squared,
+        "s_squared_exact": float(s_squared_exact),
+        "spin_contamination": float(s_squared - s_squared_exact),
         "nuclear_repulsion": float(mol.nuclear_repulsion_energy()),
         "scf_dipole_au": [float(x) for x in np.asarray(psi4.variable("SCF DIPOLE"))],
     }

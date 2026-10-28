@@ -8,8 +8,7 @@ is ``"uhf"`` or ``"uks"``.
 The surrounding plumbing is complete: :class:`CQEDConfig` accepts and validates
 unrestricted references, the calculator checks the geometry's charge and
 multiplicity against the config and dispatches here, and gradients and response
-theory refuse unrestricted references up front.  What is missing is the physics
-below.
+theory refuse unrestricted references up front.
 
 Reference energies to implement against live in
 ``examples/canonical/Unrestricted_Test_Examples/`` (Psi4 for UHF/UKS, Hilbert
@@ -56,6 +55,7 @@ key                          meaning
 ``orbital_energies_a/_b``    alpha/beta orbital energies
 ``nalpha``, ``nbeta``        occupied counts per spin
 ``s_squared``                <S^2> for the converged determinant
+``spin_contamination``       <S^2> minus the target-spin eigenvalue
 ===========================  ==================================================
 
 Keep ``density``, ``coefficients``, ``orbital_energies``, and ``ndocc`` out of
@@ -69,13 +69,30 @@ from __future__ import annotations
 
 from typing import Any
 
-from .references import CQEDConfig
-import time
-
-import psi4
 import numpy as np
-import opt_einsum as oe
+import psi4
+
 from . import output
+from .references import CQEDConfig
+
+
+def _spin_diagnostics(Ca_occ, Cb_occ, S, nalpha, nbeta):
+    """Return ``(<S^2>, spin contamination)`` for one UHF determinant.
+
+    The occupied-orbital overlap may be complex even though the current SCF
+    driver uses real orbitals, so its squared Frobenius norm is deliberately
+    evaluated with :func:`numpy.vdot`.
+    """
+
+    S_ab = Ca_occ.conj().T @ S @ Cb_occ
+    overlap_norm = float(np.real(np.vdot(S_ab, S_ab)))
+
+    m_s = 0.5 * (nalpha - nbeta)
+    s_squared = m_s**2 + 0.5 * (nalpha + nbeta) - overlap_norm
+
+    s_target = 0.5 * abs(nalpha - nbeta)
+    spin_contamination = s_squared - s_target * (s_target + 1.0)
+    return float(np.real(s_squared)), float(np.real(spin_contamination))
 
 # ==> Define function to diagonalize F -- directly from psi4numpy <==
 def diag_F(A, F, norb):
@@ -170,7 +187,7 @@ class CQEDUSCF:
         self.geometry = geometry
         # config will have the psi4 options and the CQED options
         self.config = config
-        functional = config.functional
+        functional = config.base_scf_functional
         self.functional = functional
         self.density_fitting = config.density_fitting
         self.psi4_options = config.psi4_options
@@ -191,6 +208,8 @@ class CQEDUSCF:
             raise ValueError("functional must be provided for method='uks' or 'hybrid'")
 
         self.is_dft = self.method in ("uks", "hybrid")
+        self.x_alpha = 1.0
+        self.x_beta = 0.0
         
 
     def run(self):
@@ -207,7 +226,6 @@ class CQEDUSCF:
         self._prepare_options()
 
         self.mol = psi4.geometry(self.geometry)
-        psi4.set_options(self.config.psi4_options)
 
         # run psi4 to get the reference energy and wavefunction
         ref_method = self._reference_method_string()
@@ -260,24 +278,6 @@ class CQEDUSCF:
         self.eps_b = np.array(self.wfn.epsilon_b(), copy=True)
 
 
-        # Memory check for ERI tensor
-        # ==> Set Basic Psi4 Options <==
-        # Memory specification
-        psi4.set_memory(int(5e8))
-        numpy_memory = 2
-        I_size = (nbf**4) * 8.e-9
-        print('\nSize of the ERI tensor will be {:4.2f} GB.'.format(I_size))
-        if I_size > numpy_memory:
-            psi4.core.clean()
-            raise Exception("Estimated memory utilization (%4.2f GB) exceeds allotted memory \
-                            limit of %4.2f GB." % (I_size, numpy_memory))
-
-        # Build ERI Tensor, call it `I`
-        # Hint: np.asarray(mints.ao_eri()) gives the 4-index array (pq|rs) in chemist's notation
-        #<-- code goes here to build ERI tensor -->
-        I = np.asarray(mints.ao_eri())
-
-
         # Build core Hamiltonian
         # Recall for QED-UHF, H_0 = T + V + Q_PF - <d> d
 
@@ -320,21 +320,7 @@ class CQEDUSCF:
         # recall d_ao = sum(lambda_i * mu_i for i in range(3)), with lambda from self.config.lambda_vector
         mu = [np.asarray(x) for x in mints.ao_dipole()]
 
-        pythonic_start = time.perf_counter()
         d_ao = sum(lambda_i * mu_i for lambda_i, mu_i in zip(self.config.lambda_vector, mu))
-        pythonic_end = time.perf_counter()
-
-        #naive_start = time.perf_counter()
-        #d_ao = self.config.lambda_vector[0] * mu[:,:,0] + self.config.lambda_vector[1] * mu[:,:,1] + self.config.lambda_vector[2] * mu[:,:,2]
-        #naive_end = time.perf_counter()
-
-        #einsum_start = time.perf_counter()
-        #d_ao = oe.contract("i,jki->jk", self.config.lambda_vector, mu)
-        #einsum_end = time.perf_counter()
-
-        print(F"Time required to compute d_ao the pythonic way is {pythonic_end - pythonic_start:12.5e} s")
-        #print(F"Time required to compute d_ao the naive way is {naive_end - naive_start:12.5e} s")
-        #print(F"Time required to compute d_ao the einsum way is {einsum_end - einsum_start:12.5e} s")
 
 
         #<-- code to compute dipole expectation value <d> -->
@@ -364,6 +350,10 @@ class CQEDUSCF:
         #<-- code goes here to get nuclear repulsion energy -->
         E_nuc = self.mol.nuclear_repulsion_energy()
 
+        if self.is_dft:
+            self._build_vbase()
+        self._build_jk()
+
         # pre-iteration values
         SCF_E = 0.0
         SCF_E_old = 0.0
@@ -385,40 +375,34 @@ class CQEDUSCF:
         diis_start = 2
 
         for it in range(1, max_iter + 1):
-            # build Ja and Jb matrices using the ERI tensor and the alpha and beta densities
-            # recall definition Jx_{pq} = sum_{rs} (pq|rs) D_x^{rs}
-            #<-- code goes here to build `Ja` and `Jb` matrices -->
-            J_a = np.einsum('pqrs,rs->pq', I, Da)
-            J_b = np.einsum('pqrs,rs->pq', I, Db)
+            Cocc_a = Ca[:, :nalpha]
+            Cocc_b = Cb[:, :nbeta]
+            J_a, J_b, K_a, K_b, wK_a, wK_b = self._build_JK(
+                Cocc_a, Cocc_b
+            )
+            J = J_a + J_b
 
-            # build `J_dse_a` and `J_dse_b` matrices using the dipole matrix and the dipole expectation value
-            # recall definition J_dse_x_{pq} = sum_{rs} d_pq d_rs D_x^{rs} = <d>_x d_pq
-            #<-- code goes here to build `J_dse_a` and `J_dse_b` matrices -->
+            # Direct and exchange pieces of the separable dipole self-energy.
             J_dse_a = np.einsum('pq,rs,rs->pq', d_ao, d_ao, Da)
             J_dse_b = np.einsum('pq,rs,rs->pq', d_ao, d_ao, Db)
-
-            # build `Ka` and `Kb` matrices
-            # recall definition Kx_{pq} = sum_{rs} (pr|qs) D_x^{rs}
-            #<-- code goes here to build `Ka` and `Kb` matrices -->
-            K_a = np.einsum('prqs,rs->pq', I, Da)
-            K_b = np.einsum('prqs,rs->pq', I, Db)
-
-            # build `K_dse_a` and `K_dse_b` matrices using the dipole matrix and the dipole expectation value
-            # recall definition K_dse_x_{pq} = sum_{rs} d_pr d_qs D_x^{rs}
-            # (in matrix form this is just d_ao @ D_x @ d_ao)
-            #<-- code goes here to build `K_dse_a` and `K_dse_b` matrices -->
             K_dse_a = d_ao @ Da @ d_ao
             K_dse_b = d_ao @ Db @ d_ao
 
-            # build Fock matrices for alpha and beta
-            # Recall F_x = H_0 + J_a + J_b - K_x + J_dse_a + J_dse_b - K_dse_x
-            # where x is alpha or beta
-            #<-- code goes here to build `Fa` and `Fb` matrices -->
-            ### COMMENTING FULL CAVITY TERM OUT HERE!
-            #####Fa = H_0 + J_a + J_b - K_a + J_dse_a + J_dse_b - K_dse_a
-            #####Fb = H_0 + J_a + J_b - K_b + J_dse_a + J_dse_b - K_dse_a
-            Fa = H_0 + J_a + J_b - K_a + J_dse_a + J_dse_b - K_dse_a
-            Fb = H_0 + J_a + J_b - K_b + J_dse_a + J_dse_b - K_dse_b
+            J_dse = J_dse_a + J_dse_b
+            if self.method == "uhf":
+                Fa = H_0 + J - K_a + J_dse - K_dse_a
+                Fb = H_0 + J - K_b + J_dse - K_dse_b
+                Exc = None
+            else:
+                Exc, Vxc_a, Vxc_b = self._build_xc(Da, Db)
+                Fa = H_0 + J + Vxc_a + J_dse - K_dse_a
+                Fb = H_0 + J + Vxc_b + J_dse - K_dse_b
+                if K_a is not None:
+                    Fa -= self.x_alpha * K_a
+                    Fb -= self.x_alpha * K_b
+                if wK_a is not None:
+                    Fa -= self.x_beta * wK_a
+                    Fb -= self.x_beta * wK_b
 
             # DIIS error vectors (orthogonalized FDS - SDF)
             diis_r_a = A.dot(Fa.dot(Da).dot(S) - S.dot(Da).dot(Fa)).dot(A)
@@ -443,7 +427,34 @@ class CQEDUSCF:
             # The constant 0.5 * <d>^2 is needed so that all <d>-dependent terms cancel in the energy
             # (it vanishes when lambda = 0, so the cavity-free tests cannot catch it if it is missing!)
             #<-- code goes here to compute QED-UHF energy -->
-            SCF_E = 0.5 * np.trace((Da + Db) @ H_0) + 0.5 * np.trace(Da @ Fa) + 0.5 * np.trace(Db @ Fb) + E_nuc + 0.5 * d_exp ** 2
+            Dt = Da + Db
+            if self.method == "uhf":
+                SCF_E = (
+                    0.5 * np.trace(Dt @ H_0)
+                    + 0.5 * np.trace(Da @ Fa)
+                    + 0.5 * np.trace(Db @ Fb)
+                    + E_nuc
+                    + 0.5 * d_exp**2
+                )
+            else:
+                SCF_E = (
+                    np.trace(Dt @ H_0)
+                    + 0.5 * np.trace(Dt @ J)
+                    + Exc
+                    + E_nuc
+                    + 0.5 * np.trace(Dt @ J_dse)
+                    - 0.5 * np.trace(Da @ K_dse_a)
+                    - 0.5 * np.trace(Db @ K_dse_b)
+                    + 0.5 * d_exp**2
+                )
+                if K_a is not None:
+                    SCF_E -= 0.5 * self.x_alpha * (
+                        np.trace(Da @ K_a) + np.trace(Db @ K_b)
+                    )
+                if wK_a is not None:
+                    SCF_E -= 0.5 * self.x_beta * (
+                        np.trace(Da @ wK_a) + np.trace(Db @ wK_b)
+                    )
 
             dE = SCF_E - SCF_E_old
             dRMS = 0.5 * (np.mean(diis_r_a**2) + np.mean(diis_r_b**2)) ** 0.5
@@ -475,6 +486,13 @@ class CQEDUSCF:
                 psi4.core.clean()
                 raise Exception(f"SCF did not converge in {max_iter} iterations.")
 
+        # Compute diagnostics from the final converged CQED orbitals, not the
+        # original Psi4 reference orbitals used as the initial guess.
+        s_squared, spin_contamination = _spin_diagnostics(
+            Ca[:, :nalpha], Cb[:, :nbeta], S, nalpha, nbeta
+        )
+        print(f"<S^2> = {s_squared:.6f}, spin contamination = {spin_contamination:.6f}")
+
         # results dictionary to return
         results = {
           "energy_scf": SCF_E,
@@ -487,16 +505,83 @@ class CQEDUSCF:
           "orbital_energies_b": self.eps_b,
           "nalpha": nalpha,
           "nbeta": nbeta,
-          "s_squared": nalpha-nbeta,
+          "s_squared": s_squared,
+          "spin_contamination": spin_contamination,
         }
 
         return SCF_E, results
 
+    def _build_vbase(self):
+        """Initialize an unrestricted numerical XC potential."""
 
-        
+        self.Vpot = psi4.core.VBase.build(
+            self.wfn.basisset(), self.wfn.functional(), "UV"
+        )
+        self.Vpot.initialize()
+        functional = self.Vpot.functional()
+        self.x_alpha = float(functional.x_alpha())
+        self.x_beta = float(functional.x_beta())
 
+    def _build_jk(self):
+        """Initialize Psi4's integral-direct or density-fitted JK builder."""
 
+        functional = self.Vpot.functional() if self.is_dft else None
+        self.jk = psi4.core.JK.build(self.wfn.basisset())
+        self.jk.set_memory(int(5e8))
 
+        if hasattr(self.jk, "set_do_J"):
+            self.jk.set_do_J(True)
+        if self.is_dft:
+            if hasattr(self.jk, "set_do_K"):
+                self.jk.set_do_K(functional.is_x_hybrid())
+            if hasattr(self.jk, "set_do_wK"):
+                self.jk.set_do_wK(functional.is_x_lrc())
+            omega = float(functional.x_omega())
+            if omega != 0.0:
+                self.jk.set_omega(omega)
+        else:
+            if hasattr(self.jk, "set_do_K"):
+                self.jk.set_do_K(True)
+            if hasattr(self.jk, "set_do_wK"):
+                self.jk.set_do_wK(False)
+
+        self.jk.initialize()
+
+    def _build_JK(self, Cocc_a, Cocc_b):
+        """Build spin-resolved J/K matrices in one Psi4 JK batch."""
+
+        self.jk.C_clear()
+        self.jk.C_left_add(psi4.core.Matrix.from_array(Cocc_a))
+        self.jk.C_left_add(psi4.core.Matrix.from_array(Cocc_b))
+        self.jk.compute()
+
+        J = [np.array(matrix, copy=True) for matrix in self.jk.J()]
+
+        K = [None, None]
+        K_p4 = self.jk.K()
+        if K_p4 is not None and len(K_p4) == 2:
+            K = [np.array(matrix, copy=True) for matrix in K_p4]
+
+        wK = [None, None]
+        if hasattr(self.jk, "wK"):
+            wK_p4 = self.jk.wK()
+            if wK_p4 is not None and len(wK_p4) == 2:
+                wK = [np.array(matrix, copy=True) for matrix in wK_p4]
+
+        return J[0], J[1], K[0], K[1], wK[0], wK[1]
+
+    def _build_xc(self, Da, Db):
+        """Return unrestricted XC energy and alpha/beta AO potentials."""
+
+        Da_p4 = psi4.core.Matrix.from_array(Da)
+        Db_p4 = psi4.core.Matrix.from_array(Db)
+        Va_p4 = psi4.core.Matrix(self.wfn.nso(), self.wfn.nso())
+        Vb_p4 = psi4.core.Matrix(self.wfn.nso(), self.wfn.nso())
+
+        self.Vpot.set_D([Da_p4, Db_p4])
+        self.Vpot.compute_V([Va_p4, Vb_p4])
+        Exc = float(self.Vpot.quadrature_values()["FUNCTIONAL"])
+        return Exc, np.array(Va_p4, copy=True), np.array(Vb_p4, copy=True)
 
     def _prepare_options(self):
         opts = dict(self.config.psi4_options)

@@ -209,14 +209,19 @@ def build_calculator(**overrides):
     ],
     ids=["uhf", "uks"],
 )
-def test_energy_dispatches_to_uscf(overrides):
+def test_energy_dispatches_to_uscf(overrides, monkeypatch):
     """Validation passes and dispatch lands in CQEDUSCF, not the restricted engine."""
+    calls = []
+
+    def fake_run(engine):
+        calls.append(engine.method)
+        return -1.25, {"energy_psi4": -1.25}
+
+    monkeypatch.setattr("cqed_scf.uscf.CQEDUSCF.run", fake_run)
     calc = build_calculator(**overrides)
-    with pytest.raises(NotImplementedError) as excinfo:
-        calc.energy(OH_DOUBLET)
-    message = str(excinfo.value)
-    assert "Unrestricted CQED-SCF physics is not implemented" in message
-    assert overrides["reference"] in message
+    energy = calc.energy(OH_DOUBLET)
+    assert energy == pytest.approx(-1.25)
+    assert calls == [overrides["reference"]]
 
 
 def test_energy_rejects_mismatched_geometry_before_running():
