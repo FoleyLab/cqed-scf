@@ -187,27 +187,28 @@ class CQEDUSCF:
         self.geometry = geometry
         # config will have the psi4 options and the CQED options
         self.config = config
-        functional = config.base_scf_functional
-        self.functional = functional
+        self.functional = config.base_scf_functional
         self.density_fitting = config.density_fitting
         self.psi4_options = config.psi4_options
 
 
-        # infer method if not explicitly provided
-        if method is None:
-            self.method = "uks" if functional is not None else "uhf"
-        else:
-            self.method = method.lower()
+        # The reference, rather than the presence of an unrelated functional,
+        # selects the unrestricted SCF model.  In particular, CQEDConfig
+        # deliberately exposes base_scf_functional=None for a UHF reference
+        # even when its general ``functional`` field is populated.
+        self.method = config.reference
+        if self.method not in ("uhf", "uks"):
+            raise ValueError("CQEDUSCF requires config.reference='uhf' or 'uks'")
+        if method is not None and method.lower() != self.method:
+            raise ValueError(
+                f"method={method!r} conflicts with config.reference={self.method!r}"
+            )
+        if self.method == "uks" and self.functional is None:
+            raise ValueError(
+                "config.base_scf_functional is required for reference='uks'"
+            )
 
-
-
-        if self.method not in ("uhf", "uks", "hybrid"):
-            raise ValueError("method must be 'uhf', 'uks', or 'hybrid'")
-
-        if self.method in ("uks", "hybrid") and self.functional is None:
-            raise ValueError("functional must be provided for method='uks' or 'hybrid'")
-
-        self.is_dft = self.method in ("uks", "hybrid")
+        self.is_dft = self.method == "uks"
         self.x_alpha = 1.0
         self.x_beta = 0.0
         
@@ -274,8 +275,8 @@ class CQEDUSCF:
         # not from the Psi4 orbitals)
         # Hint: self.wfn.epsilon_a() and self.wfn.epsilon_b(), copied into NumPy arrays
         #<-- code goes here to get orbital energies -->
-        self.eps_a = np.array(self.wfn.epsilon_a(), copy=True)
-        self.eps_b = np.array(self.wfn.epsilon_b(), copy=True)
+        eps_reference_a = np.array(self.wfn.epsilon_a(), copy=True)
+        eps_reference_b = np.array(self.wfn.epsilon_b(), copy=True)
 
 
         # Build core Hamiltonian
@@ -342,8 +343,11 @@ class CQEDUSCF:
         l = self.config.lambda_vector
         Q_PF = -0.5 * (l[0]**2 * Q[0] + l[1]**2 * Q[3] + l[2]**2 * Q[5]) - (l[0]*l[1]*Q[1] + l[0]*l[2]*Q[2] + l[1]*l[2]*Q[4])
 
-        #<-- code goes here to build the QED-UHF core Hamiltonian `H_0` = H_canonical + Q_PF - <d> d_ao -->
-        H_0 = H_canonical + Q_PF - d_exp * d_ao
+        # Simplified Pauli--Fierz one-electron Hamiltonian.  The coherent-state
+        # -<d>d term cancels the DSE Coulomb contribution exactly, so neither
+        # belongs in the production UHF Fock build.
+        H = H_canonical + Q_PF
+        H_0 = H - d_exp * d_ao  # retained only for the UKS implementation
 
         # get nuclear repulsion energy, call it `E_nuc`
         # Hint: self.mol.nuclear_repulsion_energy()
@@ -382,18 +386,20 @@ class CQEDUSCF:
             )
             J = J_a + J_b
 
-            # Direct and exchange pieces of the separable dipole self-energy.
-            J_dse_a = np.einsum('pq,rs,rs->pq', d_ao, d_ao, Da)
-            J_dse_b = np.einsum('pq,rs,rs->pq', d_ao, d_ao, Db)
-            K_dse_a = d_ao @ Da @ d_ao
-            K_dse_b = d_ao @ Db @ d_ao
-
-            J_dse = J_dse_a + J_dse_b
             if self.method == "uhf":
-                Fa = H_0 + J - K_a + J_dse - K_dse_a
-                Fb = H_0 + J - K_b + J_dse - K_dse_b
+                N_a = d_ao @ Da @ d_ao
+                N_b = d_ao @ Db @ d_ao
+                Fa = H + J - K_a - N_a
+                Fb = H + J - K_b - N_b
                 Exc = None
             else:
+                # UKS retains its established coherent-state expression until
+                # its own migration is validated against the Hilbert suite.
+                J_dse_a = d_ao * np.trace(d_ao @ Da)
+                J_dse_b = d_ao * np.trace(d_ao @ Db)
+                K_dse_a = d_ao @ Da @ d_ao
+                K_dse_b = d_ao @ Db @ d_ao
+                J_dse = J_dse_a + J_dse_b
                 Exc, Vxc_a, Vxc_b = self._build_xc(Da, Db)
                 Fa = H_0 + J + Vxc_a + J_dse - K_dse_a
                 Fb = H_0 + J + Vxc_b + J_dse - K_dse_b
@@ -422,19 +428,18 @@ class CQEDUSCF:
                 for _list in (F_list_a, F_list_b, R_list_a, R_list_b):
                     del _list[0]
 
-            # Compute QED-UHF energy, call it `SCF_E`
-            # Recall E_scf = 0.5 * (Tr((Da + Db) H_0) + Tr(Da Fa) + Tr(Db Fb)) + 0.5 * <d>^2 + E_nuc
-            # The constant 0.5 * <d>^2 is needed so that all <d>-dependent terms cancel in the energy
-            # (it vanishes when lambda = 0, so the cavity-free tests cannot catch it if it is missing!)
-            #<-- code goes here to compute QED-UHF energy -->
+            # Evaluate the spin-resolved energy with the same unextrapolated
+            # J/K matrices and densities that produced the Focks above.
             Dt = Da + Db
             if self.method == "uhf":
                 SCF_E = (
-                    0.5 * np.trace(Dt @ H_0)
-                    + 0.5 * np.trace(Da @ Fa)
-                    + 0.5 * np.trace(Db @ Fb)
+                    np.trace(H @ Dt)
+                    + 0.5 * np.trace(J @ Dt)
+                    - 0.5 * np.trace(K_a @ Da)
+                    - 0.5 * np.trace(K_b @ Db)
+                    - 0.5 * np.trace(N_a @ Da)
+                    - 0.5 * np.trace(N_b @ Db)
                     + E_nuc
-                    + 0.5 * d_exp**2
                 )
             else:
                 SCF_E = (
@@ -462,6 +467,11 @@ class CQEDUSCF:
 
             if (abs(dE) < e_conv) and (dRMS < d_conv):
                 print(f"SCF converged in {it} iterations.")
+                # Canonicalize the converged, unextrapolated CQED Focks.  DIIS
+                # is only an iteration accelerator; its extrapolated operator
+                # must not define the reported orbitals or orbital energies.
+                eps_a, Ca, Da = self._canonicalize(Fa, A, nalpha)
+                eps_b, Cb, Db = self._canonicalize(Fb, A, nbeta)
                 break
 
             SCF_E_old = SCF_E
@@ -501,8 +511,12 @@ class CQEDUSCF:
           "Cb": Cb,
           "Da": Da,
           "Db": Db,
-          "orbital_energies_a": self.eps_a,
-          "orbital_energies_b": self.eps_b,
+          "orbital_energies_a": eps_a,
+          "orbital_energies_b": eps_b,
+          "canonical_orbital_energies_a": eps_reference_a,
+          "canonical_orbital_energies_b": eps_reference_b,
+          "Fa": Fa,
+          "Fb": Fb,
           "nalpha": nalpha,
           "nbeta": nbeta,
           "s_squared": s_squared,
@@ -510,6 +524,16 @@ class CQEDUSCF:
         }
 
         return SCF_E, results
+
+    @staticmethod
+    def _canonicalize(F, A, nocc):
+        """Return eigenvalues, orbitals, and density for an AO Fock matrix."""
+
+        eps, C_orth = np.linalg.eigh(A @ F @ A)
+        C = A @ C_orth
+        Cocc = C[:, :nocc]
+        D = Cocc @ Cocc.T
+        return eps, C, D
 
     def _build_vbase(self):
         """Initialize an unrestricted numerical XC potential."""
