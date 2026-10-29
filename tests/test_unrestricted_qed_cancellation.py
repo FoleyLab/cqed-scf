@@ -16,12 +16,8 @@ from cqed_scf import CQEDConfig
 from cqed_scf import output
 from cqed_scf.uscf import CQEDUSCF
 
-
 REFERENCE_DIR = (
-    Path(__file__).parents[1]
-    / "examples"
-    / "canonical"
-    / "Unrestricted_Test_Examples"
+    Path(__file__).parents[1] / "examples" / "canonical" / "Unrestricted_Test_Examples"
 )
 
 
@@ -104,7 +100,11 @@ def cancellation_data(request):
     N_a = d @ Da @ d
     N_b = d @ Db @ d
 
+    # run() finalizes its Psi4 builders; create a fresh JK object for this
+    # independent reconstruction of the converged Focks.
+    engine._build_jk()
     J_a, J_b, K_a, K_b, _, _ = engine._build_JK(Ca_occ, Cb_occ)
+    engine._finalize_builders()
     J_total = J_a + J_b
 
     F_a_explicit = H + H_shift + J_total - K_a + J_DSE - N_a
@@ -113,9 +113,7 @@ def cancellation_data(request):
     F_b_simplified = H + J_total - K_b - N_b
 
     E_core_shift = float(np.trace(H_shift @ Dt))
-    E_J_DSE = float(
-        0.5 * np.trace(J_DSE @ Da) + 0.5 * np.trace(J_DSE @ Db)
-    )
+    E_J_DSE = float(0.5 * np.trace(J_DSE @ Da) + 0.5 * np.trace(J_DSE @ Db))
     E_scalar = 0.5 * x**2
 
     E_nuc = engine.mol.nuclear_repulsion_energy()
@@ -178,9 +176,9 @@ def test_unrestricted_dse_energy_cancellation_term_by_term(cancellation_data):
     assert data["E_core_shift"] == pytest.approx(-x_squared, abs=1.0e-12)
     assert data["E_J_DSE"] == pytest.approx(0.5 * x_squared, abs=1.0e-12)
     assert data["E_scalar"] == pytest.approx(0.5 * x_squared, abs=1.0e-12)
-    assert (
-        data["E_core_shift"] + data["E_J_DSE"] + data["E_scalar"]
-    ) == pytest.approx(0.0, abs=1.0e-12)
+    assert (data["E_core_shift"] + data["E_J_DSE"] + data["E_scalar"]) == pytest.approx(
+        0.0, abs=1.0e-12
+    )
 
 
 def test_explicit_and_simplified_focks_and_energies_agree(cancellation_data):

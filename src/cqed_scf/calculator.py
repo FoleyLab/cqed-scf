@@ -14,8 +14,8 @@ class CQEDCalculator:
 
     The constructor accepts either a :class:`CQEDConfig` or the original keyword
     arguments used by earlier versions of the package.  Restricted RHF/RKS work
-    is delegated to :class:`cqed_scf.scf.CQEDSCF`; unrestricted requests are
-    routed to placeholder drivers that document the intended future data flow.
+    is delegated to :class:`cqed_scf.scf.CQEDSCF`; unrestricted UHF/UKS energy
+    requests are delegated to :class:`cqed_scf.uscf.CQEDUSCF`.
     """
 
     def __init__(

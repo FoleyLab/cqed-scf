@@ -7,7 +7,6 @@ import pytest
 from cqed_scf import CQEDConfig
 from cqed_scf.uscf import CQEDUSCF
 
-
 OH_STO3G = """
 0 2
 O  0.0  0.0  0.0
@@ -100,9 +99,75 @@ def test_final_orbital_energies_belong_to_cqed_focks():
         np.testing.assert_allclose(
             F_mo - np.diag(np.diag(F_mo)), 0.0, atol=1e-10, rtol=0.0
         )
-        assert not np.shares_memory(
-            eps, results[f"canonical_orbital_energies_{spin}"]
-        )
+        assert not np.shares_memory(eps, results[f"canonical_orbital_energies_{spin}"])
+
+
+def test_unrestricted_results_are_explicitly_spin_resolved():
+    psi4.core.clean()
+    psi4.core.clean_options()
+    engine = CQEDUSCF(OH_STO3G, _config())
+    _, results = engine.run()
+
+    required = {
+        "Ca",
+        "Cb",
+        "Da",
+        "Db",
+        "Coa",
+        "Cob",
+        "Fa",
+        "Fb",
+        "orbital_energies_a",
+        "orbital_energies_b",
+        "canonical_orbital_energies_a",
+        "canonical_orbital_energies_b",
+        "reference_orbital_energies_a",
+        "reference_orbital_energies_b",
+        "nalpha",
+        "nbeta",
+        "s_squared",
+        "spin_contamination",
+        "method",
+        "reference",
+        "functional",
+        "density_fitting",
+        "scf_type",
+        "jk_type",
+    }
+    assert required <= results.keys()
+    assert {"density", "coefficients", "orbital_energies", "ndocc"}.isdisjoint(results)
+    np.testing.assert_allclose(results["Coa"], results["Ca"][:, : results["nalpha"]])
+    np.testing.assert_allclose(results["Cob"], results["Cb"][:, : results["nbeta"]])
+    assert results["method"] == results["reference"] == "uhf"
+    assert results["functional"] is None
+    assert results["scf_type"] == "pk"
+    assert engine.jk_finalized
+
+
+def test_uks_finalizes_jk_and_vbase():
+    config = CQEDConfig(
+        lambda_vector=(0.0, 0.0, 0.0),
+        omega=0.1,
+        psi4_options={
+            "basis": "sto-3g",
+            "scf_type": "pk",
+            "e_convergence": 1.0e-10,
+            "d_convergence": 1.0e-8,
+            "dft_spherical_points": 110,
+            "dft_radial_points": 50,
+        },
+        reference="uks",
+        functional="PBE0",
+        charge=0,
+        multiplicity=2,
+        dispersion_policy="none",
+        quiet=True,
+    )
+    engine = CQEDUSCF(OH_STO3G, config)
+    engine.run()
+
+    assert engine.jk_finalized
+    assert engine.vpot_finalized
 
 
 def test_uhf_reference_wins_over_unrelated_functional():

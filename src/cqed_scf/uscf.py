@@ -1,39 +1,10 @@
-"""Unrestricted CQED-SCF engine (UHF / UKS references).
+"""Unrestricted CQED-SCF engine for UHF and UKS references.
 
-The restricted engine in :mod:`cqed_scf.scf` handles closed-shell RHF and RKS.
-This module is its open-shell counterpart, reached automatically by
-:class:`~cqed_scf.calculator.CQEDCalculator` whenever the configured reference
-is ``"uhf"`` or ``"uks"``.
-
-The surrounding plumbing is complete: :class:`CQEDConfig` accepts and validates
-unrestricted references, the calculator checks the geometry's charge and
-multiplicity against the config and dispatches here, and gradients and response
-theory refuse unrestricted references up front.
-
-Reference energies to implement against live in
-``examples/canonical/Unrestricted_Test_Examples/`` (Psi4 for UHF/UKS, Hilbert
-``polaritonic_scf`` for QED-UHF/QED-UKS, cross-validated to <5e-13 Eh at
-lambda = 0).
-
-Implementation notes
---------------------
-Start from :class:`cqed_scf.scf.CQEDSCF` and split each spin channel:
-
-* Read the functional from ``config.base_scf_functional``, **not**
-  ``config.functional``.  The former returns ``None`` for ``"uhf"`` and strips
-  known dispersion suffixes; the latter would try to build a superfunctional for
-  a Hartree-Fock reference.
-* The restricted code carries an explicit factor of 2 throughout because its
-  ``D`` is the alpha density alone.  With separate ``Da``/``Db`` those factors
-  disappear and ``Dt = Da + Db`` takes their place -- in the Coulomb term, in the
-  dipole expectation value (``mu_el`` near ``scf.py:358``), and in the dipole self-energy.
-* :meth:`~cqed_scf.scf.CQEDSCF._build_JK` adds a single ``C_left_add(Cocc)``,
-  relying on ``J_alpha == J_beta``.  Unrestricted needs both occupied blocks
-  pushed through, with ``J`` summed over spins and ``K`` kept spin-resolved.
-* :meth:`~cqed_scf.scf.CQEDSCF._build_vbase` builds a ``"RV"`` potential.  UKS
-  needs ``"UV"``, with ``set_D([Da, Db])`` and ``compute_V([Va, Vb])``.
-* The DIIS subspace in ``scf.py`` stores flat error/Fock arrays.  Either keep two
-  subspaces or stack the alpha and beta errors into one vector.
+The returned result dictionary is deliberately spin resolved.  In particular,
+it does not expose the restricted-only keys ``density``, ``coefficients``,
+``orbital_energies``, or ``ndocc``: aliasing any of those names to one spin
+channel would allow restricted consumers to produce plausible but incorrect
+results.
 
 Return contract
 ---------------
@@ -41,9 +12,7 @@ Return contract
 returns that tuple unchanged, and :meth:`CQEDCalculator.energy` immediately reads
 ``results["energy_psi4"]``, so that key is mandatory.
 
-``results`` should carry the keys the restricted engine produces (see the dict
-built at the end of ``cqed_scf/scf.py``) so that shared consumers keep working,
-with these spin-resolved additions and substitutions:
+The core unrestricted keys are:
 
 ===========================  ==================================================
 key                          meaning
@@ -52,17 +21,18 @@ key                          meaning
 ``energy_psi4``              the underlying Psi4 UHF/UKS energy (**required**)
 ``Ca``, ``Cb``               alpha/beta MO coefficients
 ``Da``, ``Db``               alpha/beta AO densities (each *unscaled*)
+``Coa``, ``Cob``             occupied alpha/beta MO coefficients
+``Fa``, ``Fb``               converged alpha/beta AO Fock matrices
 ``orbital_energies_a/_b``    alpha/beta orbital energies
+``canonical_orbital_...``    cavity-free reference orbital energies
 ``nalpha``, ``nbeta``        occupied counts per spin
 ``s_squared``                <S^2> for the converged determinant
 ``spin_contamination``       <S^2> minus the target-spin eigenvalue
+``method``, ``reference``     unrestricted reference metadata
+``functional``               base functional for UKS, otherwise ``None``
+``scf_type``, ``jk_type``     requested SCF and actual JK backend metadata
 ===========================  ==================================================
 
-Keep ``density``, ``coefficients``, ``orbital_energies``, and ``ndocc`` out of
-the unrestricted dict rather than aliasing them to the alpha channel.  Several
-consumers (``cqed_scf.gradients``, ``cqed_scf.response``) read those keys and
-silently assume the restricted factor-of-2 convention; a missing key raises,
-while a plausible-looking alias would produce a wrong number.
 """
 
 from __future__ import annotations
@@ -94,43 +64,19 @@ def _spin_diagnostics(Ca_occ, Cb_occ, S, nalpha, nbeta):
     spin_contamination = s_squared - s_target * (s_target + 1.0)
     return float(np.real(s_squared)), float(np.real(spin_contamination))
 
-# ==> Define function to diagonalize F -- directly from psi4numpy <==
-def diag_F(A, F, norb):
+
+def _diagonalize_fock(A, F, nocc):
+    """Diagonalize an AO Fock matrix and form its unscaled spin density."""
+
     F_p = A.dot(F).dot(A)
     e, C_p = np.linalg.eigh(F_p)
     C = A.dot(C_p)
-    C_occ = C[:, :norb]
-    D = np.einsum('pi,qi->pq', C_occ, C_occ, optimize=True)
-    return (C, D)
+    C_occ = C[:, :nocc]
+    D = np.einsum("pi,qi->pq", C_occ, C_occ, optimize=True)
+    return C, D
 
-# ==> Build DIIS Extrapolation Function - directly from psi4numpy <==
-def diis_xtrap(F_list, DIIS_RESID):
-    # Build B matrix
-    B_dim = len(F_list) + 1
-    B = np.empty((B_dim, B_dim))
-    B[-1, :] = -1
-    B[:, -1] = -1
-    B[-1, -1] = 0
-    for i in range(len(F_list)):
-        for j in range(len(F_list)):
-            B[i, j] = np.einsum('ij,ij->', DIIS_RESID[i], DIIS_RESID[j], optimize=True)
 
-    # Build RHS of Pulay equation 
-    rhs = np.zeros((B_dim))
-    rhs[-1] = -1
-      
-    # Solve Pulay equation for c_i's with NumPy
-    coeff = np.linalg.solve(B, rhs)
-      
-    # Build DIIS Fock matrix
-    F_DIIS = np.zeros_like(F_list[0])
-    for x in range(coeff.shape[0] - 1):
-        F_DIIS += coeff[x] * F_list[x]
-    
-    return F_DIIS
-
-# ==> Unrestricted DIIS: one subspace shared by both spin channels <==
-def diis_xtrap_uhf(F_list_a, F_list_b, R_list_a, R_list_b):
+def _diis_extrapolate(F_list_a, F_list_b, R_list_a, R_list_b):
     """Shared-coefficient UHF DIIS extrapolation.
 
     Extrapolating alpha and beta independently lets the two spin channels pull
@@ -149,10 +95,9 @@ def diis_xtrap_uhf(F_list_a, F_list_b, R_list_a, R_list_b):
     B[-1, -1] = 0
     for i in range(n):
         for j in range(n):
-            B[i, j] = (
-                np.einsum('ij,ij->', R_list_a[i], R_list_a[j], optimize=True)
-                + np.einsum('ij,ij->', R_list_b[i], R_list_b[j], optimize=True)
-            )
+            B[i, j] = np.einsum(
+                "ij,ij->", R_list_a[i], R_list_a[j], optimize=True
+            ) + np.einsum("ij,ij->", R_list_b[i], R_list_b[j], optimize=True)
 
     # Build RHS of Pulay equation
     rhs = np.zeros((n + 1))
@@ -170,32 +115,18 @@ def diis_xtrap_uhf(F_list_a, F_list_b, R_list_a, R_list_b):
 
     return Fa_DIIS, Fb_DIIS
 
-class CQEDUSCF:
-    """Unrestricted CQED-SCF driver.
 
-    Intended workflow:
-    1. Build separate alpha/beta reference wavefunctions from Psi4 UHF/UKS.
-    2. Construct CQED one-electron and dipole self-energy contributions.
-    3. Iterate alpha/beta Fock builds to convergence.
-    4. Return ``(energy, results)`` following the contract in the module
-       docstring.
-    """
+class CQEDUSCF:
+    """Unrestricted CQED-SCF driver following the module result contract."""
 
     def __init__(self, geometry: Any, config: CQEDConfig, method: str | None = None):
 
-        # geometry will specify the geometry string
         self.geometry = geometry
-        # config will have the psi4 options and the CQED options
         self.config = config
         self.functional = config.base_scf_functional
         self.density_fitting = config.density_fitting
-        self.psi4_options = config.psi4_options
+        self.psi4_options = dict(config.psi4_options)
 
-
-        # The reference, rather than the presence of an unrelated functional,
-        # selects the unrestricted SCF model.  In particular, CQEDConfig
-        # deliberately exposes base_scf_functional=None for a UHF reference
-        # even when its general ``functional`` field is populated.
         self.method = config.reference
         if self.method not in ("uhf", "uks"):
             raise ValueError("CQEDUSCF requires config.reference='uhf' or 'uks'")
@@ -211,7 +142,10 @@ class CQEDUSCF:
         self.is_dft = self.method == "uks"
         self.x_alpha = 1.0
         self.x_beta = 0.0
-        
+        self.jk = None
+        self.Vpot = None
+        self.jk_finalized = True
+        self.vpot_finalized = True
 
     def run(self):
         """Run unrestricted CQED-SCF.
@@ -223,124 +157,74 @@ class CQEDUSCF:
             module docstring.
         """
 
+        if self.config.quiet and not output.is_quiet():
+            with output.quiet_context(True):
+                return self._run_managed()
+        return self._run_managed()
+
+    def _run_managed(self):
+        """Run the calculation while guaranteeing builder finalization."""
+
         output.banner("Unrestricted Open-Shell CQED-SCF Calculation")
         self._prepare_options()
+        try:
+            return self._run()
+        finally:
+            self._finalize_builders()
+
+    def _run(self):
+        """Implementation body separated so Psi4 builders always finalize."""
 
         self.mol = psi4.geometry(self.geometry)
 
-        # run psi4 to get the reference energy and wavefunction
         ref_method = self._reference_method_string()
         E_psi4, self.wfn = psi4.energy(ref_method, return_wfn=True)
 
-        # get instance of mints object, call it `mints`
-        # Hint: psi4.core.MintsHelper(...) takes the basis set of the Psi4 wavefunction, self.wfn.basisset()
-        #<-- code goes here to get mints object -->
         mints = psi4.core.MintsHelper(self.wfn.basisset())
-
-        # get overlap matrix, call it `S`
-        # Hint: mints.ao_overlap() returns a psi4 Matrix; store S as a NumPy array with np.array(..., copy=True)
-        # because the DIIS error vector below needs S as a NumPy array
-        #<-- code goes here to get overlap matrix -->
         S = np.array(mints.ao_overlap(), copy=True)
-        
 
-        # get basic information about the system
-        # number of basis functions
         nbf = self.wfn.nso()
-        # number of alpha and beta electrons
         nalpha = self.wfn.nalpha()
         nbeta = self.wfn.nbeta()
-        # number of double occupied orbitals (for unrestricted, this is the minimum of nalpha and nbeta)
-        ndocc = min(nalpha, nbeta)
-        # number of singly occupied orbitals
-        nsocc = abs(nalpha - nbeta)
 
-        # initial guess from Psi4 reference
-        Ca = np.array(self.wfn.Ca(), copy=True)  # copy: _update_wfn_with_cqed writes to Ca()
+        Ca = np.array(self.wfn.Ca(), copy=True)
         Da = np.array(self.wfn.Da(), copy=True)
-
         Cb = np.array(self.wfn.Cb(), copy=True)
         Db = np.array(self.wfn.Db(), copy=True)
 
-        # print this basic information to the output
-        #output.print_basic_info(nbf, nalpha, nbeta, ndocc, nsocc)
-        print(f"Number of basis functions: {nbf}")
-        print(f"Number of alpha electrons: {nalpha}")
-        print(f"Number of beta electrons: {nbeta}")
-        print(f"Number of double occupied orbitals: {ndocc}")
-        print(f"Number of singly occupied orbitals: {nsocc}")
-
-        # get the canonical Psi4 orbital energies for alpha and beta, call them `self.eps_a` and `self.eps_b`
-        # (these are reported in the results dictionary; the SCF guess below comes from the core Hamiltonian,
-        # not from the Psi4 orbitals)
-        # Hint: self.wfn.epsilon_a() and self.wfn.epsilon_b(), copied into NumPy arrays
-        #<-- code goes here to get orbital energies -->
         eps_reference_a = np.array(self.wfn.epsilon_a(), copy=True)
         eps_reference_b = np.array(self.wfn.epsilon_b(), copy=True)
 
-        #<-- code to build kinetic energy matrix T -->
-        # Hint: mints.ao_kinetic()
         T = np.asarray(mints.ao_kinetic())
-
-        #<-- code to build nuclear attraction matrix V -->
-        # Hint: mints.ao_potential()
         V = np.asarray(mints.ao_potential())
-
-        #<-- code to build canonical core Hamiltonian H_canonical = T + V -->
         H_canonical = T + V
 
-        # Construct AO orthogonalization matrix `A` = S^(-1/2)
-        # Hint: get a *fresh* overlap matrix with A = mints.ao_overlap() -- do NOT reuse S!
-        # Then call A.power(-0.5, 1.e-16); this modifies A in place and returns nothing,
-        # so reusing S here would silently overwrite S with S^(-1/2) and break the DIIS error vector below.
-        # A is a psi4 core Matrix, so convert it to a NumPy array with np.asarray(A)
-        #<-- code goes here to build AO orthogonalization matrix -->
         A = mints.ao_overlap()
-        
-        A.power(-0.5, 1.e-16)
+        A.power(-0.5, 1.0e-16)
         A = np.asarray(A)
 
-        # get guess coefficients and density from Core Hamiltonian
-        # Hint - use diag_F function defined above to get guess coefficients and density
-        # using the canonical core Hamiltonian and orthogonalization matrix
-        # Cx, Dx = diag_F(A, H_canonical, nx) where x is a or b and nx is nalpha or nbeta
-        #<-- code goes here to get guess coefficients and density `Ca`, `Da`, `Cb`, `Db` -->
-        #Ca, Da = diag_F(A, H_canonical, nalpha)
-        #Cb, Db = diag_F(A, H_canonical, nbeta)
-
-
-        #<-- code to build dipole matrix `d_ao` -->
-        # Hint: mu = [np.asarray(x) for x in mints.ao_dipole()] gives [mu_x, mu_y, mu_z]
-        # recall d_ao = sum(lambda_i * mu_i for i in range(3)), with lambda from self.config.lambda_vector
         mu = [np.asarray(x) for x in mints.ao_dipole()]
+        d_ao = sum(
+            lambda_i * mu_i for lambda_i, mu_i in zip(self.config.lambda_vector, mu)
+        )
 
-        d_ao = sum(lambda_i * mu_i for lambda_i, mu_i in zip(self.config.lambda_vector, mu))
-
-
-        #<-- code to build quadrupole matrices Q and `Q_PF` -->
-        # Hint: Q = [np.asarray(x) for x in mints.ao_quadrupole()] gives the 6 unique components
         Q = [np.asarray(x) for x in mints.ao_quadrupole()]
-        # q = [Q_xx, Q_xy, Q_xz, Q_yy, Q_yz, Q_zz] and Q_PF = -0.5 * sum(lambda_i * lambda_j * Q_ij for i,j in range(3))
-        # Index map (i,j) -> position in the list: (0,0)->0, (0,1)->1, (0,2)->2, (1,1)->3, (1,2)->4, (2,2)->5
-        # Q_ij = Q_ji, so each off-diagonal term appears twice in the double sum:
-        # Q_PF = -0.5*(l_x^2 Q_xx + l_y^2 Q_yy + l_z^2 Q_zz) - (l_x l_y Q_xy + l_x l_z Q_xz + l_y l_z Q_yz)
         l = self.config.lambda_vector
-        Q_PF = -0.5 * (l[0]**2 * Q[0] + l[1]**2 * Q[3] + l[2]**2 * Q[5]) - (l[0]*l[1]*Q[1] + l[0]*l[2]*Q[2] + l[1]*l[2]*Q[4])
+        Q_PF = -0.5 * (l[0] ** 2 * Q[0] + l[1] ** 2 * Q[3] + l[2] ** 2 * Q[5]) - (
+            l[0] * l[1] * Q[1] + l[0] * l[2] * Q[2] + l[1] * l[2] * Q[4]
+        )
 
         # Simplified Pauli--Fierz one-electron Hamiltonian.  The coherent-state
         # -<d>d term cancels the DSE Coulomb contribution exactly, so neither
         # belongs in the production unrestricted Fock build.
         H = H_canonical + Q_PF
-        # get nuclear repulsion energy, call it `E_nuc`
-        # Hint: self.mol.nuclear_repulsion_energy()
-        #<-- code goes here to get nuclear repulsion energy -->
         E_nuc = self.mol.nuclear_repulsion_energy()
 
         if self.is_dft:
             self._build_vbase()
         self._build_jk()
+        self._print_calculation_metadata(nbf, nalpha, nbeta)
 
-        # pre-iteration values
         SCF_E = 0.0
         SCF_E_old = 0.0
 
@@ -350,22 +234,20 @@ class CQEDUSCF:
         R_list_a = []
         R_list_b = []
 
-        # get convergence criteria from psi4 options
         e_conv = self.psi4_options.get("e_convergence", 1.0e-10)
         d_conv = self.psi4_options.get("d_convergence", 1.0e-8)
-        max_iter = 100
+        max_iter = int(self.psi4_options.get("maxiter", 100))
 
         # DIIS controls: keep the subspace small so the B matrix stays well
         # conditioned, and start extrapolating early
         diis_max = 8
         diis_start = 2
+        iterations = []
 
         for it in range(1, max_iter + 1):
             Cocc_a = Ca[:, :nalpha]
             Cocc_b = Cb[:, :nbeta]
-            J_a, J_b, K_a, K_b, wK_a, wK_b = self._build_JK(
-                Cocc_a, Cocc_b
-            )
+            J_a, J_b, K_a, K_b, wK_a, wK_b = self._build_JK(Cocc_a, Cocc_b)
             J = J_a + J_b
 
             if self.method == "uhf":
@@ -373,7 +255,6 @@ class CQEDUSCF:
                 N_b = d_ao @ Db @ d_ao
                 Fa = H + J - K_a - N_a
                 Fb = H + J - K_b - N_b
-                Exc = None
             else:
                 N_a = d_ao @ Da @ d_ao
                 N_b = d_ao @ Db @ d_ao
@@ -428,20 +309,20 @@ class CQEDUSCF:
                     - 0.5 * np.trace(Db @ N_b)
                 )
                 if K_a is not None:
-                    SCF_E -= 0.5 * self.x_alpha * (
-                        np.trace(Da @ K_a) + np.trace(Db @ K_b)
+                    SCF_E -= (
+                        0.5 * self.x_alpha * (np.trace(Da @ K_a) + np.trace(Db @ K_b))
                     )
                 if wK_a is not None:
-                    SCF_E -= 0.5 * self.x_beta * (
-                        np.trace(Da @ wK_a) + np.trace(Db @ wK_b)
+                    SCF_E -= (
+                        0.5 * self.x_beta * (np.trace(Da @ wK_a) + np.trace(Db @ wK_b))
                     )
 
             dE = SCF_E - SCF_E_old
             dRMS = 0.5 * (np.mean(diis_r_a**2) + np.mean(diis_r_b**2)) ** 0.5
-            print(f"Iteration {it}: SCF Energy = {SCF_E:.12f} dE = {dE:.6e} dRMS = {dRMS:.6e}")
+            converged = abs(dE) < e_conv and dRMS < d_conv
+            iterations.append((it, SCF_E, dE, dRMS, converged))
 
-            if (abs(dE) < e_conv) and (dRMS < d_conv):
-                print(f"SCF converged in {it} iterations.")
+            if converged:
                 # Canonicalize the converged, unextrapolated CQED Focks.  DIIS
                 # is only an iteration accelerator; its extrapolated operator
                 # must not define the reported orbitals or orbital energies.
@@ -453,44 +334,67 @@ class CQEDUSCF:
 
             # DIIS Extrapolation
             if it >= diis_start:
-                Fa, Fb = diis_xtrap_uhf(F_list_a, F_list_b, R_list_a, R_list_b)
+                Fa, Fb = _diis_extrapolate(F_list_a, F_list_b, R_list_a, R_list_b)
 
             # compute new orbital guess
-            Ca, Da = diag_F(A, Fa, nalpha)
-            Cb, Db = diag_F(A, Fb, nbeta)
+            Ca, Da = _diagonalize_fock(A, Fa, nalpha)
+            Cb, Db = _diagonalize_fock(A, Fb, nbeta)
 
-            # max iterations check
             if it == max_iter:
-                psi4.core.clean()
-                raise Exception(f"SCF did not converge in {max_iter} iterations.")
+                raise RuntimeError(f"SCF did not converge in {max_iter} iterations.")
+
+        self._print_scf_iterations(iterations)
 
         # Compute diagnostics from the final converged CQED orbitals, not the
         # original Psi4 reference orbitals used as the initial guess.
         s_squared, spin_contamination = _spin_diagnostics(
             Ca[:, :nalpha], Cb[:, :nbeta], S, nalpha, nbeta
         )
-        print(f"<S^2> = {s_squared:.6f}, spin contamination = {spin_contamination:.6f}")
+        jk_type = self.jk.name()
+        effective_scf_type = (
+            "df"
+            if self.density_fitting
+            else str(self.psi4_options.get("scf_type", "pk")).lower()
+        )
 
-        # results dictionary to return
         results = {
-          "energy_scf": SCF_E,
-          "energy_psi4": E_psi4,
-          "Ca": Ca,
-          "Cb": Cb,
-          "Da": Da,
-          "Db": Db,
-          "orbital_energies_a": eps_a,
-          "orbital_energies_b": eps_b,
-          "canonical_orbital_energies_a": eps_reference_a,
-          "canonical_orbital_energies_b": eps_reference_b,
-          "Fa": Fa,
-          "Fb": Fb,
-          "nalpha": nalpha,
-          "nbeta": nbeta,
-          "s_squared": s_squared,
-          "spin_contamination": spin_contamination,
+            "energy_scf": SCF_E,
+            "energy_psi4": E_psi4,
+            "Ca": Ca,
+            "Cb": Cb,
+            "Da": Da,
+            "Db": Db,
+            "Coa": Ca[:, :nalpha],
+            "Cob": Cb[:, :nbeta],
+            "Fa": Fa,
+            "Fb": Fb,
+            "orbital_energies_a": eps_a,
+            "orbital_energies_b": eps_b,
+            "canonical_orbital_energies_a": eps_reference_a,
+            "canonical_orbital_energies_b": eps_reference_b,
+            "reference_orbital_energies_a": eps_reference_a.copy(),
+            "reference_orbital_energies_b": eps_reference_b.copy(),
+            "nalpha": nalpha,
+            "nbeta": nbeta,
+            "nmo": nbf,
+            "natom": self.mol.natom(),
+            "s_squared": s_squared,
+            "spin_contamination": spin_contamination,
+            "method": self.method,
+            "reference": self.method,
+            "functional": self.functional,
+            "density_fitting": self.density_fitting,
+            "scf_type": effective_scf_type,
+            "jk_type": jk_type,
+            "x_alpha": self.x_alpha,
+            "x_beta": self.x_beta,
+            "omega": self.config.omega,
+            "lambda_vector": np.asarray(self.config.lambda_vector).copy(),
+            "mints": mints,
+            "wfn": self.wfn,
         }
 
+        self._print_final_results(SCF_E, s_squared, spin_contamination)
         return SCF_E, results
 
     @staticmethod
@@ -510,6 +414,7 @@ class CQEDUSCF:
             self.wfn.basisset(), self.wfn.functional(), "UV"
         )
         self.Vpot.initialize()
+        self.vpot_finalized = False
         functional = self.Vpot.functional()
         self.x_alpha = float(functional.x_alpha())
         self.x_beta = float(functional.x_beta())
@@ -545,6 +450,7 @@ class CQEDUSCF:
                 self.jk.set_do_wK(False)
 
         self.jk.initialize()
+        self.jk_finalized = False
 
     def _build_JK(self, Cocc_a, Cocc_b):
         """Build spin-resolved J/K matrices in one Psi4 JK batch."""
@@ -583,6 +489,72 @@ class CQEDUSCF:
         Exc = float(self.Vpot.quadrature_values()["FUNCTIONAL"])
         return Exc, np.array(Va_p4, copy=True), np.array(Vb_p4, copy=True)
 
+    def _finalize_builders(self):
+        """Release Psi4 JK and VBase resources when their APIs provide it."""
+
+        if self.jk is not None and not self.jk_finalized:
+            finalize = getattr(self.jk, "finalize", None)
+            if finalize is not None:
+                finalize()
+            self.jk_finalized = True
+
+        if self.Vpot is not None and not self.vpot_finalized:
+            finalize = getattr(self.Vpot, "finalize", None)
+            if finalize is not None:
+                finalize()
+            self.vpot_finalized = True
+
+    def _print_calculation_metadata(self, nbf, nalpha, nbeta):
+        """Emit unrestricted calculation metadata through the output layer."""
+
+        lambda_str = (
+            "(" + ", ".join(f"{value:.6f}" for value in self.config.lambda_vector) + ")"
+        )
+        rows = [
+            ("Method", self.method.upper()),
+            ("Functional", self.functional or "HF"),
+            ("Basis", self.wfn.basisset().name()),
+            ("Charge", self.mol.molecular_charge()),
+            ("Multiplicity", self.mol.multiplicity()),
+            ("Alpha / beta electrons", f"{nalpha} / {nbeta}"),
+            ("Orbitals (AO / MO)", f"{nbf} / {nbf}"),
+            ("lambda", lambda_str),
+            ("omega", f"{self.config.omega:.6f} Eh"),
+            ("Density fitting", self.density_fitting),
+            ("JK builder", self.jk.name()),
+        ]
+        output.table(["Setting", "Value"], rows, [26, 28])
+
+    @staticmethod
+    def _print_scf_iterations(iterations):
+        """Emit the unrestricted SCF iteration table."""
+
+        output.banner("Unrestricted SCF Iterations")
+        rows = [
+            [
+                str(it),
+                f"{energy:16.12f}",
+                f"{delta_e:14.6e}",
+                f"{rms:14.6e}",
+                "*" if converged else "",
+            ]
+            for it, energy, delta_e, rms, converged in iterations
+        ]
+        output.table(
+            ["Iter", "Energy (Eh)", "dE (Eh)", "dRMS (a.u.)", ""],
+            rows,
+            [6, 20, 16, 16, 2],
+        )
+        output.echo(f"  SCF Converged in {len(iterations)} iterations.")
+
+    def _print_final_results(self, energy, s_squared, spin_contamination):
+        """Emit final energy and spin diagnostics."""
+
+        output.banner(f"CQED-{self.method.upper()} Total Energy")
+        output.property_("CQED-SCF Total Energy", energy, "Eh")
+        output.property_("<S^2>", s_squared, "")
+        output.property_("Spin Contamination", spin_contamination, "")
+
     def _prepare_options(self):
         opts = dict(self.config.psi4_options)
 
@@ -600,5 +572,6 @@ class CQEDUSCF:
         if self.method == "uhf":
             return "scf"
         return self.functional
-    
+
+
 CQEDUHFSCF = CQEDUSCF
