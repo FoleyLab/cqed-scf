@@ -278,13 +278,6 @@ class CQEDUSCF:
         eps_reference_a = np.array(self.wfn.epsilon_a(), copy=True)
         eps_reference_b = np.array(self.wfn.epsilon_b(), copy=True)
 
-
-        # Build core Hamiltonian
-        # Recall for QED-UHF, H_0 = T + V + Q_PF - <d> d
-
-        # because we need <d> we need guess C_x first
-        # So build guess from canonical core Hamiltonian and orthogonalization matrix
-
         #<-- code to build kinetic energy matrix T -->
         # Hint: mints.ao_kinetic()
         T = np.asarray(mints.ao_kinetic())
@@ -324,15 +317,6 @@ class CQEDUSCF:
         d_ao = sum(lambda_i * mu_i for lambda_i, mu_i in zip(self.config.lambda_vector, mu))
 
 
-        #<-- code to compute dipole expectation value <d> -->
-        # recall <d>_a = Tr(Da d) and <d>_b = Tr(Db d) and <d> = <d>_a + <d>_b
-        # Note: <d> here is the ELECTRONIC dipole only -- do not add the nuclear dipole.
-        # In the coherent-state basis the nuclear contribution cancels, and it is the electronic <d>
-        # that makes the -<d> d term in H_0 cancel the J_dse terms in the Fock matrix below.
-        d_a_exp = np.trace(Da @ d_ao)
-        d_b_exp= np.trace(Db @ d_ao)
-        d_exp = d_a_exp + d_b_exp
-
         #<-- code to build quadrupole matrices Q and `Q_PF` -->
         # Hint: Q = [np.asarray(x) for x in mints.ao_quadrupole()] gives the 6 unique components
         Q = [np.asarray(x) for x in mints.ao_quadrupole()]
@@ -345,10 +329,8 @@ class CQEDUSCF:
 
         # Simplified Pauli--Fierz one-electron Hamiltonian.  The coherent-state
         # -<d>d term cancels the DSE Coulomb contribution exactly, so neither
-        # belongs in the production UHF Fock build.
+        # belongs in the production unrestricted Fock build.
         H = H_canonical + Q_PF
-        H_0 = H - d_exp * d_ao  # retained only for the UKS implementation
-
         # get nuclear repulsion energy, call it `E_nuc`
         # Hint: self.mol.nuclear_repulsion_energy()
         #<-- code goes here to get nuclear repulsion energy -->
@@ -393,16 +375,11 @@ class CQEDUSCF:
                 Fb = H + J - K_b - N_b
                 Exc = None
             else:
-                # UKS retains its established coherent-state expression until
-                # its own migration is validated against the Hilbert suite.
-                J_dse_a = d_ao * np.trace(d_ao @ Da)
-                J_dse_b = d_ao * np.trace(d_ao @ Db)
-                K_dse_a = d_ao @ Da @ d_ao
-                K_dse_b = d_ao @ Db @ d_ao
-                J_dse = J_dse_a + J_dse_b
+                N_a = d_ao @ Da @ d_ao
+                N_b = d_ao @ Db @ d_ao
                 Exc, Vxc_a, Vxc_b = self._build_xc(Da, Db)
-                Fa = H_0 + J + Vxc_a + J_dse - K_dse_a
-                Fb = H_0 + J + Vxc_b + J_dse - K_dse_b
+                Fa = H + J + Vxc_a - N_a
+                Fb = H + J + Vxc_b - N_b
                 if K_a is not None:
                     Fa -= self.x_alpha * K_a
                     Fb -= self.x_alpha * K_b
@@ -443,14 +420,12 @@ class CQEDUSCF:
                 )
             else:
                 SCF_E = (
-                    np.trace(Dt @ H_0)
+                    np.trace(Dt @ H)
                     + 0.5 * np.trace(Dt @ J)
                     + Exc
                     + E_nuc
-                    + 0.5 * np.trace(Dt @ J_dse)
-                    - 0.5 * np.trace(Da @ K_dse_a)
-                    - 0.5 * np.trace(Db @ K_dse_b)
-                    + 0.5 * d_exp**2
+                    - 0.5 * np.trace(Da @ N_a)
+                    - 0.5 * np.trace(Db @ N_b)
                 )
                 if K_a is not None:
                     SCF_E -= 0.5 * self.x_alpha * (
@@ -483,13 +458,6 @@ class CQEDUSCF:
             # compute new orbital guess
             Ca, Da = diag_F(A, Fa, nalpha)
             Cb, Db = diag_F(A, Fb, nbeta)
-
-            # Update <d>_a and <d>_b expectation values and QED Core Hamiltonian
-            #<-- code goes here to update <d>_a and <d>_b expectation values and QED Core Hamiltonian -->
-            d_a_exp = np.trace(Da @ d_ao)
-            d_b_exp = np.trace(Db @ d_ao)
-            d_exp = d_a_exp + d_b_exp
-            H_0 = T + V + Q_PF - d_exp * d_ao
 
             # max iterations check
             if it == max_iter:
@@ -553,15 +521,22 @@ class CQEDUSCF:
         self.jk = psi4.core.JK.build(self.wfn.basisset())
         self.jk.set_memory(int(5e8))
 
+        self._do_K = not self.is_dft
+        self._do_wK = False
         if hasattr(self.jk, "set_do_J"):
             self.jk.set_do_J(True)
         if self.is_dft:
+            # x_alpha multiplies short-range/global exact exchange.  x_beta is
+            # meaningful for JK only when the functional actually reports an
+            # LRC component (pure functionals may still report x_beta=1).
+            self._do_K = self.x_alpha != 0.0
+            self._do_wK = functional.is_x_lrc() and self.x_beta != 0.0
             if hasattr(self.jk, "set_do_K"):
-                self.jk.set_do_K(functional.is_x_hybrid())
+                self.jk.set_do_K(self._do_K)
             if hasattr(self.jk, "set_do_wK"):
-                self.jk.set_do_wK(functional.is_x_lrc())
-            omega = float(functional.x_omega())
-            if omega != 0.0:
+                self.jk.set_do_wK(self._do_wK)
+            if self._do_wK:
+                omega = float(functional.x_omega())
                 self.jk.set_omega(omega)
         else:
             if hasattr(self.jk, "set_do_K"):
@@ -582,12 +557,13 @@ class CQEDUSCF:
         J = [np.array(matrix, copy=True) for matrix in self.jk.J()]
 
         K = [None, None]
-        K_p4 = self.jk.K()
-        if K_p4 is not None and len(K_p4) == 2:
-            K = [np.array(matrix, copy=True) for matrix in K_p4]
+        if self._do_K:
+            K_p4 = self.jk.K()
+            if K_p4 is not None and len(K_p4) == 2:
+                K = [np.array(matrix, copy=True) for matrix in K_p4]
 
         wK = [None, None]
-        if hasattr(self.jk, "wK"):
+        if self._do_wK and hasattr(self.jk, "wK"):
             wK_p4 = self.jk.wK()
             if wK_p4 is not None and len(wK_p4) == 2:
                 wK = [np.array(matrix, copy=True) for matrix in wK_p4]
