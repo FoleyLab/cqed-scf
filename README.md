@@ -5,19 +5,54 @@
 
 # CQED-SCF
 
-An open-source package for mean-field and DFT-based molecular cavity quantum electrodynamics calculations
-(Pauli–Fierz Hamiltonian) with analytic nuclear gradients, molecular
-dynamics, and geometry optimization, built on top of Psi4.  
+An open-source package for mean-field, DFT, open-shell, and SAPT-based
+molecular cavity quantum electrodynamics calculations using the Pauli–Fierz
+Hamiltonian, built on top of Psi4. The package provides CQED-RHF/RKS and
+CQED-UHF/UKS energies, restricted analytic nuclear gradients, QED-SAPT0
+interaction components, QED-CIS response calculations, molecular dynamics, and
+geometry optimization.
 
 ## Features
 
-- CQED-RHF and CQED-RKS energy and analytic nuclear gradients
-- Exact and DF-based gradient backends
+### CQED mean-field methods
+
+- CQED-RHF and CQED-RKS energies and analytic nuclear gradients
+- CQED-UHF and CQED-UKS energies for open-shell systems
+- Pure, global-hybrid, and range-separated restricted Kohn-Sham references
+- Unrestricted Kohn-Sham support through Psi4 `VBase`
+- Psi4 JK-backed unrestricted Coulomb and exchange builds
+- Spin-resolved orbital, density, Fock, and diagnostic data
+- `<S^2>` and spin-contamination diagnostics for unrestricted references
+
+### Gradients and dynamics
+
+- Exact and density-fitted gradient backends
 - Velocity-Verlet molecular dynamics
 - BFGS geometry optimization
 - Finite-difference gradient validation
+- Rigid translation/rotation projected gradients
 - Psi4-native geometry handling
-- CQED-RKS currently supports pure, global hybrids, and range-separated hybrids
+
+### QED-SAPT0
+
+- QED-SAPT0 interaction energies and named components: electrostatics,
+  exchange, dispersion, exchange-dispersion, induction, and
+  exchange-induction
+- Dense and density-fitted integral workflows
+- JK/DSE-based diagnostic workflows
+- Dispersion partitioning into Coulomb-Coulomb, Coulomb-DSE, and DSE-DSE
+  contributions
+- Restricted RHF/RKS monomer reference workflows
+
+### Response methods
+
+- QED-CIS calculations on CQED-HF and CQED-KS references
+- Dense and Davidson QED-CIS solvers
+- Photon-number-resolved polaritonic states and transition properties
+
+Unrestricted UHF/UKS support currently provides energies and spin diagnostics.
+Analytic unrestricted gradients, unrestricted QED-CIS, and unrestricted response
+methods are not yet implemented.
 
 ## Requirements
 
