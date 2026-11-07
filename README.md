@@ -12,6 +12,14 @@ CQED-UHF/UKS energies, restricted analytic nuclear gradients, QED-SAPT0
 interaction components, QED-CIS response calculations, molecular dynamics, and
 geometry optimization.
 
+## Agent and contributor guidance
+
+The repository includes [`AGENTS.md`](AGENTS.md), which provides operational
+guidance for coding agents and contributors. It documents the supported
+QED-RHF/UHF/RKS/UKS, QED-SAPT0, and QED-CIS workflows, energy scans, advanced
+SAPT operator-context diagnostics, geometry optimization, molecular dynamics,
+validation commands, and current implementation limitations.
+
 ## Features
 
 ### CQED mean-field methods
