@@ -52,9 +52,13 @@ pytest tests/test_fd_gradient_qed_dft.py
 pytest tests/test_qed_cis_dense.py
 ```
 
-Canonical examples live under `examples/canonical/`. New examples should use
-`CQEDConfig` and `CQEDCalculator` unless they intentionally demonstrate a
-lower-level diagnostic interface.
+Canonical examples are organized by method into dedicated subfolders of
+`examples/`: `qed-rhf/`, `qed-rks/`, `qed-uhf/`, `qed-uks/`, `qed-sapt0/`
+(with a `scans/` subfolder), `qed-cis/`, `optimization/`, and
+`molecular_dynamics_freeze_atoms/`. Lower-level diagnostic and development
+interfaces live in `examples/diagnostics/` and `examples/development/`
+respectively. New examples should use `CQEDConfig` and `CQEDCalculator`
+unless they intentionally demonstrate a lower-level diagnostic interface.
 
 ## Configuration rules
 
@@ -110,7 +114,7 @@ config = CQEDConfig(
 energy = CQEDCalculator(config=config).energy(geometry)
 ```
 
-Reference example: `examples/canonical/cqed_rhf_energy.py`.
+Reference example: `examples/qed-rhf/cqed_rhf_energy.py`.
 
 ### QED-UHF
 
@@ -154,7 +158,7 @@ energy = CQEDCalculator(config=config).energy(geometry)
 
 The same path supports pure, global-hybrid, and supported range-separated
 restricted Kohn–Sham functionals. See
-`examples/canonical/cqed_dft_energy_gradient.py` for a complete configuration.
+`examples/qed-rks/cqed_dft_energy_gradient.py` for a complete configuration.
 
 ### QED-UKS
 
@@ -251,8 +255,10 @@ calling the result a ground-state energy. Track states by photon character,
 block weights, or overlaps when a scan can reorder roots; root index alone is
 only safe in simple weak-coupling cases.
 
-Use the scan examples under `examples/qed_sapt0_water_methylamine/`,
-`examples/h2_dimer/`, and `examples/qed_cis/` as starting points.
+Use the scan examples under
+`examples/qed-sapt0/scans/water_methylamine_qed_sapt0_scan.py`,
+`examples/diagnostics/reference_h2_dimer_method_comparison.py`, and
+`examples/qed_cis/` as starting points.
 
 ## QED-SAPT0 energy decomposition
 
@@ -369,10 +375,9 @@ When implementing or extending this diagnostic path, use a fresh driver or
 explicitly clear/rebuild context-sensitive caches for every context. Compare
 the total-context values with `driver.run_components()` and use
 `include_cavity_terms=False` and/or `lambda_vector=(0, 0, 0)` as controls.
-Relevant implementation and regression material is in
 `src/cqed_scf/sapt/qed_sapt0.py`, `tests/test_qedsapt0_driver.py`,
-`tests/test_dse_df.py`, `examples/canonical/cqed_sapt0_components.py`, and
-`examples/canonical/cqed_sapt0_dispersion_partition.py`.
+`tests/test_dse_df.py`, `examples/qed-sapt0/cqed_sapt0_components.py`, and
+`examples/qed-sapt0/cqed_sapt0_dispersion_partition.py`.
 
 ## Gradients and geometry optimization
 
