@@ -7,9 +7,9 @@ Why density fitting for both the SCF and the SAPT components?
 -------------------------------------------------------------
 Every monomer is solved in the full dimer basis (the partner is ghosted), and
 the SAPT components need two-electron integrals in that basis.  With
-jun-cc-pVDZ the benzene dimer has a few hundred basis functions (the script
-prints the exact number), and a dense ``full_eri`` tensor grows as N^4 -- tens
-of gigabytes here, which is impractical.  Density fitting replaces it with
+jun-cc-pVDZ the benzene dimer has 276 basis functions and
+would require ~46 GB of memory since the ``full_eri`` tensor grows as N^4.
+Density fitting replaces it with
 three-index tensors that scale as N^2 * N_aux and are far cheaper in both
 memory and time, at the cost of a small, well-controlled fitting error.
 
@@ -72,6 +72,8 @@ no_reorient
 no_com
 """
 
+dimer_geometry = psi4.geometry(dimer)
+
 # ---------------------------------------------------------
 # Psi4 options
 # ---------------------------------------------------------
@@ -84,6 +86,7 @@ psi4_options = {
     "e_convergence": 1e-10,
     "d_convergence": 1e-8,
 }
+
 
 # ---------------------------------------------------------
 # Build CQED configuration
@@ -107,14 +110,6 @@ config = CQEDConfig(
 )
 
 # ---------------------------------------------------------
-# Size of the problem, to show why density fitting is used
-# ---------------------------------------------------------
-
-dimer_geometry = psi4.geometry(dimer)
-nbf = psi4.core.BasisSet.build(dimer_geometry, "ORBITAL", psi4_options["basis"]).nbf()
-dense_eri_gb = nbf**4 * 8 / 1e9
-
-# ---------------------------------------------------------
 # Run QED-SAPT0 and get standard components
 # ---------------------------------------------------------
 
@@ -133,12 +128,12 @@ elapsed = time.perf_counter() - t0
 # Report components
 # ---------------------------------------------------------
 
+nbf = psi4.core.BasisSet.build(dimer_geometry, "ORBITAL", psi4_options["basis"]).nbf()
 print()
 print("QED-SAPT0 components: benzene ... benzene (parallel displaced)")
 print(f"basis={psi4_options['basis']} ({nbf} basis functions), "
       f"scf_type={psi4_options['scf_type']}, backend=df, frame=monomer_com")
 print(f"lambda = {lambda_vector.tolist()}, omega = {omega} Eh")
-print(f"A dense N^4 ERI tensor would need ~{dense_eri_gb:.0f} GB")
 print("=" * 58)
 print(f"{'Component':<24}{'Energy (Eh)':>18}{'(kcal/mol)':>16}")
 print("-" * 58)
