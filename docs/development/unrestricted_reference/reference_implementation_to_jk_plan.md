@@ -25,12 +25,12 @@ Inspect and reuse:
 - `tests/test_qed_uhf_matches_hilbert_reference.py`
 - `tests/test_unrestricted_plumbing.py`
 - `tests/test_scf_matches_cqed_rhf_reference.py`
-- `examples/canonical/Unrestricted_Test_Examples/`
-- `examples/canonical/Unrestricted_Test_Examples/psi4_reference_energies.json`
-- `examples/canonical/Unrestricted_Test_Examples/hilbert_reference_energies.json`
-- `examples/canonical/Unrestricted_Test_Examples/run_psi4_uhf_uks.py`
-- `examples/canonical/Unrestricted_Test_Examples/run_hilbert_qed_uhf_uks.py`
-- `examples/canonical/Unrestricted_Test_Examples/systems.py`
+- `examples/development/unrestricted_reference/`
+- `examples/development/unrestricted_reference/psi4_reference_energies.json`
+- `examples/development/unrestricted_reference/hilbert_reference_energies.json`
+- `examples/development/unrestricted_reference/run_psi4_uhf_uks.py`
+- `examples/development/unrestricted_reference/run_hilbert_qed_uhf_uks.py`
+- `examples/development/unrestricted_reference/systems.py`
 - `tests/UNRESTRICTED_REFERENCE_ENERGIES.md`
 
 Use the canonical geometries, orientations, basis, grids, and convergence settings from `Unrestricted_Test_Examples`. Do not create a second inconsistent reference set.

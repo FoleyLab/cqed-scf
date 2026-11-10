@@ -126,7 +126,7 @@ not a setting. This closes the open question formerly in section 4.
 | **`Exch-Disp20`** | **`compute_Eexchdisp200()` (dense N^4)** | **missing** |
 
 `grep -c disp src/cqed_scf/sapt/qed_sapt_jk.py` returns `0`. The diagnostics in
-`examples/water_methylamine/water_methylamine_qed_sapt_dense_vs_jk.py:331-335`
+`examples/diagnostics/water_methylamine_qed_sapt_dense_vs_jk.py:331-335`
 carry the two dispersion rows from the dense driver, with a comment saying so.
 That is honest bookkeeping, but it means **the JK path cannot run a dimer the
 dense path cannot afford** — the dense `N^4` build gates every calculation.

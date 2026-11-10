@@ -917,7 +917,7 @@ def test_lambda_zero_is_insensitive_to_the_reference_frame():
 def test_results_metadata_exposes_the_dispersion_partition():
     """The partition must be reachable from the public facade, not only the driver.
 
-    ``examples/qed_sapt0_water_methylamine/qed_sapt0_scan.py`` relies on this to
+    ``examples/qed-sapt0/scans/water_methylamine_qed_sapt0_scan.py`` relies on this to
     stay on the documented CQEDConfig / CQEDCalculator interface.
     """
     driver = _backend_driver("full_eri")
@@ -1121,7 +1121,7 @@ def test_caller_supplied_monomers_still_get_the_shared_dimer_frame():
     short-circuits to the monomer's own wavefunction. Under "monomer_com" the
     interaction integrals are rebuilt from those molecules, and the driver
     raised ``KeyError: 'A'``. Caught by
-    ``examples/he_dimer/he_dimer_sapt_example.py`` when the default flipped.
+    ``examples/diagnostics/he_dimer_sapt_example.py`` when the default flipped.
     """
     psi4.core.be_quiet()
     psi4.core.clean()

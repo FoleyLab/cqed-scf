@@ -16,13 +16,13 @@
 
 8. After implementation from scratch, we will want to try to hook into as much psi4 capability as possible for a more performant code, i.e. avoiding full 2-ERI builds in favor of JK builds that use density fitting, etc.  This file https://github.com/psi4/psi4/blob/master/psi4/driver/procrouting/sapt/sapt_jk_terms.py looks to be quite useful, as the first function is build_sapt_jk_cach and takes wfn objects for monomer a and b. I have pinned a gemini chat about how to use the helper functions in this file!  The dispersion terms also require MP2-like evaluation, and the file https://github.com/psi4/psi4/blob/master/psi4/driver/procrouting/sapt/sapt_mp2_terms.py has a helpful pattern for this that we should hook into!
 
-9. Added example calling sapt_jk_terms to compute first-order terms (E_{elest} and E_{exch}) in examples/he_dimer/he_dimer_sapt_jk_test.py, this approach seems promising!
+9. Added example calling sapt_jk_terms to compute first-order terms (E_{elest} and E_{exch}) in examples/diagnostics/he_dimer_sapt_jk_test.py, this approach seems promising!
 
 ## Water-methylamine QED-SAPT0 JK/DSE discrepancy notes
 
 Reference confirmation:
 
-- The hard-coded dense reference values in `examples/water_methylamine/water_methylamine_qed_sapt_jk.py` were independently reproduced by running the reference driver (which matches Kenny's adaptation of Konrad's notebook) in `examples/water_methylamine/water_methylamine_qed_sapt.py`, which uses `cqed_scf/sapt/qed_sapt0.py::QEDSAPT0Driver` with the same geometry, lambda vector `[0.0, 0.0, 0.1]`, omega `0.1`, `jun-cc-pVDZ`, and `include_cavity_terms=True`.
+- The hard-coded dense reference values in `examples/diagnostics/water_methylamine_qed_sapt_jk.py` were independently reproduced by running the reference driver (which matches Kenny's adaptation of Konrad's notebook) in `examples/qed-sapt0/water_methylamine_example.py`, which uses `cqed_scf/sapt/qed_sapt0.py::QEDSAPT0Driver` with the same geometry, lambda vector `[0.0, 0.0, 0.1]`, omega `0.1`, `jun-cc-pVDZ`, and `include_cavity_terms=True`.
 - The reproduced values are:
   - Electrostatics: `-0.0086737093`
   - Exchange: `0.0030805286`
@@ -41,7 +41,7 @@ Cavity-modified monomer data flow - inspected by hand by Jay and confirmed by Co
 
 Exchange Convention and CPHF Sign Conventions raised by GPT 5.5. Jay confirmed Exchange convention, Kenny should implement and test.  No confirmation of CPHF sign convention yet, Kenny should implement and test. 
 
-1. Exchange comparison key in `examples/water_methylamine/water_methylamine_qed_sapt_jk.py`
+1. Exchange comparison key in `examples/diagnostics/water_methylamine_qed_sapt_jk.py`
    - The reference `qed_sapt0.py::compute_Exch100()` that follows Kenny's / Kondrad's reference implements the S^2 exchange expression, 
    - `qed_sapt_jk.py::exchange()` returns both `Exch10(S^2)` and `Exch10`.
    - The water-methylamine JK comparison currently reports `exch["Exch10"]`, which is the S^inf-style value from the Psi4 JK helper path. That is the source of the apparent exchange discrepancy.
@@ -104,7 +104,7 @@ The JK implementation now keeps the ERI-like DSE term matrix-free in `DSEJK`, st
 - Lines 163-185, `build_sapt_jk_cache`: split standard and cavity one-electron potentials in the cache, then formed `V_A` and `V_B` from those pieces without mutating wavefunction-owned matrices.
 - Lines 223-228, `build_sapt_jk_cache`: stored the standard nuclear interaction separately and added only the coherent-state scalar to the effective interaction energy used by component formulas.
 
-#### `examples/water_methylamine/water_methylamine_qed_sapt_dense_vs_jk.py`
+#### `examples/diagnostics/water_methylamine_qed_sapt_dense_vs_jk.py`
 
 - Lines 72-79, module constants: added the uncoupled induction diagnostic row order.
 - Lines 119-230, `_dense_components`, `_dense_uncoupled_components`, `_dense_uncoupled_exch_ind_components`: added dense-reference directional uncoupled induction and exchange-induction diagnostics.
@@ -112,7 +112,7 @@ The JK implementation now keeps the ERI-like DSE term matrix-free in `DSEJK`, st
 - Lines 276-290, `_compute_jk_components`: collected directional and total `Ind20,u` and `Exch-Ind20,u` values from the JK path.
 - Lines 367-377, `_print_case`: printed the new uncoupled diagnostic table and retained the JK-only `Exch10` S^inf value.
 
-#### `examples/water_methylamine/water_methylamine_qed_sapt_jk.py`
+#### `examples/diagnostics/water_methylamine_qed_sapt_jk.py`
 
 - Lines 123-136, `_compute_jk_components`: switched the companion example to pass DSE one-electron/scalar inputs into `build_sapt_jk_cache()` and disabled `DSEJK` when explicit cavity terms are disabled.
 
@@ -131,7 +131,7 @@ Baseline command run before edits:
 
 ```bash
 cd /Users/jfoley19/Code/cqed-scf
-/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/water_methylamine/water_methylamine_qed_sapt_dense_vs_jk.py
+/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/diagnostics/water_methylamine_qed_sapt_dense_vs_jk.py
 ```
 
 Baseline dense-versus-JK values from the pre-patch diagnostic:
@@ -150,7 +150,7 @@ Final command:
 
 ```bash
 cd /Users/jfoley19/Code/cqed-scf
-/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/water_methylamine/water_methylamine_qed_sapt_dense_vs_jk.py
+/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/diagnostics/water_methylamine_qed_sapt_dense_vs_jk.py
 ```
 
 Historical note: the following "Final dense-versus-JK" table was final for the
@@ -182,7 +182,7 @@ Zero-coupling command:
 
 ```bash
 cd /Users/jfoley19/Code/cqed-scf
-/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/water_methylamine/water_methylamine_qed_sapt_dense_vs_jk.py --lambda-vector 0 0 0
+/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/diagnostics/water_methylamine_qed_sapt_dense_vs_jk.py --lambda-vector 0 0 0
 ```
 
 Zero-coupling results: electrostatics delta `-6.705747e-14 Eh`, exchange S^2 delta `4.492990e-12 Eh`, `Ind20,u` total delta `1.273352e-14 Eh`, `Exch-Ind20,u` total delta `-2.826179e-14 Eh`, coupled `Ind20,r` delta `1.500668e-13 Eh`, coupled `Exch-Ind20,r` delta `-6.971244e-13 Eh`, total delta `3.878874e-12 Eh`.
@@ -191,7 +191,7 @@ No-cavity command:
 
 ```bash
 cd /Users/jfoley19/Code/cqed-scf
-/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/water_methylamine/water_methylamine_qed_sapt_dense_vs_jk.py --no-cavity-terms
+/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/diagnostics/water_methylamine_qed_sapt_dense_vs_jk.py --no-cavity-terms
 ```
 
 No-cavity results with nonzero CQED monomer references: electrostatics delta `2.919887e-14 Eh`, exchange S^2 delta `4.452644e-12 Eh`, `Ind20,u` total delta `1.265221e-14 Eh`, `Exch-Ind20,u` total delta `-2.899525e-14 Eh`, coupled `Ind20,r` delta `-6.610575e-08 Eh`, coupled `Exch-Ind20,r` delta `-2.644664e-06 Eh`.
@@ -202,7 +202,7 @@ Focused tests and companion diagnostic:
 cd /Users/jfoley19/Code/cqed-scf
 /Users/jfoley19/miniforge3/envs/p4dev/bin/python -m pytest tests/test_dse_jk_scaffold.py
 /Users/jfoley19/miniforge3/envs/p4dev/bin/python -m pytest tests/test_qedsapt0_driver.py
-/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/water_methylamine/water_methylamine_qed_sapt_jk.py
+/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/diagnostics/water_methylamine_qed_sapt_jk.py
 ```
 
 Results: `tests/test_dse_jk_scaffold.py` passed `10 passed in 2.23s`; `tests/test_qedsapt0_driver.py` passed `11 passed in 35.06s`; the companion JK example ran and reproduced electrostatics/exchange tightly while retaining the known coupled induction/exchange-induction discrepancies.
@@ -343,12 +343,12 @@ Commands run after the fix:
 
 ```bash
 cd /Users/jfoley19/Code/cqed-scf
-/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/water_methylamine/water_methylamine_qed_sapt_dense_vs_jk.py
-/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/water_methylamine/water_methylamine_qed_sapt_dense_vs_jk.py --lambda-vector 0 0 0
-/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/water_methylamine/water_methylamine_qed_sapt_dense_vs_jk.py --no-cavity-terms
+/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/diagnostics/water_methylamine_qed_sapt_dense_vs_jk.py
+/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/diagnostics/water_methylamine_qed_sapt_dense_vs_jk.py --lambda-vector 0 0 0
+/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/diagnostics/water_methylamine_qed_sapt_dense_vs_jk.py --no-cavity-terms
 /Users/jfoley19/miniforge3/envs/p4dev/bin/python -m pytest tests/test_dse_jk_scaffold.py
 /Users/jfoley19/miniforge3/envs/p4dev/bin/python -m pytest tests/test_qedsapt0_driver.py
-/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/water_methylamine/water_methylamine_qed_sapt_jk.py
+/Users/jfoley19/miniforge3/envs/p4dev/bin/python examples/diagnostics/water_methylamine_qed_sapt_jk.py
 ```
 
 Results:
