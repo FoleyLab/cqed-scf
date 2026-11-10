@@ -376,8 +376,8 @@ explicitly clear/rebuild context-sensitive caches for every context. Compare
 the total-context values with `driver.run_components()` and use
 `include_cavity_terms=False` and/or `lambda_vector=(0, 0, 0)` as controls.
 `src/cqed_scf/sapt/qed_sapt0.py`, `tests/test_qedsapt0_driver.py`,
-`tests/test_dse_df.py`, `examples/qed-sapt0/cqed_sapt0_components.py`, and
-`examples/qed-sapt0/cqed_sapt0_dispersion_partition.py`.
+`tests/test_dse_df.py`, `examples/qed-sapt0/cqed_sapt0_he_dimer_full_eri.py`, and
+`examples/qed-sapt0/cqed_sapt0_benzene_dimer_density_fitting.py`.
 
 ## Gradients and geometry optimization
 

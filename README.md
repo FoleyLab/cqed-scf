@@ -125,11 +125,21 @@ E, grad, g = calc.energy_and_gradient(geom)
 ```
 
 ## QED-SAPT0 component example
+
+A helium dimer in a cavity. The integral backend (`full_eri`), the SCF type
+(`pk`), and the monomer reference frame (`monomer_com`) are all stated
+explicitly. This is a condensed version of
+[`examples/qed-sapt0/cqed_sapt0_he_dimer_full_eri.py`](examples/qed-sapt0/cqed_sapt0_he_dimer_full_eri.py).
+
 ```python
+import time
+
 import numpy as np
 import psi4
 
 from cqed_scf import CQEDCalculator, CQEDConfig
+
+EH_TO_KCAL = 627.5094740631
 
 dimer = """
 0 1
@@ -148,27 +158,52 @@ config = CQEDConfig(
     omega=0.1,
     psi4_options={
         "basis": "6-31g",
-        "scf_type": "pk",
+        "scf_type": "pk",  # conventional SCF; fine for a tiny system
         "e_convergence": 1e-10,
         "d_convergence": 1e-8,
     },
     reference="rhf",
     functional=None,
-    density_fitting=False,
+    density_fitting=False,  # exact (non-fitted) SAPT0 components
     charge=0,
     multiplicity=1,
     dispersion_policy="none",
+    quiet=True,
 )
 
 calc = CQEDCalculator(config=config)
 dimer_geometry = psi4.geometry(dimer)
 
-total = calc.sapt0_energy(dimer_geometry)
-components = calc.sapt0_components(dimer_geometry)
+t0 = time.perf_counter()
+components = calc.sapt0_components(
+    dimer_geometry,
+    integral_backend="full_eri",  # dense integrals; use "df" for larger systems
+    include_cavity_terms=True,
+    monomer_reference_frame="monomer_com",
+)
+elapsed = time.perf_counter() - t0
 
-print(f"Total QED-SAPT0 energy: {total:.12f} Eh")
-print(components.summary())
+rows = [
+    ("Electrostatics", components.elst10),
+    ("Exchange", components.exch10),
+    ("Induction", components.ind20),
+    ("Exchange-induction", components.exch_ind20),
+    ("Dispersion", components.disp20),
+    ("Exchange-dispersion", components.exch_disp20),
+]
+print(f"{'Component':<24}{'Energy (Eh)':>18}{'(kcal/mol)':>16}")
+for label, value in rows:
+    print(f"{label:<24}{value:18.12f}{value * EH_TO_KCAL:16.6f}")
+print(f"{'Total QED-SAPT0':<24}{components.total:18.12f}{components.total * EH_TO_KCAL:16.6f}")
+print(f"Wall time: {elapsed:.2f} s")
 ```
+
+`calc.sapt0_energy(...)` returns only the total; `calc.sapt0_components(...)`
+returns every component and the total in one run, so there is no need to call
+both. For larger systems use `integral_backend="df"` with
+`density_fitting=True` and `scf_type: df`. See
+[`examples/README.md`](examples/README.md) for the full set of QED-SAPT0
+examples, including a comparison with native Psi4 SAPT0.
 
 ## Parameter ownership
 
@@ -179,6 +214,14 @@ print(components.summary())
   dispersion policy, and debug flag.
 - Include charge and multiplicity in geometry strings too. This keeps examples
   unambiguous when they are run directly with Psi4.
+- Pass QED-SAPT0 run choices to `calc.sapt0_components(...)`, not to
+  `CQEDConfig`: `integral_backend` (`"full_eri"` or `"df"`),
+  `include_cavity_terms`, and `monomer_reference_frame`. Use
+  `monomer_reference_frame="monomer_com"` for cavity calculations: CQED orbital
+  energies depend on the coordinate origin, and this keeps the dispersion
+  independent of where the dimer sits. Density fitting is two independent
+  switches: `scf_type` in `psi4_options` for the SCF, and
+  `density_fitting=True` with `integral_backend="df"` for the SAPT components.
 - Public SAPT0 examples use component names `elst10`, `exch10`, `disp20`,
   `exch_disp20`, `ind20`, `exch_ind20`, and `total`.
 
