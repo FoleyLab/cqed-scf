@@ -133,30 +133,24 @@ elapsed = time.perf_counter() - t0
 # Report components
 # ---------------------------------------------------------
 
-ROWS = [
-    ("Electrostatics", components.elst10),
-    ("Exchange", components.exch10),
-    ("Induction", components.ind20),
-    ("Exchange-induction", components.exch_ind20),
-    ("Dispersion", components.disp20),
-    ("Exchange-dispersion", components.exch_disp20),
-]
-
-width = 58
 print()
 print("QED-SAPT0 components: benzene ... benzene (parallel displaced)")
 print(f"basis={psi4_options['basis']} ({nbf} basis functions), "
       f"scf_type={psi4_options['scf_type']}, backend=df, frame=monomer_com")
 print(f"lambda = {lambda_vector.tolist()}, omega = {omega} Eh")
 print(f"A dense N^4 ERI tensor would need ~{dense_eri_gb:.0f} GB")
-print("=" * width)
+print("=" * 58)
 print(f"{'Component':<24}{'Energy (Eh)':>18}{'(kcal/mol)':>16}")
-print("-" * width)
-for label, value in ROWS:
-    print(f"{label:<24}{value:18.12f}{value * EH_TO_KCAL:16.6f}")
-print("-" * width)
+print("-" * 58)
+print(f"{'Electrostatics':<24}{components.elst10:18.12f}{components.elst10 * EH_TO_KCAL:16.6f}")
+print(f"{'Exchange':<24}{components.exch10:18.12f}{components.exch10 * EH_TO_KCAL:16.6f}")
+print(f"{'Induction':<24}{components.ind20:18.12f}{components.ind20 * EH_TO_KCAL:16.6f}")
+print(f"{'Exchange-induction':<24}{components.exch_ind20:18.12f}{components.exch_ind20 * EH_TO_KCAL:16.6f}")
+print(f"{'Dispersion':<24}{components.disp20:18.12f}{components.disp20 * EH_TO_KCAL:16.6f}")
+print(f"{'Exchange-dispersion':<24}{components.exch_disp20:18.12f}{components.exch_disp20 * EH_TO_KCAL:16.6f}")
+print("-" * 58)
 print(f"{'Total QED-SAPT0':<24}{components.total:18.12f}{components.total * EH_TO_KCAL:16.6f}")
-print("=" * width)
+print("=" * 58)
 
 # ---------------------------------------------------------
 # Further partition dispersion into the standard, mixed, and cavity-only components
@@ -172,26 +166,16 @@ disp20_cd = partition["cross"]
 disp20_dd = partition["cavity"]
 disp20_partition_total = disp20_cc + disp20_cd + disp20_dd
 
-PARTITION_ROWS = [
-    ("Standard [c,c]", disp20_cc),
-    ("Cross [c,d]", disp20_cd),
-    ("Cavity [d,d]", disp20_dd),
-]
-
-width = 70
 print("\nDispersion partition")
-print("=" * width)
+print("=" * 70)
 print(f"{'Term':<24}{'Energy (Eh)':>18}{'(kcal/mol)':>16}{'% of total':>12}")
-print("-" * width)
-for label, value in PARTITION_ROWS:
-    pct = 100.0 * value / disp20_partition_total
-    print(f"{label:<24}{value:18.12f}{value * EH_TO_KCAL:16.6f}{pct:12.2f}")
-print("-" * width)
-print(
-    f"{'Total dispersion':<24}{disp20_partition_total:18.12f}"
-    f"{disp20_partition_total * EH_TO_KCAL:16.6f}{100.0:12.2f}"
-)
-print("=" * width)
+print("-" * 70)
+print(f"{'Standard [c,c]':<24}{disp20_cc:18.12f}{disp20_cc * EH_TO_KCAL:16.6f}{100.0 * disp20_cc / disp20_partition_total:12.2f}")
+print(f"{'Cross [c,d]':<24}{disp20_cd:18.12f}{disp20_cd * EH_TO_KCAL:16.6f}{100.0 * disp20_cd / disp20_partition_total:12.2f}")
+print(f"{'Cavity [d,d]':<24}{disp20_dd:18.12f}{disp20_dd * EH_TO_KCAL:16.6f}{100.0 * disp20_dd / disp20_partition_total:12.2f}")
+print("-" * 70)
+print(f"{'Total dispersion':<24}{disp20_partition_total:18.12f}{disp20_partition_total * EH_TO_KCAL:16.6f}{100.0:12.2f}")
+print("=" * 70)
 
 # Verify that the partition components sum to the total dispersion.
 assert np.isclose(disp20_partition_total, components.disp20)

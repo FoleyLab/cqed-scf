@@ -110,71 +110,67 @@ t0 = time.perf_counter()
 e_sapt0_total = psi4.energy("sapt0")
 t_psi4 = time.perf_counter() - t0
 
-# Psi4 variables that correspond to the cqed-scf components.  Alternative
-# names are tried in order so the script survives small naming differences
-# between Psi4 versions.
-PSI4_VARIABLES = {
-    "elst10": ["SAPT ELST10,R ENERGY", "SAPT ELST ENERGY"],
-    "exch10": ["SAPT EXCH10(S^2) ENERGY"],
-    "ind20": ["SAPT IND20,R ENERGY"],
-    "exch_ind20": ["SAPT EXCH-IND20,R ENERGY"],
-    "disp20": ["SAPT DISP20 ENERGY"],
-    "exch_disp20": ["SAPT EXCH-DISP20 ENERGY"],
-}
-
-
-def psi4_component(key):
-    for name in PSI4_VARIABLES[key]:
+def psi4_component(*names):
+    """Return the first Psi4 variable that exists among ``names``."""
+    for name in names:
         if psi4.core.has_variable(name):
             return psi4.variable(name)
     available = sorted(k for k in psi4.core.variables() if "SAPT" in k)
-    raise KeyError(f"No Psi4 variable for {key!r}; available SAPT variables: {available}")
+    raise KeyError(f"None of {names} found; available SAPT variables: {available}")
 
+
+# Psi4 values matching each cqed-scf component (exchange is the S^2 form).
+psi4_elst = psi4_component("SAPT ELST10,R ENERGY", "SAPT ELST ENERGY")
+psi4_exch = psi4_component("SAPT EXCH10(S^2) ENERGY")
+psi4_ind = psi4_component("SAPT IND20,R ENERGY")
+psi4_exch_ind = psi4_component("SAPT EXCH-IND20,R ENERGY")
+psi4_disp = psi4_component("SAPT DISP20 ENERGY")
+psi4_exch_disp = psi4_component("SAPT EXCH-DISP20 ENERGY")
+
+psi4_sum = psi4_elst + psi4_exch + psi4_ind + psi4_exch_ind + psi4_disp + psi4_exch_disp
 
 # ---------------------------------------------------------
 # Component comparison table
 # ---------------------------------------------------------
 
-ROWS = [
-    ("Electrostatics", "elst10"),
-    ("Exchange (S^2)", "exch10"),
-    ("Induction", "ind20"),
-    ("Exchange-induction", "exch_ind20"),
-    ("Dispersion", "disp20"),
-    ("Exchange-dispersion", "exch_disp20"),
-]
-
-cqed_values = {key: getattr(components, key) for _, key in ROWS}
-psi4_values = {key: psi4_component(key) for _, key in ROWS}
-
-width = 78
-print()
-print("Cavity-free QED-SAPT0 (cqed-scf, DF) vs native Psi4 SAPT0 (DF)")
-print(f"water ... methylamine, {psi4_options['basis']}, scf_type={psi4_options['scf_type']}")
-print("=" * width)
-print(
-    f"{'Component':<22}{'cqed-scf (Eh)':>16}{'Psi4 (Eh)':>16}"
-    f"{'Diff (uEh)':>13}{'Diff (%)':>11}"
-)
-print("-" * width)
-
 
 def row(label, cqed, ref):
+    """One table line: cqed-scf value, Psi4 value, difference in uEh and in %."""
     diff = cqed - ref
     pct = 100.0 * diff / abs(ref) if ref != 0.0 else float("nan")
     print(f"{label:<22}{cqed:16.10f}{ref:16.10f}{diff * 1e6:13.3f}{pct:11.4f}")
 
 
-for label, key in ROWS:
-    row(label, cqed_values[key], psi4_values[key])
-print("-" * width)
-row("Sum of six components", sum(cqed_values.values()), sum(psi4_values.values()))
+print()
+print("Cavity-free QED-SAPT0 (cqed-scf, DF) vs native Psi4 SAPT0 (DF)")
+print(f"water ... methylamine, {psi4_options['basis']}, scf_type={psi4_options['scf_type']}")
+print("=" * 78)
+print(
+    f"{'Component':<22}{'cqed-scf (Eh)':>16}{'Psi4 (Eh)':>16}"
+    f"{'Diff (uEh)':>13}{'Diff (%)':>11}"
+)
+print("-" * 78)
+row("Electrostatics", components.elst10, psi4_elst)
+row("Exchange (S^2)", components.exch10, psi4_exch)
+row("Induction", components.ind20, psi4_ind)
+row("Exchange-induction", components.exch_ind20, psi4_exch_ind)
+row("Dispersion", components.disp20, psi4_disp)
+row("Exchange-dispersion", components.exch_disp20, psi4_exch_disp)
+print("-" * 78)
+row("Sum of six components", components.total, psi4_sum)
 print(f"{'Psi4 total SAPT0*':<22}{'':16}{e_sapt0_total:16.10f}")
-print("=" * width)
+print("=" * 78)
 print("* Psi4's total includes delta-HF and the full (non-S^2) exch10, so it is")
 print("  not expected to equal the sum of the six components above.")
 
-max_diff = max(abs(cqed_values[k] - psi4_values[k]) for _, k in ROWS)
+max_diff = max(
+    abs(components.elst10 - psi4_elst),
+    abs(components.exch10 - psi4_exch),
+    abs(components.ind20 - psi4_ind),
+    abs(components.exch_ind20 - psi4_exch_ind),
+    abs(components.disp20 - psi4_disp),
+    abs(components.exch_disp20 - psi4_exch_disp),
+)
 print(f"\nLargest component difference: {max_diff * 1e6:.3f} uEh")
 
 # ---------------------------------------------------------

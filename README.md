@@ -183,17 +183,15 @@ components = calc.sapt0_components(
 )
 elapsed = time.perf_counter() - t0
 
-rows = [
-    ("Electrostatics", components.elst10),
-    ("Exchange", components.exch10),
-    ("Induction", components.ind20),
-    ("Exchange-induction", components.exch_ind20),
-    ("Dispersion", components.disp20),
-    ("Exchange-dispersion", components.exch_disp20),
-]
 print(f"{'Component':<24}{'Energy (Eh)':>18}{'(kcal/mol)':>16}")
-for label, value in rows:
-    print(f"{label:<24}{value:18.12f}{value * EH_TO_KCAL:16.6f}")
+print("-" * 58)
+print(f"{'Electrostatics':<24}{components.elst10:18.12f}{components.elst10 * EH_TO_KCAL:16.6f}")
+print(f"{'Exchange':<24}{components.exch10:18.12f}{components.exch10 * EH_TO_KCAL:16.6f}")
+print(f"{'Induction':<24}{components.ind20:18.12f}{components.ind20 * EH_TO_KCAL:16.6f}")
+print(f"{'Exchange-induction':<24}{components.exch_ind20:18.12f}{components.exch_ind20 * EH_TO_KCAL:16.6f}")
+print(f"{'Dispersion':<24}{components.disp20:18.12f}{components.disp20 * EH_TO_KCAL:16.6f}")
+print(f"{'Exchange-dispersion':<24}{components.exch_disp20:18.12f}{components.exch_disp20 * EH_TO_KCAL:16.6f}")
+print("-" * 58)
 print(f"{'Total QED-SAPT0':<24}{components.total:18.12f}{components.total * EH_TO_KCAL:16.6f}")
 print(f"Wall time: {elapsed:.2f} s")
 ```
